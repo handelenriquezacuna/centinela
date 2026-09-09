@@ -22,7 +22,7 @@ data/
 # macOS
 .DS_Store
 
-# Copia del artifact renderizado (trae el runtime de claude.ai embebido).
+# Copia renderizada de la pagina con runtime de visor embebido.
 # La version del repo es docs/arquitectura/index.html, generada con
 # scripts/build-pagina.py a partir de docs/arquitectura/_contenido.html
 docs/Arquitectura de Centinela.html

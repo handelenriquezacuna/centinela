@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Envuelve el contenido del artifact en un HTML autonomo para GitHub Pages.
+"""Envuelve el contenido de la pagina en un HTML autonomo para GitHub Pages.
 
-El runtime de Artifacts inyecta doctype, charset y viewport. Servida por
-nuestra cuenta, la pagina los necesita explicitos: sin charset los acentos
-salen como 'MarA-a' al abrirla local, y sin viewport no es responsive.
+El fuente solo trae el contenido. Servido como archivo estatico hacen falta
+doctype, charset y viewport explicitos: sin charset los acentos se rompen al
+abrir la pagina localmente, y sin viewport no es responsive.
 
 Uso:  python3 scripts/build-pagina.py
 """

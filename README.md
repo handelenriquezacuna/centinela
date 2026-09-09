@@ -43,8 +43,8 @@ python scripts/build-pagina.py      # Windows
 ```
 
 El fuente es `docs/arquitectura/_contenido.html`; el script le agrega doctype,
-`charset` y `viewport`, que el runtime de Artifacts inyecta pero un servidor
-propio no.
+`charset` y `viewport`, necesarios para que la pagina funcione servida como
+archivo estatico.
 
 ## Contexto académico
 
