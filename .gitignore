@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Node / frontend
+node_modules/
+dist/
+build/
+.vite/
+
+# Entorno
+.env
+.env.local
+
+# MongoDB local
+data/
+*.log
+
+# macOS
+.DS_Store
+
+# Copia del artifact renderizado (trae el runtime de claude.ai embebido).
+# La version del repo es docs/arquitectura/index.html, generada con
+# scripts/build-pagina.py a partir de docs/arquitectura/_contenido.html
+docs/Arquitectura de Centinela.html

@@ -1,0 +1,515 @@
+<title>Arquitectura de Centinela</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --paper:#F5F3EE;
+  --surface:#FFFFFF;
+  --surface-2:#EDEAE3;
+  --ink:#1A1F26;
+  --ink-2:#4A535E;
+  --ink-3:#7C858F;
+  --line:#D8D3C9;
+  --line-2:#C2BCB0;
+  --accent:#0E6B5A;
+  --accent-soft:#D6E7E1;
+  --accent-ink:#0A4C40;
+  --crit:#A82F26;
+  --alta:#B4681A;
+  --ok:#3E6B34;
+  --ghost:#B9B3A7;
+  --shadow:0 1px 2px rgba(26,31,38,.06),0 8px 24px -12px rgba(26,31,38,.18);
+  --r:10px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#12171E;
+    --surface:#181F27;
+    --surface-2:#212A34;
+    --ink:#EAE6DE;
+    --ink-2:#A9B2BC;
+    --ink-3:#78828D;
+    --line:#2C3742;
+    --line-2:#3C4854;
+    --accent:#4FBFA5;
+    --accent-soft:#153A33;
+    --accent-ink:#8FD8C6;
+    --crit:#E8756A;
+    --alta:#E0A048;
+    --ok:#8DC47E;
+    --ghost:#39434E;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -14px rgba(0,0,0,.7);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#12171E;
+  --surface:#181F27;
+  --surface-2:#212A34;
+  --ink:#EAE6DE;
+  --ink-2:#A9B2BC;
+  --ink-3:#78828D;
+  --line:#2C3742;
+  --line-2:#3C4854;
+  --accent:#4FBFA5;
+  --accent-soft:#153A33;
+  --accent-ink:#8FD8C6;
+  --crit:#E8756A;
+  --alta:#E0A048;
+  --ok:#8DC47E;
+  --ghost:#39434E;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -14px rgba(0,0,0,.7);
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:15px;
+  line-height:1.6;
+  margin:0;
+}
+.wrap{max-width:1120px;margin:0 auto;padding:32px 24px 72px;display:flex;flex-direction:column;gap:40px}
+
+h1,h2,h3{font-family:Archivo,"Helvetica Neue",Arial,sans-serif;text-wrap:balance;margin:0}
+h1{font-size:34px;font-weight:700;letter-spacing:-.022em;line-height:1.12}
+h2{font-size:21px;font-weight:600;letter-spacing:-.012em}
+h3{font-size:15px;font-weight:600;letter-spacing:-.005em}
+p{margin:0}
+.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:500;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);
+}
+
+/* ---------- header ---------- */
+header{display:flex;flex-direction:column;gap:12px;border-bottom:2px solid var(--line);padding-bottom:24px}
+.badge-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.badge{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:500;
+  padding:3px 9px;border-radius:999px;border:1px solid var(--line-2);color:var(--ink-2);
+}
+.badge.now{background:var(--accent-soft);border-color:transparent;color:var(--accent-ink);font-weight:600}
+.lede{font-size:17px;line-height:1.55;color:var(--ink-2);max-width:64ch}
+.lede strong{color:var(--ink);font-weight:600}
+
+/* ---------- stage rail ---------- */
+.rail{display:flex;flex-direction:column;gap:14px}
+.rail-track{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+.stage-btn{
+  appearance:none;text-align:left;cursor:pointer;font:inherit;
+  background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--line-2);
+  border-radius:var(--r);padding:11px 12px 13px;
+  display:flex;flex-direction:column;gap:3px;transition:border-color .18s,background .18s,transform .18s;
+}
+.stage-btn:hover{border-color:var(--line-2);transform:translateY(-2px)}
+.stage-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.stage-btn .code{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--ink-3)}
+.stage-btn .nm{font-family:Archivo,sans-serif;font-size:13px;font-weight:600;line-height:1.25}
+.stage-btn[data-done="1"] .code{color:var(--ok)}
+.stage-btn[aria-pressed="true"]{
+  border-top-color:var(--accent);background:var(--surface);
+  box-shadow:var(--shadow);
+}
+.stage-btn[aria-pressed="true"] .nm{color:var(--accent-ink)}
+
+/* ---------- canvas + panel ---------- */
+.stage-body{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:20px;align-items:start}
+.canvas-card{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  padding:14px;overflow-x:auto;box-shadow:var(--shadow);
+}
+.canvas-card svg{display:block;width:100%;min-width:620px;height:auto}
+.panel{display:flex;flex-direction:column;gap:18px}
+.panel-head{display:flex;flex-direction:column;gap:6px}
+.panel-head .when{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-3)}
+.panel p.desc{color:var(--ink-2);font-size:14.5px}
+.blk{display:flex;flex-direction:column;gap:7px}
+.blk .eyebrow{margin-bottom:1px}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;font-weight:500;
+  padding:3px 8px;border-radius:5px;background:var(--surface-2);color:var(--ink-2);
+}
+.demo{
+  border-left:3px solid var(--accent);padding:2px 0 2px 13px;
+  font-size:14px;color:var(--ink-2);
+}
+.demo strong{color:var(--ink);font-weight:600}
+
+/* ---------- svg node states ---------- */
+.node rect,.node circle{transition:fill .35s ease,stroke .35s ease}
+.node text{transition:fill .35s ease}
+.node .box{fill:var(--surface);stroke:var(--ghost);stroke-width:1.5}
+.node .lbl{fill:var(--ghost);font-family:Archivo,sans-serif;font-size:12.5px;font-weight:600}
+.node .sub{fill:var(--ghost);font-family:"IBM Plex Mono",monospace;font-size:10px}
+.node.on .box{fill:var(--surface);stroke:var(--line-2);stroke-width:1.5}
+.node.on .lbl{fill:var(--ink)}
+.node.on .sub{fill:var(--ink-3)}
+.node.fresh .box{fill:var(--accent-soft);stroke:var(--accent);stroke-width:2}
+.node.fresh .lbl{fill:var(--accent-ink)}
+.node.fresh .sub{fill:var(--accent-ink)}
+.lnk{stroke:var(--ghost);stroke-width:1.5;fill:none;transition:stroke .35s ease}
+.lnk.on{stroke:var(--line-2)}
+.lnk.fresh{stroke:var(--accent);stroke-width:2}
+.lnk-lbl{fill:var(--ghost);font-family:"IBM Plex Mono",monospace;font-size:9.5px;transition:fill .35s ease}
+.lnk-lbl.on{fill:var(--ink-3)}
+.lnk-lbl.fresh{fill:var(--accent-ink)}
+.grp-box{fill:none;stroke:var(--line);stroke-width:1;stroke-dasharray:3 3}
+.grp-lbl{fill:var(--ink-3);font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.08em}
+
+/* ---------- flow ---------- */
+.flow{display:flex;flex-direction:column;gap:16px}
+.flow-steps{display:flex;flex-direction:column;gap:0}
+.step{display:grid;grid-template-columns:74px 1fr;gap:16px;padding:13px 0;border-top:1px solid var(--line)}
+.step:first-child{border-top:none}
+.step .t{font-family:"IBM Plex Mono",monospace;font-size:13px;font-weight:600;color:var(--accent-ink);padding-top:1px}
+.step .c{display:flex;flex-direction:column;gap:4px}
+.step .c b{font-weight:600}
+.step .c span{color:var(--ink-2);font-size:14px}
+.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:4px}
+.rule{
+  display:flex;justify-content:space-between;align-items:baseline;gap:8px;
+  padding:7px 10px;border-radius:6px;background:var(--surface-2);
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;
+}
+.rule.hit{background:var(--accent-soft);color:var(--accent-ink);font-weight:600}
+.rule .w{font-variant-numeric:tabular-nums}
+.score{
+  display:flex;align-items:baseline;gap:10px;padding:12px 14px;border-radius:var(--r);
+  background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--crit);
+}
+.score .n{font-family:Archivo,sans-serif;font-size:30px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.score .sev{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--crit);letter-spacing:.1em}
+.score .why{font-size:13.5px;color:var(--ink-2);margin-left:auto;text-align:right}
+
+/* ---------- packages ---------- */
+.tbl-scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:540px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);border-bottom:1.5px solid var(--line-2);
+}
+td.pk{font-family:Archivo,sans-serif;font-weight:600;white-space:nowrap}
+td.hs{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-2)}
+
+footer{border-top:1px solid var(--line);padding-top:18px;color:var(--ink-3);font-size:13px;display:flex;flex-wrap:wrap;gap:6px 18px}
+
+@media (max-width:880px){
+  .stage-body{grid-template-columns:1fr}
+  .rail-track{grid-template-columns:repeat(3,1fr)}
+  h1{font-size:27px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{transition:none!important;animation:none!important}
+  .stage-btn:hover{transform:none}
+}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="badge-row">
+    <span class="eyebrow">Universidad Fidélitas · SC&#8209;609</span>
+    <span class="badge now">Etapa actual · E1</span>
+    <span class="badge">Equipo de 4</span>
+    <span class="badge">Defensa 7 dic 2026</span>
+  </div>
+  <h1>Centinela</h1>
+  <p class="lede">Monitoreo de transferencias <strong>SINPE Móvil</strong> en tiempo real. En una estafa de vishing la víctima <strong>autoriza</strong> el movimiento: no hay acceso indebido que bloquear, solo una transferencia que no se parece a lo que esa persona hace normalmente — y minutos para reaccionar.</p>
+</header>
+
+<section class="rail">
+  <div>
+    <p class="eyebrow">Evolución de la arquitectura</p>
+    <p style="color:var(--ink-2);font-size:14.5px;margin-top:6px">Un solo sistema que se enciende por partes. Cada etapa deja algo que funciona, no un pedazo inerte.</p>
+  </div>
+  <div class="rail-track" role="group" aria-label="Etapas de la arquitectura">
+    <button class="stage-btn" data-s="0" data-done="1" aria-pressed="false"><span class="code">E0 ✓</span><span class="nm">Fundación</span></button>
+    <button class="stage-btn" data-s="1" aria-pressed="true"><span class="code">E1</span><span class="nm">Los datos existen</span></button>
+    <button class="stage-btn" data-s="2" aria-pressed="false"><span class="code">E2</span><span class="nm">El motor ve</span></button>
+    <button class="stage-btn" data-s="3" aria-pressed="false"><span class="code">E3</span><span class="nm">El agente ve</span></button>
+    <button class="stage-btn" data-s="4" aria-pressed="false"><span class="code">E4</span><span class="nm">Inteligencia</span></button>
+    <button class="stage-btn" data-s="5" aria-pressed="false"><span class="code">E5</span><span class="nm">Endurecimiento</span></button>
+  </div>
+
+  <div class="stage-body">
+    <div class="canvas-card">
+      <svg viewBox="0 0 900 452" role="img" aria-label="Diagrama de la arquitectura de Centinela; los componentes se activan según la etapa seleccionada">
+        <defs>
+          <marker id="ar" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6 Z" fill="var(--line-2)"/>
+          </marker>
+        </defs>
+
+        <rect class="grp-box" x="214" y="104" width="216" height="200" rx="10"/>
+        <text class="grp-lbl" x="222" y="120">REPLICA SET rsfraude</text>
+
+        <!-- links -->
+        <path id="l-gen" class="lnk" d="M162,206 L212,206" marker-end="url(#ar)"/>
+        <text id="ll-gen" class="lnk-lbl" x="150" y="197">escritura directa</text>
+
+        <path id="l-oplog" class="lnk" d="M322,306 L322,336" marker-end="url(#ar)" stroke-dasharray="4 3"/>
+        <text id="ll-oplog" class="lnk-lbl" x="330" y="325">oplog · Change Streams</text>
+
+        <path id="l-motor-db" class="lnk" d="M232,336 L232,298" marker-end="url(#ar)"/>
+
+        <path id="l-pipe" class="lnk" d="M190,372 L204,372 L204,272 L224,272" marker-end="url(#ar)"/>
+
+        <path id="l-api" class="lnk" d="M432,196 L486,196" marker-end="url(#ar)"/>
+        <path id="l-portal" class="lnk" d="M644,190 L706,190" marker-end="url(#ar)"/>
+        <path id="l-ws" class="lnk" d="M430,352 L462,352 L462,306 L486,306" marker-end="url(#ar)"/>
+        <path id="l-ws2" class="lnk" d="M644,306 L676,306 L676,240 L706,240" marker-end="url(#ar)"/>
+        <text id="ll-ws" class="lnk-lbl" x="466" y="332">tiempo real</text>
+        <path id="l-smtp" class="lnk" d="M430,378 L500,378 L500,404 L686,404" marker-end="url(#ar)"/>
+        <path id="l-auth" class="lnk" d="M562,104 L562,150" marker-end="url(#ar)"/>
+
+        <!-- MongoDB cluster -->
+        <g class="node" data-s="0" id="n-db">
+          <rect class="box" x="228" y="130" width="188" height="34" rx="7"/>
+          <text class="lbl" x="242" y="152">mongo1 · PRIMARY</text>
+          <rect class="box" x="228" y="172" width="188" height="30" rx="7"/>
+          <text class="sub" x="242" y="192">mongo2 · SECONDARY :27019</text>
+          <rect class="box" x="228" y="210" width="188" height="30" rx="7"/>
+          <text class="sub" x="242" y="230">mongo3 · SECONDARY :27020</text>
+        </g>
+        <g class="node" data-s="1" id="n-col">
+          <rect class="box" x="228" y="250" width="188" height="44" rx="7"/>
+          <text class="lbl" x="242" y="269">11 colecciones</text>
+          <text class="sub" x="242" y="286">$jsonSchema · índices</text>
+        </g>
+
+        <!-- Generador -->
+        <g class="node" data-s="1" id="n-gen">
+          <rect class="box" x="24" y="176" width="138" height="60" rx="8"/>
+          <text class="lbl" x="38" y="200">Generador</text>
+          <text class="sub" x="38" y="219">Python · Faker</text>
+        </g>
+
+        <!-- Pipelines -->
+        <g class="node" data-s="2" id="n-pipe">
+          <rect class="box" x="24" y="340" width="166" height="64" rx="8"/>
+          <text class="lbl" x="38" y="363">Pipelines</text>
+          <text class="sub" x="38" y="381">$merge · perfiles</text>
+          <text class="sub" x="38" y="396">$graphLookup · mulas</text>
+        </g>
+
+        <!-- Motor -->
+        <g class="node" data-s="2" id="n-d1">
+          <rect class="box" x="214" y="338" width="216" height="30" rx="7"/>
+          <text class="lbl" x="228" y="358">D1 · detección</text>
+        </g>
+        <g class="node" data-s="4" id="n-d2">
+          <rect class="box" x="214" y="374" width="216" height="28" rx="7"/>
+          <text class="sub" x="228" y="393">D2 · notificación por correo</text>
+        </g>
+        <g class="node" data-s="4" id="n-d3">
+          <rect class="box" x="214" y="408" width="216" height="28" rx="7"/>
+          <text class="sub" x="228" y="427">D3 · indicadores materializados</text>
+        </g>
+
+        <!-- API -->
+        <g class="node" data-s="1" id="n-api">
+          <rect class="box" x="488" y="150" width="156" height="86" rx="8"/>
+          <text class="lbl" x="502" y="174">API · FastAPI</text>
+          <text class="sub" x="502" y="193">routers</text>
+          <text class="sub" x="502" y="209">servicios</text>
+          <text class="sub" x="502" y="225">repositorios</text>
+        </g>
+        <g class="node" data-s="3" id="n-ws">
+          <rect class="box" x="488" y="286" width="156" height="40" rx="8"/>
+          <text class="lbl" x="502" y="311">WebSocket</text>
+        </g>
+        <g class="node" data-s="5" id="n-auth">
+          <rect class="box" x="488" y="58" width="156" height="46" rx="8"/>
+          <text class="lbl" x="502" y="79">Autenticación</text>
+          <text class="sub" x="502" y="95">roles · agente/super/admin</text>
+        </g>
+
+        <!-- Portal -->
+        <g class="node" data-s="3" id="n-portal">
+          <rect class="box" x="708" y="150" width="168" height="176" rx="8"/>
+          <text class="lbl" x="722" y="174">Portal · React</text>
+          <text class="sub" x="722" y="196">panel en vivo</text>
+          <text class="sub" x="722" y="214">detalle de alerta</text>
+          <text class="sub" x="722" y="232">búsqueda forense</text>
+          <text class="sub" x="722" y="250">tablero del turno</text>
+          <text class="sub" x="722" y="268">red de mulas</text>
+        </g>
+
+        <!-- SMTP -->
+        <g class="node" data-s="4" id="n-smtp">
+          <rect class="box" x="688" y="386" width="188" height="36" rx="8"/>
+          <text class="sub" x="702" y="409">SMTP de pruebas · Mailtrap</text>
+        </g>
+      </svg>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <p class="eyebrow" id="p-code">Etapa E1</p>
+        <h2 id="p-name">Los datos existen</h2>
+        <p class="when mono" id="p-when">15 sep – 5 oct 2026</p>
+      </div>
+      <p class="desc" id="p-desc"></p>
+      <div class="blk">
+        <p class="eyebrow">Historias</p>
+        <div class="chips" id="p-hist"></div>
+      </div>
+      <div class="blk">
+        <p class="eyebrow">Se puede demostrar</p>
+        <p class="demo" id="p-demo"></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="flow">
+  <div>
+    <p class="eyebrow">Cómo se ve una detección</p>
+    <h2 style="margin-top:6px">María Rodríguez, 22:47</h2>
+    <p style="color:var(--ink-2);font-size:14.5px;margin-top:6px;max-width:64ch">Perfil de 90 días: 47 transferencias, promedio ₡45.200, máximo histórico ₡180.000, actividad entre 07:00 y 19:00. Cinco destinos frecuentes, todos con historial.</p>
+  </div>
+
+  <div class="flow-steps">
+    <div class="step">
+      <span class="t">22:47:02</span>
+      <span class="c"><b>Transferencia de ₡750.000 a <span class="mono">6033-9001</span></b><span>Un número que esta cuenta nunca había usado. El generador la inserta directo en MongoDB, sin pasar por la API.</span></span>
+    </div>
+    <div class="step">
+      <span class="t">+180 ms</span>
+      <span class="c"><b>D1 recibe el evento por Change Stream</b><span>Carga el perfil de la clienta y las reglas activas. Evalúa cada una y suma los pesos de las que disparan.</span>
+        <div class="rules">
+          <span class="rule hit"><span>R-01 monto 16,6×</span><span class="w">35</span></span>
+          <span class="rule hit"><span>R-03 destino nuevo</span><span class="w">25</span></span>
+          <span class="rule hit"><span>R-05 fuera de horario</span><span class="w">15</span></span>
+          <span class="rule"><span>R-07 lista de riesgo</span><span class="w">0</span></span>
+          <span class="rule"><span>R-09 velocidad</span><span class="w">0</span></span>
+        </div>
+      </span>
+    </div>
+    <div class="step">
+      <span class="t">+240 ms</span>
+      <span class="c"><b>Se crea la alerta con su justificación adentro</b><span>El documento guarda qué reglas dispararon y con qué versión, para que la alerta siga explicándose dentro de un año.</span>
+        <div class="score" style="margin-top:8px">
+          <span class="n">75</span><span class="sev">CRÍTICA</span>
+          <span class="why">3 de 5 reglas · umbral 60</span>
+        </div>
+      </span>
+    </div>
+    <div class="step">
+      <span class="t">&lt; 2 s</span>
+      <span class="c"><b>Aparece sola en el panel del agente</b><span>Sin recargar. En paralelo, D2 envía el correo al canal de guardia y lo registra en <span class="mono">notificaciones</span>.</span></span>
+    </div>
+    <div class="step">
+      <span class="t">22:53</span>
+      <span class="c"><b>El agente resuelve: confirmada</b><span>La clienta reconoce la llamada previa. La acción se agrega al historial embebido de la alerta — nunca lo sobrescribe.</span></span>
+    </div>
+    <div class="step">
+      <span class="t">22:55</span>
+      <span class="c"><b>Se sigue el dinero</b><span><span class="mono">$graphLookup</span> recorre la cadena: <span class="mono">6033-9001</span> → <span class="mono">7104-2288</span> → <span class="mono">8455-1177</span> → <span class="mono">6001-3344</span>. Tres saltos en 24 minutos con montos decrecientes: fragmentación clásica. Las tres cuentas se proponen para la lista de riesgo.</span></span>
+    </div>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Reparto</p>
+  <h2 style="margin:6px 0 14px">Cuatro paquetes, cuatro personas</h2>
+  <div class="tbl-scroll">
+    <table>
+      <thead><tr><th>Paquete</th><th>Foco</th><th>Historias</th></tr></thead>
+      <tbody>
+        <tr><td class="pk">P1 · Datos</td><td>Esquema de las 11 colecciones, validadores, generador de población y fraude, índices verificados con <span class="mono">explain()</span></td><td class="hs">H-01 … H-06, H-26</td></tr>
+        <tr><td class="pk">P2 · Motor</td><td>Catálogo de reglas, evaluador de puntaje, los tres Change Streams, medición de efectividad</td><td class="hs">H-07 … H-11, H-21</td></tr>
+        <tr><td class="pk">P3 · API</td><td>Endpoints, búsqueda forense, vistas guardadas, indicadores materializados, red de mulas</td><td class="hs">H-12 … H-16, H-22 … H-24</td></tr>
+        <tr><td class="pk">P4 · Portal</td><td>Panel en vivo, detalle de alerta, tablero del turno, autenticación y roles</td><td class="hs">H-17 … H-20, H-25</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <span>Avance 1 · 26 oct</span><span>Avance 2 · 16 nov</span><span>Entrega final y defensa · 7 dic</span>
+  <span style="margin-left:auto">Documento vivo — se actualiza al cerrar cada etapa</span>
+</footer>
+
+</div>
+
+<script>
+const STAGES = [
+  {code:"E0", name:"Fundación", when:"9 – 14 sep 2026 · terminada",
+   desc:"El replica set de tres nodos corriendo, con Change Streams, transacciones multi-documento y $graphLookup verificados en vivo. Sin esto no hay producto: en un mongod suelto los Change Streams simplemente no existen.",
+   hist:["infraestructura","docker compose","init idempotente"],
+   demo:"<strong>rs.status()</strong> devolviendo un primario y dos secundarios, y un Change Stream capturando un insert."},
+  {code:"E1", name:"Los datos existen", when:"15 sep – 5 oct 2026",
+   desc:"Clientes con hábitos propios, transacciones que respetan esos hábitos y fraude inyectado como minoría por debajo del 2 %. Los índices que el panel va a necesitar quedan puestos y verificados desde ahora.",
+   hist:["H-01","H-02","H-03","H-04","H-05","H-06","H-12"],
+   demo:"Cien mil transacciones consultadas con <strong>IXSCAN</strong> en vez de COLLSCAN. Alimenta directamente la Práctica 1 del 21 de septiembre."},
+  {code:"E2", name:"El motor ve", when:"6 – 26 oct 2026",
+   desc:"Aquí el proyecto deja de ser un CRUD. El Change Stream reacciona a cada inserción, evalúa contra reglas que viven en la base de datos y crea alertas que explican por qué nacieron. Todavía sin una sola pantalla.",
+   hist:["H-07","H-08","H-09","H-10","H-21"],
+   demo:"Correr el generador y ver alertas apareciendo en <strong>mongosh</strong>, con el reporte de efectividad diciendo cuánto fraude se atrapó y cuánto se escapó."},
+  {code:"E3", name:"El agente ve", when:"27 oct – 16 nov 2026",
+   desc:"El portal se conecta por WebSocket y las alertas aparecen solas, ordenadas por severidad. El agente abre una, ve las reglas que dispararon con su aporte al puntaje, y la resuelve dejando rastro.",
+   hist:["H-13","H-14","H-15","H-17","H-18","H-19"],
+   demo:"Exactamente lo que pide el <strong>Avance 2</strong>: pantallas ejecutando, con toma de decisiones y repeticiones."},
+  {code:"E4", name:"Inteligencia", when:"17 – 30 nov 2026",
+   desc:"La cadena de cuentas mula se recorre y se dibuja. Los indicadores del turno se materializan con $merge en vez de calcularse dentro de la petición. El correo de guardia sale solo.",
+   hist:["H-11","H-16","H-20","H-22","H-23","H-24"],
+   demo:"Seguir el dinero por cuatro cuentas en la pantalla. Es el momento más vistoso de la defensa."},
+  {code:"E5", name:"Endurecimiento", when:"1 – 7 dic 2026",
+   desc:"Roles diferenciados, versionado del esquema con una migración real de v1 a v2, y archivado del histórico que nunca toca lo ligado a una alerta abierta. Aquí el sistema pasa de demostrable a defendible.",
+   hist:["H-25","H-26","H-27"],
+   demo:"Un usuario agente que no puede editar reglas, y documentos de dos versiones conviviendo mientras corre la migración."}
+];
+
+const NODES = [...document.querySelectorAll(".node")];
+const LINKS = {
+  "l-gen":1,"ll-gen":1,"l-api":1,
+  "l-oplog":2,"ll-oplog":2,"l-motor-db":2,"l-pipe":2,
+  "l-ws":3,"l-ws2":3,"ll-ws":3,"l-portal":3,
+  "l-smtp":4,
+  "l-auth":5
+};
+const btns = [...document.querySelectorAll(".stage-btn")];
+
+function render(s){
+  const st = STAGES[s];
+  NODES.forEach(n=>{
+    const at = +n.dataset.s;
+    n.classList.toggle("on", at <= s);
+    n.classList.toggle("fresh", at === s);
+  });
+  Object.entries(LINKS).forEach(([id,at])=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.classList.toggle("on", at <= s);
+    el.classList.toggle("fresh", at === s);
+  });
+  btns.forEach(b=>b.setAttribute("aria-pressed", String(+b.dataset.s === s)));
+  document.getElementById("p-code").textContent = "Etapa " + st.code;
+  document.getElementById("p-name").textContent = st.name;
+  document.getElementById("p-when").textContent = st.when;
+  document.getElementById("p-desc").textContent = st.desc;
+  document.getElementById("p-demo").innerHTML = st.demo;
+  document.getElementById("p-hist").innerHTML =
+    st.hist.map(h=>'<span class="chip">'+h+'</span>').join("");
+}
+
+btns.forEach(b=>{
+  b.addEventListener("click",()=>render(+b.dataset.s));
+  b.addEventListener("keydown",e=>{
+    if(e.key!=="ArrowRight"&&e.key!=="ArrowLeft") return;
+    e.preventDefault();
+    const i = +b.dataset.s + (e.key==="ArrowRight"?1:-1);
+    if(i>=0 && i<btns.length){ btns[i].focus(); render(i); }
+  });
+});
+
+render(1);
+</script>
