@@ -16,6 +16,10 @@ services:
       - "27020:27020"   # mongo3
     volumes:
       - mongo1data:/data/db
+      # Los scripts se montan para poder ejecutarlos con `mongosh --file`,
+      # que funciona igual en macOS, Linux y Windows. La redireccion `<`
+      # de shell no existe en PowerShell.
+      - ../scripts:/scripts:ro
     healthcheck:
       test: ["CMD","mongosh","--port","27018","--quiet","--eval","db.adminCommand('ping').ok"]
       interval: 10s

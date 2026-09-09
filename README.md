@@ -37,8 +37,9 @@ Ya está el `.nojekyll` para que Pages sirva los archivos tal cual.
 
 Para regenerar la página después de editar el contenido:
 
-```bash
-python3 scripts/build-pagina.py
+```
+python3 scripts/build-pagina.py     # macOS y Linux
+python scripts/build-pagina.py      # Windows
 ```
 
 El fuente es `docs/arquitectura/_contenido.html`; el script le agrega doctype,

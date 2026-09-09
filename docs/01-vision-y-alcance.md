@@ -80,7 +80,7 @@ Concretamente, el MVP está listo cuando estas cinco cosas son ciertas a la vez:
 
 ## 6. Por qué NoSQL
 
-Esta sección es la defensa del proyecto. No es decorativa.
+Esta sección sostiene la decisión técnica de fondo. No es decorativa.
 
 | Razón | Cómo se manifiesta aquí |
 |---|---|

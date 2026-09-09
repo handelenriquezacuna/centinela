@@ -218,7 +218,7 @@ flowchart LR
 
 Historias **H-11, H-16, H-20, H-22 a H-24**. La cadena de mulas se recorre y se
 dibuja, los indicadores se materializan, el correo sale.
-**Es el momento más vistoso de la defensa.**
+**Es donde el sistema deja de reportar hechos sueltos y empieza a explicar un patrón.**
 
 ---
 

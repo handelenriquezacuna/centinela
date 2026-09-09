@@ -1,0 +1,7 @@
+# Normaliza finales de linea: el repo guarda LF, cada quien recibe lo suyo.
+# Sin esto, un equipo mixto macOS/Windows genera diffs falsos en cada commit.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.pdf binary
