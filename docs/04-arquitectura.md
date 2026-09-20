@@ -157,10 +157,11 @@ flowchart LR
     style G fill:#1a4d2e,color:#fff
 ```
 
-Historias **H-01 a H-06, H-12**. Hay clientes con hábitos, transacciones que
-respetan esos hábitos, fraude inyectado como minoría, y consultas que usan índice.
+Historias **H-01 a H-06, H-12, H-26 (adelantada)**. Hay clientes con hábitos,
+transacciones que respetan esos hábitos, fraude inyectado como minoría, consultas
+que usan índice, y el documento ya lleva versión de esquema con su migración.
 **Se puede demostrar:** 100.000 transacciones consultadas con `IXSCAN`.
-**Alimenta la Práctica 1 del 21 de septiembre.**
+**El recorte H-01+H-02 es la Práctica 1 (28 sep); H-26 es la Práctica 4 (19 oct).**
 
 ---
 
@@ -227,30 +228,36 @@ dibuja, los indicadores se materializan, el correo sale.
 ```mermaid
 flowchart LR
     SEC[Autenticación<br/>y roles] --> API[API]
-    MIG[Migración v1→v2] --> M[(MongoDB)]
-    ARC[Archivado] --> M
+    ARC[Archivado] --> M[(MongoDB)]
     style SEC fill:#1a4d2e,color:#fff
-    style MIG fill:#1a4d2e,color:#fff
     style ARC fill:#1a4d2e,color:#fff
 ```
 
-Historias **H-25 a H-27**. Roles, versionado de esquema con migración real,
+Historias **H-25, H-27** (H-26 ya se hizo en E1, ver arriba). Roles y permisos,
 purga del histórico. Aquí el sistema se vuelve defendible, no solo demostrable.
 
 ---
 
 ## 7. Calendario de etapas
 
+Revisado el 2026-09-20 contra las fechas reales del curso (con la corrección de
+Práctica 1 confirmada en clase). Dos ajustes respecto a la versión anterior:
+**H-26 se adelantó** de E5 a E1 (la Práctica 4 del curso, "sellos de versiones",
+vence el 19 de octubre, mucho antes de diciembre), y se agregó la sección de
+**hitos del curso** superpuesta a las etapas propias, para ver de un vistazo
+qué entrega académica cae dentro de qué etapa técnica.
+
 ```mermaid
 gantt
     dateFormat YYYY-MM-DD
     axisFormat %d %b
-    title Evolución de la arquitectura
+    title Evolución de la arquitectura vs. calendario del curso
 
     section Fundación
     E0 Infraestructura           :done, e0, 2026-09-09, 2026-09-14
     section Datos
     E1 Los datos existen         :e1, 2026-09-15, 2026-10-05
+    H-26 versionado (adelantada) :h26, 2026-09-15, 2026-10-19
     section Motor
     E2 El motor ve               :e2, 2026-10-06, 2026-10-26
     section Visible
@@ -260,11 +267,20 @@ gantt
     section Cierre
     E5 Endurecimiento            :e5, 2026-12-01, 2026-12-07
 
-    section Hitos
-    Avance 1 IEEE                :milestone, 2026-10-26, 0d
-    Avance 2 pantallas           :milestone, 2026-11-16, 0d
-    Entrega final y defensa      :milestone, 2026-12-07, 0d
+    section Entregas del curso
+    Práctica 1 + 2                :milestone, 2026-09-28, 0d
+    Simulación I (individual)     :milestone, 2026-10-05, 0d
+    Práctica 3                    :milestone, 2026-10-12, 0d
+    Práctica 4 (sellos versiones) :milestone, 2026-10-19, 0d
+    Avance 1 IEEE                 :milestone, 2026-10-26, 0d
+    Simulación II (individual)    :milestone, 2026-11-09, 0d
+    Avance 2 pantallas            :milestone, 2026-11-16, 0d
+    Simulación III (individual)   :milestone, 2026-11-30, 0d
+    Entrega final y defensa       :milestone, 2026-12-07, 0d
 ```
+
+**Lectura de esta tabla, no del programa impreso — reparto detallado con
+paquetes por semana en `sc609-reparto-semanal` del cerebro.**
 
 ## 8. Glosario
 

@@ -27,6 +27,13 @@ tipos y ejemplos, **para** que todos escribamos documentos con la misma forma.
 
 - **Criterios:** las 11 colecciones documentadas con propósito, campos, tipos, y un documento de ejemplo real; cada relación declarada como *embebida* o *referenciada* con su justificación.
 - **Talla:** M · **Etapa:** E1 · **Depende de:** —
+- **Es la Práctica 1 (vence 28 sep), pero con alcance recortado**: la práctica no
+  pide los 100.000 documentos de H-04/H-05, pide el molde de `HospitalDB.js` —
+  un script que hace `dropDatabase()`, crea las 11 colecciones con **un puñado de
+  documentos de ejemplo a mano** (no generados), sus índices con nombre, y
+  consultas de comprobación al final. Ese script entregable es H-01 + H-02 + un
+  recorte mínimo de H-06; el generador Faker real (H-03/H-04/H-05) sigue después,
+  a escala de proyecto, sin fecha de entrega propia.
 
 ### H-02 · Activar validadores `$jsonSchema`
 **Como** ingeniero de datos, **quiero** que la base rechace documentos malformados,
@@ -221,7 +228,12 @@ sistema sea defendible.
 lo viejo, **para** demostrar una migración real.
 
 - **Criterios:** los documentos llevan versión de esquema; existe un script que migra de v1 a v2 y es reejecutable; el sistema lee ambas versiones durante la transición.
-- **Talla:** M · **Etapa:** E5 · **Depende de:** H-02
+- **Talla:** M · **Etapa:** E1 (adelantada) · **Depende de:** H-02
+- **⚠️ Reubicada el 2026-09-20**: por Épica pertenece a "Seguridad y operación" (E5,
+  diciembre), pero **la Práctica 4 del curso ("sellos de versiones") vence el 19 de
+  octubre** y es exactamente este tema. Se adelanta a Etapa E1 para que exista a
+  tiempo; en diciembre solo se revisa que la migración siga funcionando sobre el
+  esquema final.
 
 ### H-27 · Archivado del histórico
 **Como** operador, **quiero** purgar lo viejo y limpio, **para** que la colección
@@ -239,6 +251,7 @@ flowchart LR
     subgraph E1 [Etapa 1 · Datos]
         H01[H-01] --> H02[H-02] --> H03[H-03] --> H04[H-04] --> H05[H-05]
         H04 --> H06[H-06]
+        H02 --> H26[H-26 adelantada]
     end
     subgraph E2 [Etapa 2 · Motor]
         H07[H-07] --> H08[H-08] --> H09[H-09] --> H10[H-10]
@@ -258,7 +271,6 @@ flowchart LR
     end
     subgraph E5 [Etapa 5 · Endurecer]
         H25[H-25]
-        H26[H-26]
         H27[H-27]
     end
     E1 --> E2 --> E3 --> E4 --> E5
@@ -268,10 +280,21 @@ flowchart LR
 
 | Paquete | Historias | Foco |
 |---|---|---|
-| **P1 · Datos** | H-01 a H-06, H-26 | Esquema, validadores, generador, índices |
+| **P1 · Datos** | H-01, H-02, H-03 a H-06, **H-26 (adelantada)** | Esquema, validadores, generador, índices, versionado |
 | **P2 · Motor** | H-07 a H-11, H-21 | Reglas, puntaje, Change Streams, correo |
 | **P3 · API** | H-12 a H-16, H-22 a H-24 | Endpoints, agregaciones, vistas, grafos |
 | **P4 · Portal** | H-17 a H-20, H-25 | Pantallas, tiempo real, autenticación |
 
 Cuatro paquetes, cuatro personas. Las dependencias cruzadas están explícitas en
 cada historia: P4 no puede terminar H-17 antes de que P2 cierre H-09.
+
+**Cruce con las fechas del curso (revisado 2026-09-20)** — ver el reparto
+semana a semana completo en el cerebro (`sc609-reparto-semanal`) y en el
+mensaje de la sesión del 20 sep. Dos hallazgos que ya están corregidos arriba:
+
+1. **H-26 estaba en Etapa E5 (diciembre) pero la Práctica 4 del curso
+   ("sellos de versiones") vence el 19 de octubre.** Se adelantó a Etapa E1.
+2. **Práctica 1 (corregida a 28 sep) y Práctica 2 caen el mismo lunes.** P1 es
+   H-01+H-02 con alcance recortado (estilo `HospitalDB.js`, no el generador
+   completo); P2 ya está resuelta por la infraestructura de E0 (el replica set),
+   solo falta documentarla/demostrarla — no es carga nueva de código.

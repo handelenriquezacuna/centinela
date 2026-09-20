@@ -449,7 +449,7 @@ const STAGES = [
   {code:"E1", name:"Los datos existen", when:"15 sep – 5 oct 2026",
    desc:"Clientes con hábitos propios, transacciones que respetan esos hábitos y fraude inyectado como minoría por debajo del 2 %. Los índices que el panel va a necesitar quedan puestos y verificados desde ahora.",
    hist:["H-01","H-02","H-03","H-04","H-05","H-06","H-12"],
-   demo:"Cien mil transacciones consultadas con <strong>IXSCAN</strong> en vez de COLLSCAN. Alimenta directamente la Práctica 1 del 21 de septiembre."},
+   demo:"Cien mil transacciones consultadas con <strong>IXSCAN</strong> en vez de COLLSCAN. El recorte H-01+H-02 es la Práctica 1 (28 sep); H-26 (versionado) es la Práctica 4 (19 oct)."},
   {code:"E2", name:"El motor ve", when:"6 – 26 oct 2026",
    desc:"Aquí el proyecto deja de ser un CRUD. El Change Stream reacciona a cada inserción, evalúa contra reglas que viven en la base de datos y crea alertas que explican por qué nacieron. Todavía sin una sola pantalla.",
    hist:["H-07","H-08","H-09","H-10","H-21"],
@@ -463,8 +463,8 @@ const STAGES = [
    hist:["H-11","H-16","H-20","H-22","H-23","H-24"],
    demo:"Seguir el dinero por cuatro cuentas en la pantalla. Es donde el sistema deja de reportar hechos sueltos y empieza a explicar un patrón."},
   {code:"E5", name:"Endurecimiento", when:"1 – 7 dic 2026",
-   desc:"Roles diferenciados, versionado del esquema con una migración real de v1 a v2, y archivado del histórico que nunca toca lo ligado a una alerta abierta. Aquí el sistema pasa de demostrable a defendible.",
-   hist:["H-25","H-26","H-27"],
+   desc:"Roles diferenciados y archivado del histórico que nunca toca lo ligado a una alerta abierta. El versionado de esquema (H-26) se adelantó a la Etapa E1 porque la Práctica 4 del curso lo exige el 19 de octubre. Aquí el sistema pasa de demostrable a defendible.",
+   hist:["H-25","H-27"],
    demo:"Un usuario agente que no puede editar reglas, y documentos de dos versiones conviviendo mientras corre la migración."}
 ];
 
