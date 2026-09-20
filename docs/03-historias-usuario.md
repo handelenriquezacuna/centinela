@@ -298,3 +298,25 @@ mensaje de la sesión del 20 sep. Dos hallazgos que ya están corregidos arriba:
    H-01+H-02 con alcance recortado (estilo `HospitalDB.js`, no el generador
    completo); P2 ya está resuelta por la infraestructura de E0 (el replica set),
    solo falta documentarla/demostrarla — no es carga nueva de código.
+
+## Cómo se divide en las 3 grandes entregas (no es el mismo reparto en las tres)
+
+**Etapa 1 (hasta Avance 1, 26 oct) — paralelo real.** Los primeros 8 días (hasta
+Práctica 1+2, 28 sep) son de los 4 juntos en H-01/H-02. Después se separan:
+A sigue con H-03–H-06+H-26, B adelanta H-07, C hace H-12 (Práctica 3), y **D dejar
+de programar y se vuelve el integrador del Avance 1** (IEEE de 12 apartados,
+redacción a mano) — repartir la redacción "un párrafo cada uno" sale descosido.
+
+**Etapa 2 (hasta Avance 2, 16 nov) — es una posta, no paralelo.** Nada del panel
+puede existir sin el motor. Semana 1: B ataca H-07→H-08→H-09 (el cuello de
+botella) y **A se presta para acelerarlo** en vez de trabajar solo en algo que
+no bloquea a nadie; mientras tanto C construye H-13/H-14 contra una alerta falsa
+y D arma las pantallas con datos de mentira, sin esperar. Semana 2: en cuanto
+H-09 existe, C y D conectan lo real (es un *swap*, no un arranque de cero).
+Semana 3: los 4 en integración y ensayo de la demo.
+
+**Etapa 3 (hasta Entrega final, 7 dic) — paralelo otra vez.** A: H-27 + IEEE
+final. B: H-11 + H-23 (`$graphLookup`, el momento más vistoso de la demo).
+C: H-22, H-24, H-20. D: H-25. **Última semana (1-7 dic): cero funcionalidad
+nueva** — congelar, subir a GitHub, ensayar la defensa, verificar cero errores
+en tiempo de ejecución (vale tanto como disparadores y procedimientos juntos).
