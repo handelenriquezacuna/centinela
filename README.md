@@ -24,6 +24,7 @@ para actuar se mide en minutos.
 | [03 · Historias de usuario](docs/03-historias-usuario.md) | El backlog: 24 historias listas para tomar |
 | [04 · Arquitectura](docs/04-arquitectura.md) | Cómo se conecta todo y cómo evoluciona por etapas |
 | [05 · Infraestructura](docs/05-infraestructura.md) | Replica set, arranque, por qué no un mongod suelto |
+| [06 · Checklist del Avance 1](docs/06-avance1-checklist.md) | Qué ya está escrito, qué falta, qué está bloqueado, orden de ataque |
 
 ## Arquitectura visual
 
