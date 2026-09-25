@@ -13,66 +13,86 @@ se califica. Se redacta a mano: usar IA aquí es causal de nulidad.
       carpeta de plantillas). No usar una plantilla genérica de internet.
 - [ ] Confirmar la nomenclatura real del archivo — el PDF dice
       `GX_DSC101_Avance1_LN`, pero `DSC101` no es el código de este curso
-      (`SC609`) y `LN` no está explicado. Preguntar en la clase del 21 sep.
+      (`SC609`) y `LN` no está explicado. Preguntar en clase.
 - [ ] Confirmar el número de grupo (`GX`) asignado por el profesor.
 - [ ] Recordar: **cada uno de los 4 sube el mismo documento** con su nombre en
       la nomenclatura — no lo sube solo una persona por el grupo.
+- [ ] Citas y referencias: por defecto usar la **guía APA7 de Fidélitas**
+      (`conceptos/apa7-fidelitas.md` del cerebro) — es la política general de
+      la universidad y ya está corregida y verificada contra el manual oficial.
+      Si la plantilla IEEE del aula pide un estilo distinto, ese gana.
 
-## 1 · Los 4 apartados que ya están escritos (solo hay que adaptar el tono)
+## 1 · Reparto — 12 apartados ÷ 4 personas, nadie depende de nadie
 
-Vienen de `01-vision-y-alcance.md` y `04-arquitectura.md`. Pasarlos a la
-plantilla IEEE, en tono formal de tercera persona, sin las tablas markdown
-(convertir a tablas de Word o prosa).
+Regla de división: cada persona recibe apartados cuya fuente **ya existe hoy en
+el repo** (`01-vision-y-alcance.md`, `04-arquitectura.md`, la plantilla de grupo
+llena) — nadie necesita el borrador de otro compañero para arrancar el suyo.
+El único apartado con una dependencia real (10) depende de un **hito técnico
+compartido** (Práctica 1, en el que ya trabajan los 4 juntos), no de una persona
+específica — se explica abajo.
 
-- [ ] **2. Definición del problema** — de la sección "1. El problema" (vishing,
-      por qué el banco no puede blindarse con identidad).
-- [ ] **8. Solución planteada** — de "2. Qué construimos" (Centinela en una frase).
+### Persona A — dueña de los datos (sigue con H-03–H-06 después de Práctica 1)
+
+- [ ] **10. Descripción de datos (BD, colecciones, documentos)** — el único con
+      dependencia real: el contenido final sale de H-01 (Práctica 1, 28 sep).
+      **No hay que esperar de brazos cruzados**: A ya es parte del equipo que
+      construye H-01, así que puede escribir la estructura del apartado *ahora*
+      usando `antifraude-modelo-datos.md` (las 11 colecciones ya están nombradas
+      y descritas a alto nivel) y solo rellenar los campos/tipos/ejemplo exacto
+      una vez que el script de Práctica 1 esté listo — no depende de que otro
+      compañero le entregue nada.
+- [ ] **7. Alternativa seleccionada** — un párrafo corto: "A. Desarrollo de
+      software con MongoDB", con 2-3 líneas de por qué no B.
 - [ ] **11. Tecnologías que se utilizarán** — de la plantilla de grupo ya llena
-      (FastAPI, Motor, React, Tailwind, Docker, Faker, Mailtrap, GitHub).
+      (FastAPI, Motor, React, Tailwind, Docker, Faker, Mailtrap, GitHub). Es casi copiar.
+
+### Persona B — investigación y objetivos
+
+- [ ] **3. Antecedentes** — el apartado más pesado, pero 100% autocontenido:
+      fuentes externas (BCCR, SUGEF, noticias de fraude SINPE/vishing en Costa
+      Rica), no depende de nada del equipo. Arrancar temprano por ser el más largo.
+- [ ] **5. Objetivo General** — una sola oración, a partir de "4. Objetivo del
+      MVP" en `01-vision-y-alcance.md` (el párrafo que empieza "Que un agente vea...").
+- [ ] **6. Objetivos específicos** — reformular las 5 condiciones del MVP
+      (misma sección) como 4-6 objetivos con verbo en infinitivo (Detectar,
+      Priorizar, Registrar, Medir...).
+
+### Persona C — problema y partes interesadas
+
+- [ ] **2. Definición del problema** — de "1. El problema" en
+      `01-vision-y-alcance.md` (vishing, por qué el banco no puede blindarse con identidad).
+- [ ] **9. Partes interesadas del proyecto** — de la tabla de Usuarios (sección
+      3 del mismo doc), reencuadrada como stakeholders: agente, supervisor,
+      administrador, cliente bancario (sujeto de los datos, no usuario), el banco.
+- [ ] **4. Justificación** — por qué vale la pena resolver esto (impacto/costo
+      del fraude), distinto del "por qué NoSQL" técnico (sección 6 del mismo doc)
+      — ese es insumo, no el apartado en sí.
+
+### Persona D — solución, arquitectura e introducción
+
+- [ ] **8. Solución planteada** — de "2. Qué construimos" en `01-vision-y-alcance.md`.
 - [ ] **12. Arquitectura preliminar** — de `04-arquitectura.md`. **Exportar los
       diagramas Mermaid a imagen** (captura de pantalla renderizada en GitHub, o
       recrearlos en draw.io/Excalidraw) — Word no renderiza Mermaid. Usar el
       diagrama de Contenedores (sección 3) y el ER de decisiones de modelado
       (sección 5) como mínimo — ya cubren el rubro 2 (documentación con diagramas).
+- [ ] **1. Introducción** — se puede escribir un v1 completo **hoy mismo**, solo
+      con `01-vision-y-alcance.md` (ya cubre problema, solución, alcance y por
+      qué NoSQL). No depende de que A/B/C terminen; al final del proceso alguien
+      (no necesariamente D) le da una pasada de coherencia junto con el resto.
 
-## 2 · Existe una base, hay que reescribirlo como apartado formal
+**Balance de carga**: A y D quedan con 1 apartado mediano/pesado + 2 livianos;
+B queda con el más pesado (Antecedentes) pero sus otros 2 son triviales; C
+queda con 3 medianos parejos. Ningún apartado de una persona necesita el
+producto terminado de otra — todos parten de lo que ya está publicado en el repo.
 
-- [ ] **5. Objetivo General** — una sola oración, a partir de "4. Objetivo del
-      MVP" (el párrafo que empieza "Que un agente vea...").
-- [ ] **6. Objetivos específicos** — reformular las 5 condiciones del MVP
-      (sección 4) como 4-6 objetivos con verbo en infinitivo (Detectar, Priorizar,
-      Registrar, Medir...).
-- [ ] **9. Partes interesadas del proyecto** — de la tabla de Usuarios (sección
-      3), reencuadrada como stakeholders: agente, supervisor, administrador,
-      cliente bancario (sujeto de los datos, no usuario), y el banco como
-      organización. Agregar al equipo y al curso si la plantilla lo pide.
-- [ ] **4. Justificación** — por qué vale la pena resolver esto (argumento de
-      impacto/costo del fraude), distinto del "por qué NoSQL" técnico de la
-      sección 6 — ese es insumo, no el apartado en sí.
+## 2 · Bloqueado hasta que exista el trabajo técnico
 
-## 3 · No existe, escritura nueva
+- [ ] **10 (Persona A)** — solo el detalle fino de campos/tipos/ejemplo espera a
+      que H-01 (Práctica 1, 28 sep) esté terminado. La estructura y el resto de
+      apartados se pueden escribir completos desde ya.
 
-- [ ] **1. Introducción** — contexto general, qué es Centinela en dos párrafos,
-      cómo se organiza el resto del documento. Se escribe **al final**, cuando
-      ya se sabe qué hay en los demás apartados.
-- [ ] **7. Alternativa seleccionada** — un párrafo corto: "A. Desarrollo de
-      software con MongoDB", con 2-3 líneas de por qué no B (el proyecto es
-      transaccional/operativo, no analítico).
-- [ ] **3. Antecedentes** — el más pesado de investigar. Necesita fuentes reales
-      (no inventadas): estadísticas de fraude SINPE/vishing en Costa Rica (BCCR,
-      SUGEF, noticias de bancos locales), y opcionalmente proyectos académicos
-      o herramientas antifraude similares. **Definir el estilo de cita que pide
-      la plantilla del aula antes de escribir esto** (IEEE numerado vs. otro).
-
-## 4 · Bloqueado hasta que exista el trabajo técnico
-
-- [ ] **10. Descripción de datos (BD, colecciones, documentos)** — **no se puede
-      escribir bien hasta que H-01 (Práctica 1, 28 sep) esté terminado.** Ahí
-      sale el esquema formal de las 11 colecciones con campos, tipos y ejemplo
-      real — eso es literalmente el contenido de este apartado. Escribirlo antes
-      solo produce algo genérico que hay que rehacer.
-
-## 5 · Antes de subir
+## 3 · Antes de subir
 
 - [ ] Los 12 títulos son **exactamente** los del programa, sin renombrar.
 - [ ] Ningún apartado vacío u omitido.
