@@ -25,6 +25,7 @@ para actuar se mide en minutos.
 | [04 · Arquitectura](docs/04-arquitectura.md) | Cómo se conecta todo y cómo evoluciona por etapas |
 | [05 · Infraestructura](docs/05-infraestructura.md) | Replica set, arranque, por qué no un mongod suelto |
 | [06 · Checklist del Avance 1](docs/06-avance1-checklist.md) | Qué ya está escrito, qué falta, qué está bloqueado, orden de ataque |
+| [07 · Reparto de código — Práctica 1](docs/07-practica1-codigo.md) | Los 11 colecciones divididas en 4 archivos sin dependencias, contrato de IDs |
 
 ## Arquitectura visual
 
