@@ -60,7 +60,7 @@ Concretamente, el MVP está listo cuando estas cinco cosas son ciertas a la vez:
 - Ingesta de transacciones sintéticas a alto volumen.
 - Perfil de comportamiento por cliente, recalculado periódicamente.
 - Motor de reglas configurable en base de datos (no en código).
-- Alertas con puntaje, motivo y ciclo de vida (`nueva → en_revisión → resuelta`).
+- Alertas con puntaje, motivo y ciclo de vida (`nueva → en_revision → confirmada / descartada / escalada`).
 - Panel en tiempo real vía WebSocket.
 - Búsqueda forense sobre el histórico.
 - Investigación de **redes de cuentas mula** siguiendo la cadena del dinero.

@@ -1,0 +1,46 @@
+# Configuracion tecnica de Centinela.
+#
+# Tres reglas sobre este archivo, y las tres se verifican con una prueba:
+#
+# 1. NO va ni un numero de negocio. Ni umbrales, ni pesos de reglas, ni cortes de
+#    severidad: eso vive en Mongo (coleccion politica_deteccion) para poder
+#    cambiarlo sin desplegar. Aca solo va lo tecnico: puertos, tiempos de espera,
+#    topes de paginacion HTTP.
+# 2. NO van secretos. Los secretos entran por variable de entorno; el molde esta
+#    en infra/.env.ejemplo.
+# 3. Todo lo de aqui se puede sobrescribir. Precedencia, de mayor a menor:
+#       entorno  >  config/centinela.local.yml  >  config/centinela.yml
+#    El archivo local no se versiona (esta en .gitignore) y solo necesita las
+#    claves que quiere cambiar: el resto se hereda de este archivo.
+#
+# En entorno, el prefijo es CENTINELA_ y el separador de nivel es doble guion bajo:
+#       CENTINELA_APP__PAGINA_MAXIMA=25
+#       CENTINELA_MONGO__BASE=antifraude_pruebas
+
+app:
+  nombre: Centinela
+  entorno: dev
+  # Topes de paginacion de la API. Son guardas tecnicas, no reglas de negocio:
+  # protegen al servidor de una peticion que pida un millon de documentos.
+  pagina_por_omision: 50
+  pagina_maxima: 200
+
+servidor:
+  host: 127.0.0.1
+  puerto: 8000
+  recarga: true
+
+mongo:
+  # Una sola URI para las dos modalidades de arranque, y esto no es casualidad:
+  # scripts/init-replicaset.js declara los miembros como localhost:27018/19/20, y
+  # mongo1 publica esos tres puertos. Entonces la misma cadena resuelve
+  #   - desde el host, por los puertos publicados
+  #   - desde un contenedor con network_mode: service:mongo1, que comparte el
+  #     espacio de red y ve los tres nodos en su propio localhost
+  # Cambiar esto por nombres de servicio de Compose rompe la modalidad de host.
+  uri: "mongodb://localhost:27018,localhost:27019,localhost:27020/?replicaSet=rsfraude"
+  base: antifraude
+  tiempo_espera_seleccion_ms: 5000
+
+registro:
+  nivel: INFO
