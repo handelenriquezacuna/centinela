@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Centinela - Panel de alertas</title>
+<link rel="stylesheet" href="../../estaticos/centinela.css">
+<!--
+  MAQUETA ESTATICA - H-17 (primera mitad), sin Python/Jinja/SSE todavia.
+  Cuando exista el andamio de plataforma esto se parte en:
+    - una plantilla base con el encabezado/nav (herencia Jinja)
+    - un parcial de "fila de alerta" que se reusa para el render inicial
+      y para cada evento SSE (mismo HTML, dos orígenes distintos)
+
+  DATOS: el unico caso 100% documentado (docs/02-casos-de-uso.md UC-02/UC-03
+  y scripts/practica1/CONTRATO-IDS.md) es la alerta ALR-001 de Maria Rodriguez
+  Vargas. Las demas filas de esta cola estan marcadas "(ejemplo de maqueta)"
+  y solo existen para mostrar como se ve la tabla con varias severidades y
+  estados a la vez: NO son datos del contrato, no se deben copiar a fixtures
+  de prueba ni a la API real.
+
+  CAMPOS DE ALERTA usados (segun el encargo, corregido contra el validador
+  de H-01): _id, transaccion_id, puntaje, severidad, estado,
+  reglas_disparadas, agente_id, fecha_creacion (NO "creada_en": ese nombre
+  no existe, fue un error del encargo original). RESUELTO: el
+  hallazgo original de este archivo (la alerta no traia cliente/cuenta/
+  monto) ya se cerro con el arquitecto. El documento de alerta ahora copia
+  al crearse cuenta_origen, cuenta_destino, monto_crc, moneda y
+  cliente_nombre, exigidos por el validador; el panel lee esas columnas
+  directo del propio documento de alerta, sin $lookup ni segunda consulta.
+
+  OJO AL CONECTAR (trampa real, no de esta maqueta): en "alertas",
+  cuenta_origen guarda el NUMERO SINPE (ej. "8712-4455"). En
+  "transacciones" el mismo nombre de campo guarda el _id de la cuenta
+  (ej. "CTA-001"). Mismo nombre, semantica distinta a proposito. Esta
+  pantalla (panel, sobre alertas) ya muestra el numero SINPE, que es lo
+  correcto aqui; la de busqueda (sobre transacciones) es la que hay que
+  resolver distinto cuando se conecte.
+
+  SEVERIDAD: 3 niveles, no 4. UC-02 dice que bajo el umbral no se crea
+  alerta, asi que "baja" no existe por diseno. El validador de
+  alertas.severidad es enum ["MEDIA","ALTA","CRITICA"] en mayusculas; el
+  portal las presenta con mayuscula inicial. Cortes reales, ya sembrados
+  en politica_deteccion: MEDIA 40-54, ALTA 55-69, CRITICA 70-100
+  (umbral_alerta 40, puntaje_maximo 100).
+
+  FECHAS: en Mongo "fecha_creacion" es ISODate UTC. Aqui la hora ya esta
+  convertida a hora de Costa Rica (UTC-6) a mano porque es una maqueta;
+  en el portal real esa conversion la hace el codigo de presentacion,
+  nunca la plantilla a ojo.
+
+  TIEMPO REAL (para cuando se conecte, no implementado aqui):
+  el servidor emite ServerSentEvent(raw_data=<html de la fila>,
+  event="alerta", id=<token>) y esta tabla se suscribe con hx-ext="sse" +
+  sse-swap="alerta" (htmx-ext-sse vendorizado en H-00B). El evento
+  "resincronizar" NO trae una fila: le dice al panel que vuelva a pedir
+  toda la cola a GET /api/v1/alertas (H-17 reconstruye estado, no reproduce
+  historial evento por evento).
+-->
+</head>
+<body>
+<header class="encabezado">
+  <a class="marca" href="panel.html">Centinela <span class="marca-sufijo">portal de fraude</span></a>
+  <nav class="nav-portal" aria-label="Navegacion principal">
+    <a href="panel.html" aria-current="page">Panel</a>
+    <a href="busqueda.html">Buscar</a>
+    <a href="tablero.html">Tablero</a>
+  </nav>
+  <div class="sesion-agente">
+    <span aria-hidden="true">&#9679;</span>
+    <span><strong>Jose Solis</strong> · AGT-001 · agente de fraude</span>
+  </div>
+</header>
+
+<main class="contenedor">
+  <div class="titulo-pantalla">
+    <div>
+      <h1>Panel de alertas</h1>
+      <p class="subtitulo">Cola ordenada por severidad (critica primero). 6 alertas visibles de 6 en este turno.</p>
+    </div>
+    <div class="grupo-botones">
+      <!-- En la version conectada este boton dispara el mismo GET que el
+           evento "resincronizar": vuelve a pedir la cola completa. -->
+      <button type="button" class="boton boton-secundario">Actualizar cola</button>
+    </div>
+  </div>
+
+  <section class="tarjeta" aria-label="Filtros de la cola">
+    <h2 class="seccion-titulo">Filtros</h2>
+    <form class="barra-filtros" method="get" action="panel.html">
+      <div class="campo">
+        <label for="f-estado">Estado</label>
+        <select id="f-estado" name="estado">
+          <option value="">Todos</option>
+          <option value="nueva">Nueva</option>
+          <option value="en_revision">En revisión</option>
+          <option value="confirmada">Confirmada</option>
+          <option value="descartada">Descartada</option>
+          <option value="escalada">Escalada</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="f-severidad">Severidad</label>
+        <!-- Los "value" van en minuscula (minuscula-friendly para query
+             string / URL), pero alertas.severidad en Mongo es el enum
+             ["MEDIA","ALTA","CRITICA"] en MAYUSCULA. Al conectar este
+             filtro hay que normalizar (severidad.upper()) antes de armar
+             el query contra la API, no asumir que coinciden tal cual. -->
+        <select id="f-severidad" name="severidad">
+          <option value="">Todas</option>
+          <option value="critica">Crítica</option>
+          <option value="alta">Alta</option>
+          <option value="media">Media</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="f-agente">Agente</label>
+        <select id="f-agente" name="agente_id">
+          <option value="">Todos</option>
+          <option value="AGT-001">José Solís</option>
+          <option value="AGT-002">Laura Méndez</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="f-desde">Desde</label>
+        <input type="date" id="f-desde" name="desde" value="2026-10-14">
+      </div>
+      <div class="campo campo-acciones">
+        <button type="submit" class="boton boton-primario">Filtrar</button>
+        <a class="boton boton-secundario" href="panel.html">Limpiar</a>
+      </div>
+    </form>
+  </section>
+
+  <section class="tarjeta" aria-label="Cola de alertas">
+    <table class="tabla-responsiva">
+      <caption>
+        "Cliente y cuenta" y "Monto" son campos copiados dentro del propio
+        documento de alerta (cuenta_origen, cuenta_destino, monto_crc,
+        cliente_nombre), no un join contra transacciones (ver nota arriba).
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">Severidad</th>
+          <th scope="col">Alerta</th>
+          <th scope="col">Cliente y cuenta</th>
+          <th scope="col">Monto</th>
+          <th scope="col">Puntaje</th>
+          <th scope="col">Reglas</th>
+          <th scope="col">Estado</th>
+          <th scope="col">Agente</th>
+          <th scope="col">Creada (hora CR)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Fila real: el caso documentado completo (UC-02/UC-03). -->
+        <tr class="fila-clicable" onclick="window.location.href='detalle.html'">
+          <td data-etiqueta="Severidad">
+            <span class="insignia es-critica"><span class="icono-severidad" aria-hidden="true"></span>Crítica</span>
+          </td>
+          <td data-etiqueta="Alerta">
+            <a class="enlace-fila" href="detalle.html">
+              <span class="id-corto">ALR-001</span><br>
+              <span class="id-corto">TXN-001</span>
+            </a>
+          </td>
+          <td data-etiqueta="Cliente y cuenta">María Rodríguez Vargas<br><span class="id-corto">8712-4455</span> <span aria-hidden="true">→</span> <span class="id-corto">6033-9001</span></td>
+          <td data-etiqueta="Monto" class="monto">&#8353;750.000</td>
+          <td data-etiqueta="Puntaje"><strong>75</strong></td>
+          <td data-etiqueta="Reglas">
+            <span class="chip">R-01</span><span class="chip">R-03</span><span class="chip">R-05</span>
+          </td>
+          <td data-etiqueta="Estado"><span class="insignia insignia-estado es-confirmada">Confirmada</span></td>
+          <td data-etiqueta="Agente">José Solís</td>
+          <td data-etiqueta="Creada (hora CR)" class="hora">14/10/2026 22:47</td>
+        </tr>
+
+        <!-- Desde aqui, filas de ejemplo de maqueta (no son del contrato):
+             solo para mostrar la cola con variedad de severidad y estado. -->
+        <tr class="fila-clicable" onclick="window.location.href='detalle.html'">
+          <td data-etiqueta="Severidad">
+            <span class="insignia es-alta"><span class="icono-severidad" aria-hidden="true"></span>Alta</span>
+          </td>
+          <td data-etiqueta="Alerta">
+            <a class="enlace-fila" href="detalle.html">
+              <span class="id-corto">ALR-013</span><br>
+              <span class="id-corto">TXN-101</span>
+            </a>
+          </td>
+          <td data-etiqueta="Cliente y cuenta">Cliente de ejemplo<br><span class="id-corto">5528-6614</span> <span aria-hidden="true">→</span> <span class="id-corto">3302-1187</span></td>
+          <td data-etiqueta="Monto" class="monto">&#8353;390.000</td>
+          <td data-etiqueta="Puntaje"><strong>61</strong></td>
+          <td data-etiqueta="Reglas">
+            <span class="chip">R-01</span><span class="chip">R-05</span>
+          </td>
+          <td data-etiqueta="Estado"><span class="insignia insignia-estado es-en_revision">En revisión</span></td>
+          <td data-etiqueta="Agente">Laura Méndez</td>
+          <td data-etiqueta="Creada (hora CR)" class="hora">14/10/2026 21:40</td>
+        </tr>
+
+        <tr class="fila-clicable" onclick="window.location.href='detalle.html'">
+          <td data-etiqueta="Severidad">
+            <span class="insignia es-alta"><span class="icono-severidad" aria-hidden="true"></span>Alta</span>
+          </td>
+          <td data-etiqueta="Alerta">
+            <a class="enlace-fila" href="detalle.html">
+              <span class="id-corto">ALR-014</span><br>
+              <span class="id-corto">TXN-118</span>
+            </a>
+          </td>
+          <td data-etiqueta="Cliente y cuenta">Cliente de ejemplo<br><span class="id-corto">4471-2290</span> <span aria-hidden="true">→</span> <span class="id-corto">7784-1120</span></td>
+          <td data-etiqueta="Monto" class="monto">&#8353;410.000</td>
+          <td data-etiqueta="Puntaje"><strong>58</strong></td>
+          <td data-etiqueta="Reglas">
+            <span class="chip">R-01</span><span class="chip">R-03</span>
+          </td>
+          <td data-etiqueta="Estado"><span class="insignia insignia-estado es-nueva">Nueva</span></td>
+          <td data-etiqueta="Agente"><em>Sin asignar</em></td>
+          <td data-etiqueta="Creada (hora CR)" class="hora">14/10/2026 23:02</td>
+        </tr>
+
+        <tr class="fila-clicable" onclick="window.location.href='detalle.html'">
+          <td data-etiqueta="Severidad">
+            <span class="insignia es-media"><span class="icono-severidad" aria-hidden="true"></span>Media</span>
+          </td>
+          <td data-etiqueta="Alerta">
+            <a class="enlace-fila" href="detalle.html">
+              <span class="id-corto">ALR-010</span><br>
+              <span class="id-corto">TXN-088</span>
+            </a>
+          </td>
+          <td data-etiqueta="Cliente y cuenta">Cliente de ejemplo<br><span class="id-corto">6644-9910</span> <span aria-hidden="true">→</span> <span class="id-corto">2201-4467</span></td>
+          <td data-etiqueta="Monto" class="monto">&#8353;210.000</td>
+          <td data-etiqueta="Puntaje"><strong>47</strong></td>
+          <td data-etiqueta="Reglas">
+            <span class="chip">R-05</span>
+          </td>
+          <td data-etiqueta="Estado"><span class="insignia insignia-estado es-nueva">Nueva</span></td>
+          <td data-etiqueta="Agente"><em>Sin asignar</em></td>
+          <td data-etiqueta="Creada (hora CR)" class="hora">14/10/2026 20:58</td>
+        </tr>
+
+        <tr class="fila-clicable" onclick="window.location.href='detalle.html'">
+          <td data-etiqueta="Severidad">
+            <span class="insignia es-media"><span class="icono-severidad" aria-hidden="true"></span>Media</span>
+          </td>
+          <td data-etiqueta="Alerta">
+            <a class="enlace-fila" href="detalle.html">
+              <span class="id-corto">ALR-009</span><br>
+              <span class="id-corto">TXN-075</span>
+            </a>
+          </td>
+          <td data-etiqueta="Cliente y cuenta">Cliente de ejemplo<br><span class="id-corto">3011-7742</span> <span aria-hidden="true">→</span> <span class="id-corto">9081-3320</span></td>
+          <td data-etiqueta="Monto" class="monto">&#8353;180.000</td>
+          <td data-etiqueta="Puntaje"><strong>42</strong></td>
+          <td data-etiqueta="Reglas">
+            <span class="chip">R-03</span>
+          </td>
+          <td data-etiqueta="Estado"><span class="insignia insignia-estado es-descartada">Descartada</span></td>
+          <td data-etiqueta="Agente">José Solís</td>
+          <td data-etiqueta="Creada (hora CR)" class="hora">14/10/2026 19:15</td>
+        </tr>
+
+        <!-- Puntaje 40 = el minimo posible (umbral_alerta): por debajo de
+             40 UC-02 dice que no se crea alerta, asi que no hay fila de
+             severidad "baja" posible en esta cola. -->
+        <tr class="fila-clicable" onclick="window.location.href='detalle.html'">
+          <td data-etiqueta="Severidad">
+            <span class="insignia es-media"><span class="icono-severidad" aria-hidden="true"></span>Media</span>
+          </td>
+          <td data-etiqueta="Alerta">
+            <a class="enlace-fila" href="detalle.html">
+              <span class="id-corto">ALR-007</span><br>
+              <span class="id-corto">TXN-052</span>
+            </a>
+          </td>
+          <td data-etiqueta="Cliente y cuenta">Cliente de ejemplo<br><span class="id-corto">1298-0043</span> <span aria-hidden="true">→</span> <span class="id-corto">7710-6650</span></td>
+          <td data-etiqueta="Monto" class="monto">&#8353;95.000</td>
+          <td data-etiqueta="Puntaje"><strong>40</strong></td>
+          <td data-etiqueta="Reglas">
+            <span class="chip">R-05</span>
+          </td>
+          <td data-etiqueta="Estado"><span class="insignia insignia-estado es-escalada">Escalada</span></td>
+          <td data-etiqueta="Agente">Laura Méndez</td>
+          <td data-etiqueta="Creada (hora CR)" class="hora">14/10/2026 18:30</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+</body>
+</html>

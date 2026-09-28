@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Centinela - Alerta ALR-001</title>
+<link rel="stylesheet" href="../../estaticos/centinela.css">
+<!--
+  MAQUETA ESTATICA - H-18, sin Python/Jinja/SSE/API todavia.
+
+  Esta es la UNICA pantalla de las 4 donde todos los datos (transaccion,
+  perfil, reglas y su aporte, historial) vienen 100% de lo ya documentado:
+  docs/02-casos-de-uso.md (UC-02 deteccion, UC-03 triage, UC-04 red de
+  mulas) y scripts/practica1/CONTRATO-IDS.md (ALR-001, TXN-001, CLI-001,
+  CTA-001, AGT-001, REG-001/002/003/004/005/006, RSK-001..004, CAS-001). No
+  hay filas de relleno aqui.
+
+  FECHAS: en "alertas" el campo es "fecha_creacion" (NO "creada_en", ese
+  nombre no existe en el validador); dentro de historial[] el subcampo de
+  fecha se llama "fecha". Ambos son ISODate UTC. Las horas que se ven aqui
+  (22:47, 22:53) YA estan convertidas a hora de Costa Rica (UTC-6) a mano
+  para la maqueta; el portal real hace esa conversion en la capa de
+  presentacion, nunca la plantilla a ojo. Ejemplo real de la resta: 22:47
+  hora CR del 14/10 == 2026-10-15T04:47:00Z en el documento de Mongo.
+
+  DINERO: "monto_crc" es entero en la base (750000). Aqui se muestra
+  formateado con separador de miles: 750.000, sin decimales (SINPE Movil
+  no maneja centimos).
+
+  RESUELTO: R-07 (destino en lista de riesgo) y R-09 (velocidad anomala)
+  aparecen en la tabla de UC-02 con peso 0 = no dispararon; ya tienen _id
+  de catalogo (REG-004 y REG-005) asignados por el arquitecto, se muestran
+  abajo. Tambien existe REG-006 (R-11), pero nace inactiva a proposito:
+  por eso no aparece evaluada en esta alerta.
+
+  SEVERIDAD: 3 niveles (MEDIA/ALTA/CRITICA), no 4. UC-02 ya deja claro que
+  bajo el umbral no se crea alerta, asi que "baja" no puede existir. El
+  validador de alertas.severidad es enum ["MEDIA","ALTA","CRITICA"] en
+  mayusculas (el portal las presenta con mayuscula inicial). Cortes reales
+  ya sembrados en politica_deteccion: MEDIA 40-54, ALTA 55-69,
+  CRITICA 70-100 (umbral_alerta 40, puntaje_maximo 100) — el 75 de esta
+  alerta cae en CRITICA con holgura.
+
+  El panel de "Resolver alerta" de aqui abajo ilustra el affordance de
+  H-14 (confirmar/descartar/escalar); en este caso concreto la alerta ya
+  se resolvio, por eso el historial ya trae la entrada "confirmada".
+-->
+</head>
+<body>
+<header class="encabezado">
+  <a class="marca" href="panel.html">Centinela <span class="marca-sufijo">portal de fraude</span></a>
+  <nav class="nav-portal" aria-label="Navegacion principal">
+    <a href="panel.html" aria-current="page">Panel</a>
+    <a href="busqueda.html">Buscar</a>
+    <a href="tablero.html">Tablero</a>
+  </nav>
+  <div class="sesion-agente">
+    <span aria-hidden="true">&#9679;</span>
+    <span><strong>Jose Solis</strong> · AGT-001 · agente de fraude</span>
+  </div>
+</header>
+
+<main class="contenedor">
+  <p class="migaja"><a href="panel.html">Panel</a> / Alerta ALR-001</p>
+
+  <div class="titulo-pantalla">
+    <div>
+      <h1>Alerta ALR-001</h1>
+      <p class="subtitulo">Transacción <span class="id-corto">TXN-001</span> · creada 14/10/2026 22:47 (hora CR)</p>
+    </div>
+  </div>
+
+  <section class="tarjeta" aria-label="Resumen de la alerta">
+    <div class="resumen-alerta">
+      <div>
+        <span class="insignia es-critica" style="font-size:0.95rem; padding:6px 12px;">
+          <span class="icono-severidad" aria-hidden="true"></span>Severidad crítica
+        </span>
+      </div>
+      <div class="puntaje">75<small>puntaje / 100</small></div>
+      <div>
+        <span class="insignia insignia-estado es-confirmada">Confirmada</span>
+      </div>
+      <div>
+        <dl class="lista-datos" style="grid-template-columns: none;">
+          <div><dt>Agente asignado</dt><dd>José Solís · AGT-001</dd></div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <section class="tarjeta" aria-label="Datos de la transacción">
+    <h2 class="seccion-titulo">Transacción</h2>
+    <dl class="lista-datos">
+      <div><dt>Id transacción</dt><dd class="id-corto">TXN-001</dd></div>
+      <div><dt>Cuenta origen</dt><dd class="id-corto">8712-4455 (CTA-001)</dd></div>
+      <div><dt>Cuenta destino</dt><dd class="id-corto destino-nuevo">6033-9001 (nunca antes usado)</dd></div>
+      <div><dt>Monto</dt><dd class="monto">&#8353;750.000 <span class="subtitulo">CRC</span></dd></div>
+      <div><dt>Canal</dt><dd>SINPE Móvil</dd></div>
+      <!-- fecha_creacion en Mongo: ISODate UTC 2026-10-15T04:47:00Z -->
+      <div><dt>Fecha y hora (hora CR)</dt><dd class="hora">14/10/2026 22:47</dd></div>
+    </dl>
+  </section>
+
+  <section class="tarjeta" aria-label="Perfil del cliente">
+    <h2 class="seccion-titulo">Perfil del cliente</h2>
+    <dl class="lista-datos">
+      <div><dt>Cliente</dt><dd>María Rodríguez Vargas (CLI-001)</dd></div>
+      <div><dt>Cédula</dt><dd>1-1111-1111</dd></div>
+      <div><dt>Cuenta SINPE</dt><dd class="id-corto">8712-4455</dd></div>
+      <div><dt>Transferencias (90 días)</dt><dd>47</dd></div>
+      <div><dt>Monto promedio</dt><dd class="monto">&#8353;45.200</dd></div>
+      <div><dt>Monto máximo</dt><dd class="monto">&#8353;180.000</dd></div>
+      <div><dt>Horario habitual</dt><dd>07:00 – 19:00, días hábiles</dd></div>
+      <div><dt>Destinos frecuentes</dt><dd>5 números, todos con 3+ transferencias previas (6033-9001 no está entre ellos)</dd></div>
+    </dl>
+  </section>
+
+  <section class="tarjeta" aria-label="Reglas que dispararon">
+    <h2 class="seccion-titulo">Reglas que dispararon (aporte al puntaje)</h2>
+
+    <div class="regla">
+      <span class="regla-codigo">R-01<br><small style="font-weight:400;color:var(--color-texto-tenue);">REG-001</small></span>
+      <span class="regla-descripcion">Monto sobre 10× el promedio del cliente<small>₡750.000 es 16,6× el promedio de ₡45.200</small></span>
+      <span class="barra-aporte"><span class="barra-aporte-relleno" style="width:100%"></span></span>
+      <span class="regla-peso">+35</span>
+    </div>
+    <div class="regla">
+      <span class="regla-codigo">R-03<br><small style="font-weight:400;color:var(--color-texto-tenue);">REG-002</small></span>
+      <span class="regla-descripcion">Destino que el cliente nunca ha usado<small>6033-9001 no está en los 5 destinos frecuentes</small></span>
+      <span class="barra-aporte"><span class="barra-aporte-relleno" style="width:71%"></span></span>
+      <span class="regla-peso">+25</span>
+    </div>
+    <div class="regla">
+      <span class="regla-codigo">R-05<br><small style="font-weight:400;color:var(--color-texto-tenue);">REG-003</small></span>
+      <span class="regla-descripcion">Transacción fuera del horario habitual<small>22:47 está fuera de 07:00–19:00</small></span>
+      <span class="barra-aporte"><span class="barra-aporte-relleno" style="width:43%"></span></span>
+      <span class="regla-peso">+15</span>
+    </div>
+    <div class="regla regla-no-disparo">
+      <span class="regla-codigo">R-07<br><small style="font-weight:400;">REG-004</small></span>
+      <span class="regla-descripcion">Destino en lista de riesgo<small>6033-9001 todavía no estaba en listas_riesgo en el momento de la transacción</small></span>
+      <span class="barra-aporte"><span class="barra-aporte-relleno" style="width:0%"></span></span>
+      <span class="regla-peso">+0</span>
+    </div>
+    <div class="regla regla-no-disparo">
+      <span class="regla-codigo">R-09<br><small style="font-weight:400;">REG-005</small></span>
+      <span class="regla-descripcion">Velocidad anómala (varias transferencias en poco tiempo)<small>no aplica, es una transferencia aislada</small></span>
+      <span class="barra-aporte"><span class="barra-aporte-relleno" style="width:0%"></span></span>
+      <span class="regla-peso">+0</span>
+    </div>
+
+    <div class="total-puntaje">
+      <span>Puntaje total</span>
+      <span>75 <span aria-hidden="true">→</span> severidad crítica</span>
+    </div>
+    <p class="nota-tecnica">
+      Cortes de puntaje por severidad (colección <code>politica_deteccion</code>):
+      MEDIA 40-54, ALTA 55-69, CRITICA 70-100 (umbral_alerta 40,
+      puntaje_maximo 100). Si el supervisor los cambia, las alertas ya
+      creadas conservan la severidad con la que nacieron (ver UC-07).
+      El catálogo también tiene REG-006 (R-11), pero nace inactiva a
+      propósito, por eso no se evalúa aquí.
+    </p>
+  </section>
+
+  <section class="tarjeta" aria-label="Red de mulas">
+    <h2 class="seccion-titulo">Red de mulas (caso CAS-001)</h2>
+    <p class="subtitulo">
+      Al confirmarse el fraude se abrió el caso <span class="id-corto">CAS-001</span>
+      para seguir el dinero desde 6033-9001 (UC-04). Esta es una vista previa;
+      la investigación completa con <code>$graphLookup</code> es H-24, otra
+      pantalla.
+    </p>
+    <div class="cadena-mulas">
+      <div class="nodo-cuenta origen"><span class="cuenta">6033-9001</span>1er salto</div>
+      <div class="flecha-salto"><span aria-hidden="true">&#8594;</span><br>&#8353;740.000<br>+4 min</div>
+      <div class="nodo-cuenta"><span class="cuenta">7104-2288</span>2do salto</div>
+      <div class="flecha-salto"><span aria-hidden="true">&#8594;</span><br>&#8353;500.000<br>+9 min</div>
+      <div class="nodo-cuenta"><span class="cuenta">8455-1177</span>3er salto</div>
+      <div class="flecha-salto"><span aria-hidden="true">&#8594;</span><br>&#8353;240.000<br>+11 min</div>
+      <div class="nodo-cuenta"><span class="cuenta">6001-3344</span>4to salto</div>
+    </div>
+    <p class="nota-tecnica">
+      Tres saltos en 24 minutos con montos decrecientes: patrón de
+      fragmentación. Las cuatro cuentas de la cadena se proponen para
+      <code>listas_riesgo</code> (RSK-001 a RSK-004).
+    </p>
+  </section>
+
+  <section class="tarjeta" aria-label="Historial de acciones">
+    <h2 class="seccion-titulo">Historial de acciones</h2>
+    <ol class="historial">
+      <li class="historial-item">
+        <div class="cuando">14/10/2026 22:47 (hora CR)</div>
+        <div class="quien">Sistema</div>
+        <div>Alerta creada automáticamente · puntaje 75 · severidad crítica</div>
+      </li>
+      <li class="historial-item">
+        <div class="cuando">14/10/2026 22:53 (hora CR)</div>
+        <div class="quien">José Solís · AGT-001</div>
+        <div>Acción: <strong>confirmada</strong></div>
+        <div class="nota">"Cliente confirma llamada previa"</div>
+      </li>
+    </ol>
+  </section>
+
+  <section class="tarjeta" aria-label="Resolver alerta">
+    <h2 class="seccion-titulo">Resolver alerta</h2>
+    <p class="nota-tecnica">
+      Esta alerta ya se resolvió (confirmada, ver historial arriba). Los
+      controles de abajo se muestran igual porque ilustran el affordance de
+      H-14 "resolver desde el detalle"; en la plantilla conectada normalmente
+      aparecerían solo mientras el estado es <code>nueva</code> o
+      <code>en_revision</code>.
+    </p>
+    <div class="campo" style="margin-bottom: var(--espacio-3);">
+      <label for="nota-resolucion">Nota (se agrega al historial, no lo reemplaza)</label>
+      <input type="text" id="nota-resolucion" name="nota" placeholder="Ej: cliente confirma llamada previa">
+    </div>
+    <div class="grupo-botones">
+      <button type="button" class="boton boton-confirmar">Confirmar fraude</button>
+      <button type="button" class="boton boton-descartar">Descartar</button>
+      <button type="button" class="boton boton-escalar">Escalar a caso</button>
+    </div>
+  </section>
+</main>
+</body>
+</html>
