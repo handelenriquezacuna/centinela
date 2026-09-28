@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Centinela - Búsqueda forense</title>
+<link rel="stylesheet" href="../../estaticos/centinela.css">
+<!--
+  MAQUETA ESTATICA - H-19 (sobre H-15 búsqueda forense de la API), sin
+  Python/Jinja/API todavia.
+
+  El escenario de esta pantalla es el ejemplo ya documentado en
+  docs/02-casos-de-uso.md UC-05: "Todas las transferencias sobre ₡500.000
+  hacia números que no estaban en la lista de contactos del cliente, entre
+  el 1 y el 15 de octubre" -> 1.284 resultados, primera página en 40 ms con
+  el índice cuenta_origen + fecha (idx_transacciones_cuenta_origen_fecha,
+  de H-01). Los filtros de abajo llegan
+  precargados con ese ejemplo. La unica fila de resultado 100% documentada
+  es TXN-001 / ALR-001 (María Rodríguez); el resto son filas de relleno
+  marcadas "(ejemplo de maqueta)" solo para mostrar paginación.
+
+  CANAL: el unico canal documentado en el alcance del proyecto es SINPE
+  Móvil (ver CLAUDE.md); por eso el filtro de canal no trae mas opciones
+  todavia. Si en algun momento se agrega otro canal, esto lo define el
+  arquitecto en el contrato, no el portal.
+
+  PAGINACION: "limite" esta acotado por app.pagina_maxima (regla del
+  modulo). El selector de abajo no ofrece mas que ese tope; si alguien
+  pide mas por la URL, el portal debe recortarlo al maximo configurado,
+  no fallar.
+
+  DEBUG: la casilla "mostrar plan de ejecución" ilustra el criterio de
+  H-15 "devuelve el plan de ejecución bajo una bandera de depuración". No
+  hay servidor real detras, pero el nombre de índice citado abajo es el
+  real: idx_transacciones_cuenta_origen_fecha, creado en H-01 sobre
+  transacciones.
+
+  OJO AL CONECTAR (trampa real de nombres, igual que en panel.html): en
+  "transacciones", cuenta_origen guarda el _id DE LA CUENTA (ej.
+  "CTA-001"), no el número SINPE. Esta pantalla busca sobre transacciones
+  (no sobre alertas, que sí copia el número SINPE), asi que la columna
+  "Cuenta origen" de abajo NO puede leerse tal cual del documento: hay que
+  resolver CTA-001 contra "cuentas" para mostrar "8712-4455". La columna
+  "Cuenta destino" no tiene este problema: en transacciones ese campo ya
+  es el número SINPE plano (los destinos externos/mula no tienen
+  documento en "cuentas"). Esta plantilla ya muestra el número SINPE
+  resuelto en ambas columnas porque es lo legible para el agente; falta
+  que la version conectada haga ese join solo para "Cuenta origen".
+
+  FECHAS Y DINERO: igual que en las otras pantallas, las fechas se
+  guardan en UTC (en "transacciones" el campo es "fecha", no "creada_en")
+  y aqui ya estan convertidas a hora de Costa Rica a mano; los montos son
+  colones enteros con separador de miles.
+-->
+</head>
+<body>
+<header class="encabezado">
+  <a class="marca" href="panel.html">Centinela <span class="marca-sufijo">portal de fraude</span></a>
+  <nav class="nav-portal" aria-label="Navegacion principal">
+    <a href="panel.html">Panel</a>
+    <a href="busqueda.html" aria-current="page">Buscar</a>
+    <a href="tablero.html">Tablero</a>
+  </nav>
+  <div class="sesion-agente">
+    <span aria-hidden="true">&#9679;</span>
+    <span><strong>Jose Solis</strong> · AGT-001 · agente de fraude</span>
+  </div>
+</header>
+
+<main class="contenedor">
+  <div class="titulo-pantalla">
+    <div>
+      <h1>Búsqueda forense</h1>
+      <p class="subtitulo">Filtros combinables sobre el histórico de transacciones.</p>
+    </div>
+  </div>
+
+  <section class="tarjeta" aria-label="Filtros de búsqueda">
+    <h2 class="seccion-titulo">Filtros</h2>
+    <form class="barra-filtros" method="get" action="busqueda.html">
+      <div class="campo">
+        <label for="b-desde">Fecha desde</label>
+        <input type="date" id="b-desde" name="desde" value="2026-10-01">
+      </div>
+      <div class="campo">
+        <label for="b-hasta">Fecha hasta</label>
+        <input type="date" id="b-hasta" name="hasta" value="2026-10-15">
+      </div>
+      <div class="campo">
+        <label for="b-monto-min">Monto mínimo (CRC)</label>
+        <input type="number" id="b-monto-min" name="monto_min" value="500000" step="1000" min="0">
+      </div>
+      <div class="campo">
+        <label for="b-monto-max">Monto máximo (CRC)</label>
+        <input type="number" id="b-monto-max" name="monto_max" placeholder="Sin tope" step="1000" min="0">
+      </div>
+      <div class="campo">
+        <label for="b-cuenta">Cuenta (origen o destino)</label>
+        <input type="text" id="b-cuenta" name="cuenta" placeholder="Ej: 8712-4455">
+      </div>
+      <div class="campo">
+        <label for="b-canal">Canal</label>
+        <select id="b-canal" name="canal">
+          <option value="">Todos</option>
+          <option value="sinpe_movil" selected>SINPE Móvil</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="b-estado-alerta">Estado de alerta relacionada</label>
+        <select id="b-estado-alerta" name="estado_alerta">
+          <option value="">Cualquiera</option>
+          <option value="sin_alerta">Sin alerta</option>
+          <option value="nueva">Nueva</option>
+          <option value="en_revision">En revisión</option>
+          <option value="confirmada">Confirmada</option>
+          <option value="descartada">Descartada</option>
+          <option value="escalada">Escalada</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="b-destino-nuevo">
+          <input type="checkbox" id="b-destino-nuevo" name="destino_nuevo" checked style="width:auto; margin-right:6px;">
+          Solo destinos fuera de la lista de contactos del cliente
+        </label>
+      </div>
+      <div class="campo">
+        <label for="b-limite">Resultados por página</label>
+        <select id="b-limite" name="limite">
+          <option value="10">10</option>
+          <option value="25">25</option>
+          <option value="50" selected>50</option>
+          <option value="100">100 (tope app.pagina_maxima)</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="b-debug">
+          <input type="checkbox" id="b-debug" name="debug" checked style="width:auto; margin-right:6px;">
+          Mostrar plan de ejecución (debug)
+        </label>
+      </div>
+      <div class="campo campo-acciones">
+        <button type="submit" class="boton boton-primario">Buscar</button>
+        <a class="boton boton-secundario" href="busqueda.html">Limpiar</a>
+      </div>
+    </form>
+  </section>
+
+  <section class="tarjeta" aria-label="Resultados de búsqueda">
+    <div class="titulo-pantalla" style="margin-bottom: var(--espacio-3);">
+      <div>
+        <strong>1.284 resultados</strong>
+        <span class="subtitulo">página 1 de 26 · 40 ms</span>
+      </div>
+      <div class="grupo-botones">
+        <button type="button" class="boton boton-secundario">Exportar CSV</button>
+      </div>
+    </div>
+
+    <p class="nota-tecnica">
+      Plan de ejecución (debug): <code>IXSCAN idx_transacciones_cuenta_origen_fecha</code>
+      · 40 ms sobre el rango 01/10/2026–15/10/2026. Sin este índice la
+      consulta se registraría para revisión (regla de UC-05: "toda consulta
+      del panel debe usar índice").
+    </p>
+
+    <table class="tabla-responsiva">
+      <thead>
+        <tr>
+          <th scope="col">Transacción</th>
+          <th scope="col">Fecha y hora (CR)</th>
+          <th scope="col">Cuenta origen</th>
+          <th scope="col">Cuenta destino</th>
+          <th scope="col">Monto</th>
+          <th scope="col">Canal</th>
+          <th scope="col">Alerta relacionada</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Fila real: la unica transaccion completamente documentada. -->
+        <tr>
+          <td data-etiqueta="Transacción" class="id-corto">TXN-001</td>
+          <td data-etiqueta="Fecha y hora (CR)" class="hora">14/10/2026 22:47</td>
+          <td data-etiqueta="Cuenta origen" class="id-corto">8712-4455</td>
+          <td data-etiqueta="Cuenta destino" class="id-corto destino-nuevo">6033-9001</td>
+          <td data-etiqueta="Monto" class="monto">&#8353;750.000</td>
+          <td data-etiqueta="Canal">SINPE Móvil</td>
+          <td data-etiqueta="Alerta relacionada">
+            <a href="detalle.html"><span class="insignia es-critica"><span class="icono-severidad" aria-hidden="true"></span>ALR-001</span></a>
+          </td>
+        </tr>
+
+        <!-- Desde aqui, filas de ejemplo de maqueta para ilustrar paginacion. -->
+        <tr>
+          <td data-etiqueta="Transacción" class="id-corto">TXN-084</td>
+          <td data-etiqueta="Fecha y hora (CR)" class="hora">09/10/2026 11:20</td>
+          <td data-etiqueta="Cuenta origen" class="id-corto">5544-9021</td>
+          <td data-etiqueta="Cuenta destino" class="id-corto destino-nuevo">8890-2214</td>
+          <td data-etiqueta="Monto" class="monto">&#8353;520.000</td>
+          <td data-etiqueta="Canal">SINPE Móvil</td>
+          <td data-etiqueta="Alerta relacionada"><span class="insignia insignia-estado es-descartada">Sin alerta</span></td>
+        </tr>
+        <tr>
+          <td data-etiqueta="Transacción" class="id-corto">TXN-091</td>
+          <td data-etiqueta="Fecha y hora (CR)" class="hora">11/10/2026 23:10</td>
+          <td data-etiqueta="Cuenta origen" class="id-corto">3390-6612</td>
+          <td data-etiqueta="Cuenta destino" class="id-corto destino-nuevo">1187-4420</td>
+          <td data-etiqueta="Monto" class="monto">&#8353;610.000</td>
+          <td data-etiqueta="Canal">SINPE Móvil</td>
+          <td data-etiqueta="Alerta relacionada">
+            <a href="detalle.html"><span class="insignia es-media"><span class="icono-severidad" aria-hidden="true"></span>ALR-010</span></a>
+          </td>
+        </tr>
+        <tr>
+          <td data-etiqueta="Transacción" class="id-corto">TXN-103</td>
+          <td data-etiqueta="Fecha y hora (CR)" class="hora">13/10/2026 15:05</td>
+          <td data-etiqueta="Cuenta origen" class="id-corto">6210-3387</td>
+          <td data-etiqueta="Cuenta destino" class="id-corto destino-nuevo">7742-9930</td>
+          <td data-etiqueta="Monto" class="monto">&#8353;540.000</td>
+          <td data-etiqueta="Canal">SINPE Móvil</td>
+          <td data-etiqueta="Alerta relacionada"><span class="insignia insignia-estado es-descartada">Sin alerta</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="paginacion">
+      <span>Mostrando 1–50 de 1.284</span>
+      <div class="controles">
+        <a href="#" aria-disabled="true" aria-label="Página anterior">&#8592;</a>
+        <span class="pagina-actual" aria-current="page">1</span>
+        <a href="#">2</a>
+        <a href="#">3</a>
+        <span>…</span>
+        <a href="#">26</a>
+        <a href="#" aria-label="Página siguiente">&#8594;</a>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

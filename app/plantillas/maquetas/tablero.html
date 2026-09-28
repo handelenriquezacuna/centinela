@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Centinela - Tablero de indicadores</title>
+<link rel="stylesheet" href="../../estaticos/centinela.css">
+<!--
+  MAQUETA ESTATICA - H-20 (sobre H-22 indicadores materializados), sin
+  Python/Jinja/API todavia.
+
+  Lo que SI esta documentado (docs/02-casos-de-uso.md UC-06, cita textual):
+  "Turno nocturno del 14 de octubre: 47 alertas, 8 confirmadas,
+  31 descartadas, 8 en revisión. Tasa de falsos positivos 66%. La regla
+  R-05 (horario) es la que más ruido genera." Nota: 8 + 31 + 8 = 47, ese
+  turno no quedo ninguna alerta en "escalada" ni "nueva" sin tocar.
+  El "40% de los falsos positivos" de la tabla de reglas es de UC-07 (otro
+  ajuste de R-05), se cita ahi porque describe el mismo problema con R-05.
+
+  Lo que NO esta documentado y aqui es ilustrativo de maqueta (marcado
+  explicitamente en el HTML, no solo en este comentario): el desglose por
+  severidad, por agente, por hora, la comparacion contra la semana
+  anterior, y los disparos por regla de R-01/R-03. Sirven para mostrar el
+  layout de H-20 ("alertas por estado, severidad, agente y hora;
+  comparación contra el período anterior"); cuando H-22 exista, estos
+  numeros salen de indicadores_diarios, no se inventan en la plantilla.
+
+  SEVERIDAD: el desglose de abajo usa 3 niveles (MEDIA/ALTA/CRITICA), no 4.
+  UC-02 dice que bajo el umbral no se crea alerta, asi que "baja" no existe
+  por diseno; el validador de alertas.severidad es enum
+  ["MEDIA","ALTA","CRITICA"] en mayusculas. Cortes reales, ya sembrados en
+  politica_deteccion: MEDIA 40-54, ALTA 55-69, CRITICA 70-100
+  (umbral_alerta 40, puntaje_maximo 100).
+
+  FECHAS: indicadores_diarios.fecha es la UNICA excepcion a "todo es
+  ISODate UTC": es texto plano "YYYY-MM-DD" (aqui "2026-10-14"). El campo
+  de "ultimo calculo" si es una marca de tiempo normal en UTC, convertida
+  a hora de Costa Rica para mostrarla (ilustrativo: poco después de medianoche,
+  cuando cierra el turno).
+
+  El criterio de UC-06 "nunca se recalcula al vuelo" es por lo que este
+  tablero siempre muestra la marca de "último cálculo": si se ve vieja,
+  el supervisor sabe que esta viendo un numero desactualizado, no un bug.
+-->
+</head>
+<body>
+<header class="encabezado">
+  <a class="marca" href="panel.html">Centinela <span class="marca-sufijo">portal de fraude</span></a>
+  <nav class="nav-portal" aria-label="Navegacion principal">
+    <a href="panel.html">Panel</a>
+    <a href="busqueda.html">Buscar</a>
+    <a href="tablero.html" aria-current="page">Tablero</a>
+  </nav>
+  <div class="sesion-agente">
+    <span aria-hidden="true">&#9679;</span>
+    <span><strong>Laura Méndez</strong> · AGT-002 · supervisora de turno</span>
+  </div>
+</header>
+
+<main class="contenedor">
+  <div class="titulo-pantalla">
+    <div>
+      <h1>Tablero de indicadores</h1>
+      <p class="subtitulo">Turno nocturno · 14 de octubre de 2026</p>
+    </div>
+    <span class="marca-tiempo-calculo">Último cálculo: 15/10/2026 00:15 (hora CR) — indicadores materializados, no se recalculan al abrir la pantalla</span>
+  </div>
+
+  <section class="tarjeta" aria-label="Indicadores del turno">
+    <h2 class="seccion-titulo">Alertas por estado</h2>
+    <div class="rejilla-kpi">
+      <div class="kpi">
+        <div class="kpi-etiqueta">Total de alertas</div>
+        <div class="kpi-valor">47</div>
+        <div class="kpi-delta sube">+8 vs. semana pasada (39)</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-etiqueta"><span class="insignia insignia-estado es-confirmada" style="margin-right:4px;"></span>Confirmadas</div>
+        <div class="kpi-valor">8</div>
+        <div class="kpi-delta sube">+3 vs. semana pasada (5)</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-etiqueta"><span class="insignia insignia-estado es-descartada" style="margin-right:4px;"></span>Descartadas</div>
+        <div class="kpi-valor">31</div>
+        <div class="kpi-delta sube">+6 vs. semana pasada (25)</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-etiqueta"><span class="insignia insignia-estado es-en_revision" style="margin-right:4px;"></span>En revisión</div>
+        <div class="kpi-valor">8</div>
+        <div class="kpi-delta">= vs. semana pasada (8)</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-etiqueta"><span class="insignia insignia-estado es-nueva" style="margin-right:4px;"></span>Nuevas sin tomar</div>
+        <div class="kpi-valor">0</div>
+        <div class="kpi-delta baja">todo el turno se atendió</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-etiqueta"><span class="insignia insignia-estado es-escalada" style="margin-right:4px;"></span>Escaladas</div>
+        <div class="kpi-valor">0</div>
+      </div>
+    </div>
+    <p class="nota-tecnica">
+      Tasa de falsos positivos (descartadas / total): <strong>66%</strong>
+      (semana pasada: 64%). Es la cifra citada en UC-06.
+    </p>
+  </section>
+
+  <section class="tarjeta" aria-label="Alertas por severidad y por agente">
+    <h2 class="seccion-titulo">Por severidad y por agente <span class="subtitulo">(ilustrativo, pendiente de indicadores_diarios reales)</span></h2>
+    <div class="lista-datos">
+      <div>
+        <dt>Crítica</dt>
+        <dd><span class="insignia es-critica"><span class="icono-severidad" aria-hidden="true"></span>7</span></dd>
+      </div>
+      <div>
+        <dt>Alta</dt>
+        <dd><span class="insignia es-alta"><span class="icono-severidad" aria-hidden="true"></span>17</span></dd>
+      </div>
+      <div>
+        <dt>Media</dt>
+        <dd><span class="insignia es-media"><span class="icono-severidad" aria-hidden="true"></span>23</span></dd>
+      </div>
+      <div>
+        <dt>José Solís (AGT-001)</dt>
+        <dd>26 alertas atendidas</dd>
+      </div>
+      <div>
+        <dt>Laura Méndez (AGT-002)</dt>
+        <dd>21 alertas atendidas</dd>
+      </div>
+    </div>
+    <p class="nota-tecnica">
+      7 + 17 + 23 = 47. No hay categoría "baja": por debajo del umbral de
+      40 puntos UC-02 dice que no se crea alerta.
+    </p>
+  </section>
+
+  <section class="tarjeta" aria-label="Alertas por hora">
+    <h2 class="seccion-titulo">Por hora del turno <span class="subtitulo">(ilustrativo)</span></h2>
+    <div class="grafico-barras" role="img" aria-label="Alertas por hora: 18h 3, 19h 4, 20h 5, 21h 6, 22h 9, 23h 11, 00h 6, 01h 3">
+      <div class="barra-hora"><div class="barra" style="height:27%"></div><span class="etiqueta-hora">18h · 3</span></div>
+      <div class="barra-hora"><div class="barra" style="height:36%"></div><span class="etiqueta-hora">19h · 4</span></div>
+      <div class="barra-hora"><div class="barra" style="height:45%"></div><span class="etiqueta-hora">20h · 5</span></div>
+      <div class="barra-hora"><div class="barra" style="height:55%"></div><span class="etiqueta-hora">21h · 6</span></div>
+      <div class="barra-hora"><div class="barra" style="height:82%; background:var(--color-critica);"></div><span class="etiqueta-hora">22h · 9</span></div>
+      <div class="barra-hora"><div class="barra" style="height:100%; background:var(--color-critica);"></div><span class="etiqueta-hora">23h · 11</span></div>
+      <div class="barra-hora"><div class="barra" style="height:55%"></div><span class="etiqueta-hora">00h · 6</span></div>
+      <div class="barra-hora"><div class="barra" style="height:27%"></div><span class="etiqueta-hora">01h · 3</span></div>
+    </div>
+    <p class="nota-tecnica">
+      La alerta ALR-001 de María Rodríguez (22:47) cae en el bloque de las
+      22h, la hora con más carga junto con las 23h — coherente con vishing
+      nocturno.
+    </p>
+  </section>
+
+  <section class="tarjeta" aria-label="Reglas con más ruido">
+    <h2 class="seccion-titulo">Reglas con más ruido</h2>
+    <table class="tabla-responsiva tabla-reglas-ruido">
+      <thead>
+        <tr>
+          <th scope="col">Regla</th>
+          <th scope="col">Peso actual</th>
+          <th scope="col">Disparos esta noche</th>
+          <th scope="col">% de los falsos positivos</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td data-etiqueta="Regla" class="regla-codigo">R-01</td>
+          <td data-etiqueta="Peso actual">35</td>
+          <td data-etiqueta="Disparos esta noche">9 (ilustrativo)</td>
+          <td data-etiqueta="% de los falsos positivos">10% (ilustrativo)</td>
+        </tr>
+        <tr>
+          <td data-etiqueta="Regla" class="regla-codigo">R-03</td>
+          <td data-etiqueta="Peso actual">25</td>
+          <td data-etiqueta="Disparos esta noche">14 (ilustrativo)</td>
+          <td data-etiqueta="% de los falsos positivos">15% (ilustrativo)</td>
+        </tr>
+        <tr>
+          <td data-etiqueta="Regla" class="regla-destacada">R-05</td>
+          <td data-etiqueta="Peso actual" class="regla-destacada">15</td>
+          <td data-etiqueta="Disparos esta noche" class="regla-destacada">22 (ilustrativo)</td>
+          <td data-etiqueta="% de los falsos positivos" class="regla-destacada">40% (UC-07, dato real)</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="nota-tecnica">
+      Según UC-07, R-05 genera el 40% de los falsos positivos y es
+      "candidata a que el supervisor le baje el peso" (de 15 a 8). Ese
+      ajuste se hace desde el catálogo de reglas (H-16), no desde este
+      tablero.
+    </p>
+  </section>
+</main>
+</body>
+</html>
