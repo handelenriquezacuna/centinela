@@ -17,6 +17,55 @@ corresponda, y quien la tomó puede demostrarla en 2 minutos.
 
 ---
 
+# Épica E0 · Plataforma
+
+> Sin un andamio ejecutable, las 27 historias que siguen son tomables en teoría y
+> no en práctica: cada quien tendría que inventarse la conexión, los nombres de los
+> campos y el arranque, y los inventaría distinto.
+
+### H-00A · Mínimo desbloqueante de la plataforma
+**Como** equipo, **queremos** un ambiente que se levante con un comando y unos
+contratos escritos, **para** que las cuatro personas puedan empezar su historia sin
+esperar a nadie ni inventar convenciones propias.
+
+- **Criterios:**
+  - Una modalidad de arranque probada de punta a punta en máquina limpia.
+  - `config/centinela.yml` cargando con precedencia entorno > local > base,
+    verificada por una prueba (no a ojo).
+  - Los contratos de base de datos escritos en un documento **versionado**
+    (`docs/06-plataforma.md`): dinero, fechas, identificadores, versión de esquema,
+    nombres y máquina de estados de la alerta.
+  - Los 11 modelos Pydantic de las colecciones de dominio, y el contrato HTTP
+    publicado como OpenAPI con las respuestas y la forma del error definidas,
+    aunque el handler devuelva datos de demo.
+  - `tareas.py datos-demo` carga un conjunto pequeño y reproducible.
+  - `GET /api/v1/alertas` devuelve esos datos con filtros y paginación acotada por
+    `app.pagina_maxima`.
+  - El árbol queda limpio: el borrado de `docs/06-avance1-checklist.md` y
+    `docs/07-practica1-codigo.md` preparado, y el README sin enlaces roto.
+- **Talla:** L · **Etapa:** E0 · **Depende de:** —
+- **Corte duro: 1 de octubre.** Es la historia que desbloquea a las otras tres
+  personas; todo lo que no sea imprescindible para desbloquearlas va a H-00B.
+- Los criterios son **solo cosas que el arquitecto controla**. Nada que dependa del
+  motor (H-09) ni del portal (H-17) entra aquí.
+
+### H-00B · Plataforma consolidada
+**Como** equipo, **queremos** la plataforma con sus compuertas y su canal de tiempo
+real, **para** que integrar deje de ser un acto de fe.
+
+- **Criterios:**
+  - CI con las compuertas de los cuatro tipos de prueba que corren por PR.
+  - La segunda modalidad de arranque probada, con la misma URI del YAML.
+  - `/estado` reporta D1/D2/D3, último evento procesado, retraso y último error;
+    matar una tarea a mano lo deja en `degradado`.
+  - Canal SSE leyendo el change stream de `alertas`, con token de reanudación como
+    identificador del evento y evento `resincronizar` cuando el token no sirve.
+  - `docs/06-plataforma.md` completo y `docs/07-plan-de-equipo.md` escrito.
+- **Talla:** M · **Etapa:** E0 · **Depende de:** H-00A
+- **Fecha: 5 de octubre.**
+
+---
+
 # Épica E1 · Fundación de datos
 
 > Sin datos que se comporten como los reales, todo lo demás es teatro.
