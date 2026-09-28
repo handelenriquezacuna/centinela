@@ -15,7 +15,7 @@ Las cinco reglas que este modulo hace cumplir:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Annotated, Literal
 
 from pydantic import (
@@ -55,6 +55,18 @@ Moneda = Literal["CRC"]
 # ---------------------------------------------------------------------------
 # Fechas
 # ---------------------------------------------------------------------------
+
+
+# La zona en la que el portal PRESENTA las fechas. La base guarda UTC siempre; esta
+# constante es la otra mitad del contrato de fechas y vive aca, con los tipos base,
+# para que exista una sola definicion: el fragmento del canal SSE, las plantillas del
+# portal (H-17) y el conjunto de demo la toman de aqui.
+#
+# Es un desplazamiento fijo y no `ZoneInfo("America/Costa_Rica")` por dos razones:
+# Costa Rica no aplica horario de verano desde 1992, asi que -6 es siempre correcto, y
+# `zoneinfo` en Windows necesita el paquete `tzdata` instalado o levanta
+# `ZoneInfoNotFoundError`. La mitad del equipo trabaja en Windows.
+ZONA_COSTA_RICA = timezone(timedelta(hours=-6), name="America/Costa_Rica")
 
 
 def exigir_utc(valor: datetime) -> datetime:

@@ -4,6 +4,21 @@
 # mongo2 y mongo3 comparten el espacio de red de mongo1 (network_mode:
 # service:mongo1). Asi los tres se ven entre si en localhost y el host
 # alcanza los tres por los puertos publicados, sin tocar /etc/hosts.
+#
+# El servicio `app` (modalidad de arranque B, H-00B: la API tambien dentro de
+# Compose) hace exactamente lo mismo que mongo2 y mongo3: entra al espacio de red de
+# mongo1 con `network_mode: service:mongo1`. Por eso el puerto 8000 se publica en la
+# lista `ports` de MONGO1 y no en la de `app` -un servicio con `network_mode:
+# service:X` no puede declarar sus propios `ports`, porque no tiene su propia pila de
+# red; la tiene prestada-. El resultado es que `localhost:27018/19/20` Y `localhost:
+# 8000` significan lo mismo desde el host, desde mongo1 y desde el contenedor de la
+# API: la URI de `config/centinela.yml` no cambia ni una letra entre las dos
+# modalidades de arranque. Ver docs/06-plataforma.md, seccion 4.
+#
+# `app` lleva `profiles: ["app"]` para que un `docker compose up` sin mas siga
+# levantando solo el replica set (la modalidad A, la que el equipo ya usa a diario) y
+# nadie se encuentre con un contenedor nuevo sin pedirlo. `python tareas.py arriba
+# --con-app` es quien pide el perfil explicitamente.
 
 # Nombre de proyecto explicito: sin esta clave, Compose lo deriva del nombre del
 # directorio del archivo ("infra"), asi que el proyecto depende de donde este clonado
@@ -26,6 +41,7 @@ services:
       - "27018:27018"   # primario
       - "27019:27019"   # mongo2
       - "27020:27020"   # mongo3
+      - "8000:8000"     # API del servicio app (comparte este espacio de red)
     volumes:
       - mongo1data:/data/db
       # Este montaje queda por compatibilidad, pero NO es la forma recomendada de
@@ -65,6 +81,25 @@ services:
     depends_on:
       mongo1:
         condition: service_healthy
+
+  # Modalidad de arranque B (H-00B): la API tambien dentro de Compose. No lleva
+  # `ports` (ver la nota de arriba) ni su propia red: comparte la de mongo1, igual
+  # que mongo2 y mongo3. `profiles: ["app"]` la deja afuera de un `docker compose up`
+  # sin argumentos.
+  app:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    container_name: fraude-app
+    profiles: ["app"]
+    network_mode: "service:mongo1"
+    depends_on:
+      mongo1:
+        condition: service_healthy
+      mongo2:
+        condition: service_started
+      mongo3:
+        condition: service_started
 
 # Volumenes normales, sin `external` y sin `name`: Compose los crea y los administra.
 #

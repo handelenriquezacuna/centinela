@@ -19,6 +19,8 @@ from pymongo.asynchronous.database import AsyncDatabase
 from app.nucleo.config import Ajustes, obtener_ajustes
 from app.nucleo.db import obtener_base as _base_del_cliente
 from app.repos.alertas import ProtocoloRepoAlertas, RepoAlertas
+from app.repos.flujo_alertas import ProtocoloFlujoAlertas, RepoFlujoAlertas
+from app.supervision import Supervisor
 
 
 def dep_ajustes(peticion: Request) -> Ajustes:
@@ -58,6 +60,32 @@ def dep_repo_alertas(
     return RepoAlertas(base)
 
 
+def dep_flujo_alertas(
+    base: Annotated[AsyncDatabase, Depends(dep_base)],
+) -> ProtocoloFlujoAlertas:
+    """El observador del change stream de `alertas` que alimenta el canal SSE."""
+    return RepoFlujoAlertas(base)
+
+
+def dep_supervisor(peticion: Request) -> Supervisor:
+    """El supervisor de tareas de fondo, creado en el lifespan.
+
+    Si la aplicacion se armo sin lifespan no hay supervisor, y en vez de inventar uno
+    vacio se devuelve uno sin tareas: `/estado` responde `sin_supervision`, que es la
+    verdad. Inventar un supervisor con tareas imaginarias haria que la ruta mintiera
+    justo en el escenario que viene a detectar.
+    """
+    supervisor: Supervisor | None = getattr(peticion.app.state, "supervisor", None)
+    if supervisor is None:  # pragma: no cover - contrato del lifespan
+        ajustes = dep_ajustes(peticion)
+        return Supervisor(
+            tolerancia_segundos=ajustes.supervision.tolerancia_retraso_segundos
+        )
+    return supervisor
+
+
 AjustesDep = Annotated[Ajustes, Depends(dep_ajustes)]
 BaseDep = Annotated[AsyncDatabase, Depends(dep_base)]
 RepoAlertasDep = Annotated[ProtocoloRepoAlertas, Depends(dep_repo_alertas)]
+FlujoAlertasDep = Annotated[ProtocoloFlujoAlertas, Depends(dep_flujo_alertas)]
+SupervisorDep = Annotated[Supervisor, Depends(dep_supervisor)]

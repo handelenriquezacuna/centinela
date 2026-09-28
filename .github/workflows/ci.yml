@@ -1,0 +1,107 @@
+# CI de Centinela: se dispara en cada pull request hacia `dev`.
+#
+# Compuertas, en este orden: ruff, y las pruebas de los cuatro tipos que declara
+# docs/06-plataforma.md (unitarias, contrato, integracion, arquitectura). Si
+# cualquiera falla, el PR no se puede fusionar.
+#
+# Sobre "integracion": el repo todavia no tiene una carpeta pruebas/integracion.
+# Las pruebas que ejercen el camino real HTTP -> repo -> MongoDB viven hoy dentro de
+# pruebas/contrato/ (por ejemplo prueba_alertas_mongo.py y
+# prueba_validadores_mongo.py) y estan marcadas `@pytest.mark.mongo`. Esa marca es la
+# que separa "integracion" del resto: unitarias, contrato (sin mongo) y arquitectura
+# no tocan una base de datos real y corren con `-m "not mongo"`; todo lo que si la
+# necesita corre con `-m mongo`. El dia que exista pruebas/integracion como carpeta,
+# este archivo se ajusta, pero el mecanismo de separacion por marca no cambia.
+#
+# Por que un replica set de UN nodo y no standalone: las pruebas marcadas `mongo`
+# usan change streams (`app/repos/flujo_alertas.py`, `app/repos/salud.py`), y un
+# Mongo standalone los rechaza con `Location40573` ("$changeStream stage is only
+# supported on replica sets"). Un solo nodo ya es un replica set valido y alcanza:
+# los change streams solo piden que exista el oplog, no que haya companeros.
+#
+# Por que NO se usa la clave `services:` de Actions para levantar Mongo: `services:`
+# no permite pasarle argumentos al `command` del contenedor de forma directa y
+# sencilla (hay formas indirectas, todas mas fragiles que la alternativa elegida
+# aca), y ademas no hay forma comoda de correr `rs.initiate()` como paso separado
+# antes de que el resto del job empiece a usarlo. Por eso este workflow levanta Mongo
+# con un `docker run` explicito, espera con un sondeo, inicializa el replica set con
+# `mongosh` DENTRO del propio contenedor (`docker exec`; la imagen `mongo:8` ya trae
+# `mongosh`, asi que el runner no necesita instalarlo aparte) y recien despues corre
+# las pruebas.
+#
+# La URI de un solo nodo NO se escribe en config/centinela.yml (esa URI es la de los
+# tres nodos de infra/docker-compose.yml y no cambia por CI). Se pasa por la variable
+# de entorno CENTINELA_MONGO__URI, que le gana al YAML por la precedencia que
+# pruebas/contrato/prueba_configuracion.py verifica. Es el mismo mecanismo que
+# cualquier persona del equipo usaria para apuntar a otra base sin tocar el repo.
+#
+# Lo que a proposito NO esta aqui: pruebas de rendimiento y de resiliencia. La
+# resiliencia (que el replica set elija otro primario si el actual cae) necesita
+# como minimo tres nodos con eleccion real; con un solo nodo no hay a quien elegir.
+# Esas pruebas, si llegan a escribirse, corren contra el cluster de tres nodos de
+# infra/docker-compose.yml y no contra este de un solo nodo de CI.
+name: CI
+
+on:
+  pull_request:
+    branches: [dev]
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+
+      - name: Sincronizar dependencias exactas del lock
+        run: uv sync --locked
+
+      - name: Compuerta -- ruff
+        run: uv run ruff check .
+
+      - name: Levantar Mongo como replica set de un nodo
+        run: |
+          set -euo pipefail
+
+          docker run -d --name centinela-mongo -p 27018:27018 mongo:8 \
+            mongod --replSet rsfraude --port 27018 --bind_ip_all
+
+          echo "Esperando a que el nodo responda..."
+          timeout 60 bash -c '
+            until docker exec centinela-mongo mongosh --port 27018 --quiet \
+              --eval "db.adminCommand({ping: 1}).ok" > /dev/null 2>&1; do
+              sleep 2
+            done
+          '
+
+          echo "Inicializando el replica set rsfraude (un nodo alcanza para change streams)..."
+          docker exec centinela-mongo mongosh --port 27018 --quiet --eval '
+            rs.initiate({ _id: "rsfraude", members: [{ _id: 0, host: "localhost:27018" }] })
+          '
+
+          echo "Esperando la eleccion del primario..."
+          timeout 60 bash -c '
+            until [ "$(docker exec centinela-mongo mongosh --port 27018 --quiet \
+              --eval "rs.status().members[0].stateStr")" = "PRIMARY" ]; do
+              sleep 2
+            done
+          '
+
+      - name: Compuerta -- pruebas unitarias, de contrato y de arquitectura (sin Mongo)
+        env:
+          CENTINELA_MONGO__URI: "mongodb://localhost:27018/?replicaSet=rsfraude"
+        run: uv run pytest -m "not mongo" -q
+
+      - name: Compuerta -- pruebas de integracion (Mongo real, change streams)
+        env:
+          CENTINELA_MONGO__URI: "mongodb://localhost:27018/?replicaSet=rsfraude"
+        run: uv run pytest -m mongo -q
+
+      - name: Apagar Mongo
+        if: always()
+        run: docker rm -f centinela-mongo || true

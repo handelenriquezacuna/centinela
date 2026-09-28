@@ -143,7 +143,8 @@ medir si el motor lo atrapa.
 **Como** motor, **quiero** reaccionar a cada inserción, **para** crear la alerta
 en el momento.
 
-- **Criterios:** escucha `transacciones` por Change Stream; crea la alerta cuando supera umbral; **sobrevive a la caída del primario retomando desde donde quedó** (`resumeToken` persistido); no duplica alertas si se reinicia.
+- **Criterios:** escucha `transacciones` por Change Stream; crea la alerta cuando supera umbral; **sobrevive a la caída del primario retomando desde donde quedó** (`resumeToken` persistido, guardado *después* de escribir la alerta); no duplica alertas si se reinicia.
+- **La no duplicación la impone la base, no el código.** Los Change Streams entregan *al menos una vez*: el token permite reproducir eventos por diseño, así que no sirve como garantía de unicidad. Lo que la garantiza es el **índice único en `alertas.transaccion_id`** — si D1 reprocesa un evento, el insert choca con clave duplicada y se ignora. Es también una regla de negocio: una transacción produce una sola alerta, y si disparan tres reglas quedan las tres dentro de `reglas_disparadas`.
 - **Talla:** L · **Etapa:** E2 · **Depende de:** H-08
 
 ### H-10 · Medición de efectividad del motor
@@ -207,7 +208,8 @@ ajustar el motor durante el turno.
 **Como** agente, **quiero** que las alertas aparezcan solas, **para** no estar
 recargando.
 
-- **Criterios:** se conecta por WebSocket; una alerta nueva aparece en menos de 2 segundos sin intervención; si se cae la conexión se reconecta y recupera lo perdido; ordenadas por severidad.
+- **Criterios:** se conecta por **SSE** al canal que observa el Change Stream de `alertas`; una alerta nueva aparece en menos de 2 segundos sin intervención; si se cae la conexión se reconecta con `Last-Event-ID` y **reconstruye el estado de su cola**; ordenadas por severidad.
+- **Qué se promete y qué no:** se promete que la cola quede como está ahora, **no** que se reproduzca cada evento histórico. Para un panel de trabajo eso es lo correcto: el agente quiere su cola al día, no una repetición de cada transición. Reproducir todo evento exigiría un registro durable aparte, que ninguna historia ni ningún rubro pide. Si el token de reanudación ya no sirve porque el oplog rodó, el canal emite `resincronizar` y el panel vuelve a pedir la cola a `/api/v1/alertas`.
 - **Talla:** L · **Etapa:** E3 · **Depende de:** H-09, H-13
 
 ### H-18 · Detalle de alerta con explicación
@@ -278,7 +280,7 @@ lo viejo, **para** demostrar una migración real.
 
 - **Criterios:** los documentos llevan versión de esquema; existe un script que migra de v1 a v2 y es reejecutable; el sistema lee ambas versiones durante la transición.
 - **Talla:** M · **Etapa:** E1 (adelantada) · **Depende de:** H-02
-- **⚠️ Reubicada el 2026-09-20**: por Épica pertenece a "Seguridad y operación" (E5,
+- **Reubicada el 2026-09-20**: por Épica pertenece a "Seguridad y operación" (E5,
   diciembre), pero **la Práctica 4 del curso ("sellos de versiones") vence el 19 de
   octubre** y es exactamente este tema. Se adelanta a Etapa E1 para que exista a
   tiempo; en diciembre solo se revisa que la migración siga funcionando sobre el

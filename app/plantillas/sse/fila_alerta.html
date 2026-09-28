@@ -1,0 +1,26 @@
+{# Fila de alerta del panel, tal como viaja por el canal SSE.
+
+   Marcado PROVISIONAL: H-17 lo reescribe con el diseno del panel. Lo que no es
+   provisional y no se cambia sin avisar al resto del equipo:
+
+   - el id del elemento es `alerta-<ALR-xxx>`, para que HTMX pueda reemplazar la fila
+     de una alerta que cambio de estado en vez de duplicarla;
+   - `data-operacion` dice si el cambio fue `insert`, `update` o `replace`;
+   - los datos que la fila muestra son los campos de despliegue que la alerta ya trae
+     copiados adentro (docs/06-plataforma.md, 1.6): nada se resuelve con $lookup.
+#}
+<div id="alerta-{{ alerta['_id'] }}"
+     class="fila-alerta severidad-{{ alerta['severidad'] }}"
+     data-operacion="{{ operacion }}"
+     data-estado="{{ alerta['estado'] }}"
+     data-puntaje="{{ alerta['puntaje'] }}"
+     data-monto-crc="{{ alerta['monto_crc'] }}">
+  <span class="alerta-id">{{ alerta['_id'] }}</span>
+  <span class="alerta-severidad">{{ alerta['severidad'] }}</span>
+  <span class="alerta-puntaje">{{ alerta['puntaje'] }}</span>
+  <span class="alerta-cliente">{{ alerta['cliente_nombre'] }}</span>
+  <span class="alerta-cuentas">{{ alerta['cuenta_origen'] }} a {{ alerta['cuenta_destino'] }}</span>
+  <span class="alerta-monto">{{ alerta['monto_crc'] | colones }} {{ alerta['moneda'] }}</span>
+  <span class="alerta-fecha">{{ alerta['fecha_creacion'] | hora_costa_rica }}</span>
+  <span class="alerta-estado">{{ alerta['estado'] }}</span>
+</div>

@@ -14,8 +14,9 @@ Dos cosas importantes que estan resueltas aqui y no en cada prueba:
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
-from typing import Any, AsyncIterator, Iterator
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -74,12 +75,11 @@ def aplicacion(repo_alertas_falso: RepoAlertasFalso) -> FastAPI:
 @pytest_asyncio.fixture
 async def cliente(aplicacion: FastAPI) -> AsyncIterator[AsyncClient]:
     """Cliente HTTP contra la app en memoria, con el lifespan disparado."""
-    async with LifespanManager(aplicacion) as gestionada:
-        async with AsyncClient(
-            transport=ASGITransport(app=gestionada.app),
-            base_url="http://pruebas",
-        ) as cliente_http:
-            yield cliente_http
+    async with LifespanManager(aplicacion) as gestionada, AsyncClient(
+        transport=ASGITransport(app=gestionada.app),
+        base_url="http://pruebas",
+    ) as cliente_http:
+        yield cliente_http
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ async def _mongo_responde(ajustes_mongo: Ajustes) -> bool:
         async with ciclo_cliente(ajustes_mongo) as cliente_mongo:
             await cliente_mongo.admin.command("ping")
         responde = True
-    except Exception:
+    except Exception:  # noqa: BLE001 - sondea si Mongo responde, sin tumbar la prueba
         responde = False
 
     _SONDEO[ajustes_mongo.mongo.uri] = responde
@@ -148,12 +148,11 @@ async def cliente_con_mongo(
     obtener_ajustes.cache_clear()
     try:
         creada = crear_aplicacion()
-        async with LifespanManager(creada) as gestionada:
-            async with AsyncClient(
-                transport=ASGITransport(app=gestionada.app),
-                base_url="http://pruebas",
-            ) as cliente_http:
-                yield cliente_http
+        async with LifespanManager(creada) as gestionada, AsyncClient(
+            transport=ASGITransport(app=gestionada.app),
+            base_url="http://pruebas",
+        ) as cliente_http:
+            yield cliente_http
     finally:
         os.environ.pop("CENTINELA_MONGO__BASE", None)
         obtener_ajustes.cache_clear()

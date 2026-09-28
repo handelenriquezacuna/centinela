@@ -22,13 +22,82 @@ def prueba_el_esquema_se_genera() -> None:
     assert ESQUEMA["info"]["title"] == "Centinela"
 
 
-def prueba_estan_publicadas_las_dos_rutas_de_h00a() -> None:
-    assert set(ESQUEMA["paths"]) == {"/salud", "/api/v1/alertas"}
+def prueba_estan_publicadas_las_cuatro_rutas() -> None:
+    """El inventario completo. Que sea una igualdad y no un `>=` es a proposito:
+    publicar una ruta que nadie decidio es tan malo como no publicar una decidida."""
+    assert set(ESQUEMA["paths"]) == {
+        "/salud",
+        "/estado",
+        "/api/v1/alertas",
+        "/api/v1/alertas/flujo",
+    }
 
 
-def prueba_estado_no_esta_publicada_todavia() -> None:
-    """`/estado` es H-00B. No se publica una forma que ninguna prueba sostiene."""
-    assert "/estado" not in ESQUEMA["paths"]
+def prueba_salud_y_estado_son_rutas_distintas() -> None:
+    """Las dos rutas de operacion, con dos respuestas distintas.
+
+    Estan separadas porque responden preguntas distintas: `/salud` es "el proceso vive
+    y la base contesta" y `/estado` es "el sistema esta haciendo su trabajo". Un solo
+    endpoint esconde el escenario en el que el proceso vive y el detector esta caido.
+    """
+    salud = referencia_de_respuesta("/salud", status.HTTP_200_OK)
+    estado = referencia_de_respuesta("/estado", status.HTTP_200_OK)
+
+    assert salud.endswith("/Salud")
+    assert estado.endswith("/EstadoFuncional")
+
+
+def prueba_el_estado_publica_las_tareas_con_su_vocabulario() -> None:
+    """El portal y quien mire `/docs` tienen que ver los estados posibles de una tarea."""
+    componentes = ESQUEMA["components"]["schemas"]
+
+    assert set(componentes["EstadoSupervision"]["enum"]) == {
+        "ok",
+        "degradado",
+        "sin_supervision",
+    }
+    assert set(componentes["EstadoTarea"]["enum"]) == {
+        "corriendo",
+        "retrasada",
+        "detenida",
+        "fallida",
+        "no_construida",
+    }
+    assert set(componentes["TareaSupervisada"]["properties"]) == {
+        "nombre",
+        "estado",
+        "eventos_procesados",
+        "ultimo_evento",
+        "retraso_segundos",
+        "ultimo_error",
+        "historia",
+    }
+
+
+def prueba_el_canal_sse_se_publica_como_flujo_de_eventos() -> None:
+    """El canal esta en el esquema, y con su tipo de contenido real.
+
+    Si se publicara como `application/json`, un cliente generado desde el esquema
+    intentaria leer el cuerpo entero antes de procesar el primer evento, que es
+    exactamente lo que un flujo infinito no permite.
+    """
+    respuesta = ESQUEMA["paths"]["/api/v1/alertas/flujo"]["get"]["responses"]["200"]
+
+    assert "text/event-stream" in respuesta["content"]
+    assert "application/json" not in respuesta["content"]
+    descripcion = respuesta["description"]
+    assert "resincronizar" in descripcion
+    assert "token de reanudacion" in descripcion
+
+
+def prueba_el_canal_publica_la_cabecera_de_reanudacion() -> None:
+    """`Last-Event-ID` es parte del contrato, no un detalle de implementacion."""
+    parametros = {
+        parametro["name"]
+        for parametro in ESQUEMA["paths"]["/api/v1/alertas/flujo"]["get"]["parameters"]
+    }
+
+    assert parametros == {"Last-Event-ID", "ultimo_evento"}
 
 
 def prueba_el_modelo_de_error_esta_en_el_esquema() -> None:
@@ -70,7 +139,7 @@ def prueba_el_422_publicado_es_el_error_de_centinela() -> None:
 
 
 def prueba_las_rutas_publican_el_500() -> None:
-    for ruta in ("/salud", "/api/v1/alertas"):
+    for ruta in ("/salud", "/estado", "/api/v1/alertas"):
         referencia = referencia_de_respuesta(
             ruta, status.HTTP_500_INTERNAL_SERVER_ERROR
         )

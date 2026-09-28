@@ -68,7 +68,7 @@ def correr(orden: list[str], *, dry_run: bool = False, permitir_fallo: bool = Fa
     if dry_run:
         return 0
 
-    resultado = subprocess.run(orden, cwd=RAIZ)
+    resultado = subprocess.run(orden, cwd=RAIZ, check=False)
     if resultado.returncode != 0 and not permitir_fallo:
         raise Fallo(f"el comando termino con codigo {resultado.returncode}")
     return resultado.returncode
@@ -148,7 +148,7 @@ def _salida(orden: list[str]) -> str:
     """Ejecuta y devuelve la salida. Cadena vacia si el comando falla."""
     try:
         resultado = subprocess.run(
-            orden, cwd=RAIZ, capture_output=True, text=True, timeout=30
+            orden, cwd=RAIZ, capture_output=True, text=True, timeout=30, check=False
         )
     except (subprocess.TimeoutExpired, OSError):
         return ""
@@ -191,6 +191,13 @@ def tarea_arriba(args: argparse.Namespace) -> None:
     comando y pasa media hora buscando por que fallan los change streams.
 
     `init-replicaset.js` es idempotente: correrlo de nuevo no hace nada.
+
+    Con `--con-app` se agrega un tercer paso al final: levantar tambien el servicio
+    `app` (la API en un contenedor, modalidad de arranque B). Va DESPUES de esperar
+    el primario y no junto con los tres nodos, a proposito: la API arrancaria de
+    todos modos aunque el replica set siguiera eligiendo primario (el cliente de
+    Mongo conecta perezoso, ver `app/main.py`), pero levantarla despues da un primer
+    `/salud` limpio en vez de uno que reporta el replica set todavia formandose.
     """
     correr(compose("up", "-d", "--wait"), dry_run=args.dry_run)
 
@@ -207,16 +214,37 @@ def tarea_arriba(args: argparse.Namespace) -> None:
 
     print("\nEstado:")
     tarea_estado(args)
+
+    if not args.con_app:
+        print(
+            "\nListo. Siguiente paso:\n"
+            "  python tareas.py datos-demo\n"
+            "  python tareas.py dev"
+        )
+        return
+
+    print("\nLevantando el servicio app (la API en un contenedor)...")
+    correr(
+        compose("--profile", "app", "up", "-d", "--build", "--wait", "app"),
+        dry_run=args.dry_run,
+    )
     print(
-        "\nListo. Siguiente paso:\n"
+        "\nListo, con la API dentro de Compose. Siguiente paso:\n"
         "  python tareas.py datos-demo\n"
-        "  python tareas.py dev"
+        "  curl http://localhost:8000/salud"
     )
 
 
 def tarea_abajo(args: argparse.Namespace) -> None:
-    """Apaga los contenedores. Los datos sobreviven en los volumenes."""
-    orden = compose("down")
+    """Apaga los contenedores. Los datos sobreviven en los volumenes.
+
+    Lleva `--profile app` siempre, se haya usado `--con-app` o no: un servicio con
+    perfil que Compose no ve activo en ESTA invocacion no cuenta como "definido" para
+    `down`, y sin la bandera el contenedor de la API sobrevive, huerfano, sin la red
+    de mongo1 que se acaba de apagar. Pedir el perfil no hace nada si `app` no estaba
+    arriba; si estaba, es la unica forma de que este comando lo apague tambien.
+    """
+    orden = compose("--profile", "app", "down")
     if args.borrar_datos:
         orden.append("-v")
         print("Se borran los volumenes: el replica set habra que inicializarlo de nuevo.")
@@ -357,6 +385,16 @@ def construir_analizador() -> argparse.ArgumentParser:
         sub = subs.add_parser(nombre, help=documento, description=funcion.__doc__)
         sub.set_defaults(funcion=funcion)
 
+        if nombre == "arriba":
+            sub.add_argument(
+                "--con-app",
+                action="store_true",
+                dest="con_app",
+                help=(
+                    "tambien levanta el servicio 'app' (la API en un contenedor, "
+                    "modalidad de arranque B)"
+                ),
+            )
         if nombre == "abajo":
             sub.add_argument(
                 "--borrar-datos",
@@ -386,6 +424,7 @@ def main(argumentos: list[str] | None = None) -> int:
 
     # Valores por omision para las tareas que no declaran estas banderas.
     for bandera, valor in (
+        ("con_app", False),
         ("borrar_datos", False),
         ("tipo", "todas"),
         ("sin_mongo", False),

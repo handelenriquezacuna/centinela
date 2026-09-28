@@ -80,6 +80,6 @@ class RepoAlertasFalso:
         fecha = asumir_utc(documento["fecha_creacion"])
         if desde is not None and fecha < asumir_utc(desde):
             return False
-        if hasta is not None and fecha > asumir_utc(hasta):
+        if hasta is not None and fecha > asumir_utc(hasta):  # noqa: SIM103 - guardas uniformes
             return False
         return True

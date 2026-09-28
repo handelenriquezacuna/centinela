@@ -53,23 +53,23 @@ flowchart LR
         R[Routers HTTP]
         S[Servicios]
         P[Repositorios<br/>único lugar con consultas]
-        W[WebSocket]
+        W[Canal SSE]
     end
 
-    subgraph motor [Motor · proceso aparte]
+    subgraph motor [Detección · módulo del mismo proceso]
         D1[D1 detección]
         D2[D2 notificación]
         D3[D3 indicadores]
     end
 
     subgraph mongo [MongoDB · replica set rsfraude]
-        C[(11 colecciones)]
+        C[(12 colecciones<br/>13 al cerrar H-09)]
         V[Vistas guardadas]
         M[Pipelines $merge<br/>perfiles e indicadores]
         OL[(oplog)]
     end
 
-    subgraph portal [Portal · React]
+    subgraph portal [Portal · Jinja y HTMX]
         UI[Pantallas del agente]
     end
 
@@ -81,8 +81,8 @@ flowchart LR
     D3 --> M --> C
     UI --> R --> S --> P --> C
     P --> V
-    D1 -. "evento" .-> W
-    W == "tiempo real" ==> UI
+    OL == "Change Stream de alertas" ==> W
+    W == "SSE · tiempo real" ==> UI
 ```
 
 ## 4. El flujo que define el producto
@@ -92,7 +92,7 @@ sequenceDiagram
     participant G as Generador
     participant DB as MongoDB
     participant D1 as Motor D1
-    participant WS as WebSocket
+    participant WS as Canal SSE
     participant AG as Agente
 
     G->>DB: insert transacción ₡750.000 → destino nuevo
@@ -101,7 +101,8 @@ sequenceDiagram
     D1->>DB: lee reglas activas
     Note over D1: evalúa · R-01 (35) + R-03 (25) + R-05 (15)<br/>puntaje 75 → CRÍTICA
     D1->>DB: insert alerta con reglas disparadas
-    D1->>WS: emite alerta
+    DB-->>WS: Change Stream de alertas
+    Note over WS: el canal lee lo persistido,<br/>no un bus en memoria
     WS-->>AG: aparece en el panel (< 2 s)
     AG->>DB: resuelve → confirmada
     Note over DB: la acción se agrega al<br/>historial embebido de la alerta
@@ -134,7 +135,7 @@ erDiagram
 
 Seis etapas. **Cada una deja algo que funciona**, no un pedazo inerte.
 
-### E0 · Fundación — ✅ terminada
+### E0 · Fundación — terminada
 
 ```mermaid
 flowchart LR
@@ -189,9 +190,10 @@ con el reporte de efectividad diciendo cuánto fraude se atrapó.
 
 ```mermaid
 flowchart LR
-    M[(MongoDB)] -.-> D1[Motor D1]
-    D1 --> API[API FastAPI]
-    API == WebSocket ==> UI[Portal React]
+    M[(MongoDB)] -.-> D1[Detección D1]
+    D1 --> M
+    M -. "Change Stream<br/>de alertas" .-> API[API FastAPI]
+    API == SSE ==> UI[Portal Jinja y HTMX]
     API --> M
     style API fill:#1a4d2e,color:#fff
     style UI fill:#1a4d2e,color:#fff
@@ -288,6 +290,9 @@ paquetes por semana en `sc609-reparto-semanal` del cerebro.**
 |---|---|
 | **Change Stream** | Suscripción al flujo de cambios de MongoDB. Es cómo el motor se entera de una transacción nueva sin preguntar cada segundo |
 | **oplog** | Bitácora de operaciones del replica set. Es lo que hace posibles los Change Streams |
+| **SSE** | *Server-Sent Events.* Flujo HTTP de una sola dirección, del servidor al navegador. Es cómo la alerta nueva llega al panel. Se eligió sobre WebSocket porque el panel solo necesita recibir, y el navegador reconecta solo |
+| **HTMX** | Biblioteca que deja al servidor devolver HTML e insertarlo en la página, en vez de devolver JSON y armar la pantalla en el navegador. Elimina el build de frontend |
+| **Token de reanudación** | Marca de posición en un Change Stream. El canal SSE la manda como identificador del evento; el navegador la devuelve al reconectar y el servidor retoma desde ahí. Si el oplog ya rodó, el token deja de servir y el panel vuelve a pedir su cola completa |
 | **Replica set** | Grupo de nodos con los mismos datos. Obligatorio para Change Streams y transacciones |
 | **Pipeline de agregación** | Secuencia de etapas que transforma documentos. El equivalente de un `GROUP BY` con esteroides |
 | **`$merge`** | Etapa final que escribe el resultado del pipeline en una colección. Así materializamos perfiles e indicadores |

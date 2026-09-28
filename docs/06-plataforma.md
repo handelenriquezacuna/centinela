@@ -399,10 +399,30 @@ python tareas.py dev          # uvicorn con recarga
 15 segundos, y sin la espera el comando terminaba mostrando tres `SECONDARY`, que parece
 un error y no lo es.
 
-### Modalidad B: todo en Compose — **es H-00B**
+### Modalidad B: todo en Compose — **probada**
 
-La misma URI del YAML ya sirve para esto (ver 3). No está construida todavía y nada de
-lo escrito la impide.
+```
+python tareas.py arriba --con-app   # los 3 nodos mas la API, todo en Compose
+python tareas.py datos-demo
+```
+
+Para la demo y la defensa. El navegador entra por el puerto publicado, igual que en la
+modalidad A, y **la URI del YAML no cambia ni una letra** entre las dos.
+
+Eso último no sale gratis, y conviene entender por qué funciona. El servicio `app` entra
+al espacio de red de `mongo1` con `network_mode: service:mongo1`, exactamente como ya
+hacen `mongo2` y `mongo3`. Por eso **el puerto 8000 se publica en la lista `ports` de
+`mongo1`, no en la de `app`**: un servicio que toma prestada la pila de red de otro no
+puede declarar puertos propios, porque no tiene pila propia. El resultado es que
+`localhost:27018` y `localhost:8000` significan lo mismo desde el host, desde `mongo1` y
+desde el contenedor de la API.
+
+La alternativa —reiniciar el replica set anunciando nombres de Docker— rompería el acceso
+desde el host y obligaría a editar el archivo `hosts` en Windows, que es justo lo que esta
+topología existe para evitar.
+
+`app` lleva `profiles: ["app"]`, así que un `docker compose up` sin argumentos sigue
+levantando solo el replica set. Nadie se encuentra un contenedor nuevo sin pedirlo.
 
 ---
 
@@ -412,6 +432,7 @@ lo escrito la impide.
 |---|---|
 | `python tareas.py instalar` | `uv sync` con las versiones exactas del lock |
 | `python tareas.py arriba` | Levanta el replica set, lo inicializa y espera al primario |
+| `python tareas.py arriba --con-app` | Lo mismo, más la API dentro de Compose (modalidad B) |
 | `python tareas.py abajo [--borrar-datos]` | Lo apaga. Con la bandera, borra también los volúmenes |
 | `python tareas.py estado` | Estado de los tres nodos |
 | `python tareas.py dev` | La API en el host, con recarga |
@@ -479,12 +500,16 @@ sea `RespuestaError` y no el `HTTPValidationError` que FastAPI documenta por omi
 | Ruta | Responde | Estado |
 |---|---|---|
 | `GET /salud` | El proceso está vivo y la base contesta. Trae el nombre del replica set y si el nodo es primario | Existe |
-| `GET /estado` | El sistema está **haciendo su trabajo**: D1/D2/D3, último evento procesado, retraso, último error | **H-00B** |
+| `GET /estado` | El sistema está **haciendo su trabajo**: qué tareas corren o están caídas, último evento procesado, retraso, último error | Existe |
 
 Están separadas porque un proceso vivo con el motor caído es justo el escenario que un
 solo endpoint de salud esconde: responde 200 mientras no se detecta un solo fraude.
-`/estado` no se implementa en H-00A para no publicar una forma que ninguna prueba
-sostiene.
+
+`/estado` se apoya en `app/supervision/`, que registra cada tarea de fondo y la vigila.
+Una tarea que muere no se pierde en silencio: deja el sistema en `degradado` y su último
+error queda a la vista. Los disparadores D1, D2 y D3 todavía no existen —son H-09, H-11
+y H-22— pero el andamio que los va a vigilar sí, y se prueba matando una tarea a mano.
+`/estado` nombra la historia de cada uno, así que la ruta dice quién lo va a construir.
 
 `/salud` responde 200 aunque Mongo no conteste, con `mongo_conectado: false` y el
 motivo en `detalle`: la ruta cumplió su trabajo respondiendo, y quien la consulta
@@ -514,6 +539,40 @@ note.
 El orden es `fecha_creacion` descendente con `_id` como desempate. Sin el desempate,
 paginar puede repetir un documento o saltárselo.
 
+### El canal SSE: `GET /api/v1/alertas/flujo`
+
+Es cómo la alerta nueva llega al panel sin que el agente recargue. Y la decisión de
+fondo, la que hay que no deshacer por error: **no hay bus en memoria.**
+
+El canal observa la colección `alertas` con un Change Stream. La fuente es **lo
+persistido**, no un objeto en memoria, así que da igual quién escribió la alerta:
+`datos-demo`, D1 dentro del proceso, o el detector corrido por línea de comandos. Todos
+aparecen en el panel por el mismo camino.
+
+El diseño anterior tenía un bus en memoria, y tenía tres agujeros: se perdía al
+reiniciar, no definía de dónde recuperar lo perdido, y **las alertas de demo insertadas
+directo en Mongo nunca habrían aparecido en el panel.** Quitar el bus es menos
+maquinaria, no más.
+
+| Pieza | Decisión |
+|---|---|
+| Identificador del evento | El token de reanudación del Change Stream. Es lo que el navegador devuelve en `Last-Event-ID` |
+| Reconexión | Se reabre con `resumeAfter` y ese token, **con el mismo pipeline y las mismas opciones**: cambiarlos al reanudar da comportamiento impredecible |
+| Token inservible | Si el oplog ya rodó, Mongo responde `ChangeStreamHistoryLost`. El canal emite un evento `resincronizar` y el panel vuelve a pedir su cola a `/api/v1/alertas` |
+| Formato | `ServerSentEvent(raw_data=...)`, **no `data`**: el panel inserta HTML con HTMX, y `data` se serializa como JSON, así que llegaría entrecomillado. Son mutuamente excluyentes |
+| Cliente | htmx más la extensión `htmx-ext-sse`, vendorizada como archivo aparte en `app/estaticos/`. **No viene en el núcleo de htmx**, y agrega su propia reconexión con espera progresiva sobre la del navegador |
+
+**Lo que se promete, dicho con precisión.** `Last-Event-ID` lo manda el navegador solo,
+pero recuperar lo perdido lo tiene que implementar el servidor: no es automático. Y lo
+que este canal promete es **reconstruir el estado de la cola**, no reproducir cada evento
+histórico. Para un panel de trabajo eso es lo correcto: el agente quiere su cola como
+está ahora, no una repetición de cada transición. Reproducir todo evento exigiría un
+registro durable aparte, que ninguna historia ni ningún rubro pide.
+
+**Límite conocido:** un Change Stream por conexión. Con un puñado de agentes está bien;
+escalar a decenas pediría un flujo compartido con reparto entre conexiones. Está
+documentado, no construido.
+
 ---
 
 ## 7. Datos de demo
@@ -542,16 +601,34 @@ Anotadas para que nadie las resuelva dos veces, cada una en distinto sentido.
 
 | Divergencia | Estado |
 |---|---|
-| Los comentarios de ejemplo de `scripts/practica1/*.js` usan `monto` y `fecha`, sin `moneda` ni `esquema_version`, y montos como literal numérico (que mongosh guarda como `double`) | Los contratos de este documento son los que valen. Los comentarios del andamio no se corrigieron: vencen el 28 de septiembre y no son de H-00A |
+| Los comentarios de ejemplo de `scripts/practica1/*.js` usan `monto` y `fecha`, sin `moneda` ni `esquema_version`, y montos como literal numérico (que mongosh guarda como `double`) | **Los contratos de este documento son los que valen.** Esos archivos quedaron como referencia interna: la Práctica 1 se entregó fuera del repo, así que no son el entregable calificado. Corregir los comentarios está pendiente de decisión, y no urge |
+| `scripts/practica1/CONTRATO-IDS.md` lista tres reglas (`REG-001..003`) | El catálogo real tiene seis: se agregaron `R-07`, `R-09` y `R-11`. La fuente viva es `scripts/semilla/03-catalogos.js` |
 | `perfiles_comportamiento.desviacion_crc` está en `CONTRATO-IDS.md` pero no en el validador | El modelo lo declara opcional y no lo escribe hasta que el validador lo acepte |
 | `casos.fecha_apertura`, `notificaciones.detalle_error`, `indicadores_diarios.calculado_en`, `reglas_deteccion.version` y `.parametros`: el modelo los declara, el validador todavía no | Opcionales en el modelo. Los campos opcionales no se escriben cuando son nulos, porque los validadores declaran `additionalProperties: false` y una clave nula sería una clave desconocida |
-| `docs/04-arquitectura.md` habla de React, WebSocket, "motor proceso aparte" y 11 colecciones | Desalineado con lo decidido (Jinja + HTMX, SSE, monolito, 13 colecciones). Se corrige en H-00B |
+| Hay **12 colecciones**, no las 13 de la sección 1.9 | Falta `deteccion_estado`, la del token de reanudación del detector. La crea H-09; 13 es el estado final, no el actual |
+| La **reanudación del canal SSE contra Mongo real** no tiene prueba automática | El camino feliz se comprobó a mano contra el clúster de tres nodos: alerta insertada, evento con su token, HTML sin serializar. Lo que falta es provocar `ChangeStreamHistoryLost` de verdad, y eso pide un replica set con `oplogSize` diminuto, un ambiente aparte del suite. Hoy ese camino se cubre con un doble |
+
+Ya resuelta: `docs/04-arquitectura.md` hablaba de React, WebSocket, "motor proceso
+aparte" y 11 colecciones. Corregido en H-00B, junto con el glosario y el criterio de
+H-17.
 
 ---
 
-## 9. Qué falta (H-00B)
+## 9. Qué falta, y de quién es
 
-CI con las compuertas de los cuatro tipos de prueba, la segunda modalidad de arranque,
-`/estado` con supervisión de D1/D2/D3, el canal SSE leyendo el change stream de
-`alertas` con token de reanudación, `docs/07-plan-de-equipo.md`, y la corrección de
-`docs/04-arquitectura.md`.
+H-00A y H-00B están cerradas. Lo que sigue no es de la plataforma:
+
+| Falta | De quién |
+|---|---|
+| Los disparadores D1 y D2, y la colección `deteccion_estado` | H-09 y H-11 — **B** |
+| El disparador D3, que recalcula indicadores | Va con H-22 — **C**. El pipeline y el disparador que lo invoca son una sola unidad de trabajo: repartirlos entre dos personas deja la integración colgando |
+| `scripts/procedimientos/` con los recálculos corribles por `mongosh --file` | **A**, y es lo que cubre el rubro 9 de la rúbrica |
+| El generador con Faker, a escala de proyecto | H-03 a H-05 — **A** |
+| Las plantillas del portal conectadas a Jinja y al canal SSE | H-17 en su segunda mitad — **C** |
+| Los endpoints de escritura: resolver una alerta, gestionar reglas | H-14 y H-16 — **D** |
+
+**Dos rubros de la rúbrica siguen sin evidencia**, y valen 6 de 30 puntos: los
+disparadores de procesos y los procedimientos almacenados. Los scripts de siembra no
+sirven para eso — crean estructura, no reaccionan a cambios ni son rutinas invocables.
+La evidencia sale de H-09 y H-11 para el primero, y de `scripts/procedimientos/` para el
+segundo.

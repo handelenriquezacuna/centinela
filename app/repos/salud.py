@@ -40,3 +40,19 @@ async def estado_conexion(base: AsyncDatabase) -> dict[str, Any]:
         "es_primario": bool(respuesta.get("isWritablePrimary")),
         "detalle": None,
     }
+
+
+async def exigir_conexion(base: AsyncDatabase) -> None:
+    """Misma comprobacion que `estado_conexion`, pero lanzando si la base no responde.
+
+    Existe para el latido de `app/supervision/`: una tarea de fondo no tiene a quien
+    devolverle un diccionario de diagnostico, lo que necesita es que el fallo suba
+    como excepcion para anotarlo como ultimo error y volver a intentar.
+
+    Dos variantes de la misma consulta y no dos consultas: `/salud` reporta y no
+    lanza porque una ruta de salud que devuelve 500 no informa nada; el latido lanza
+    porque su forma de informar es el registro de errores del supervisor.
+    """
+    conexion = await estado_conexion(base)
+    if not conexion["conectado"]:
+        raise ConnectionError(conexion["detalle"] or "la base no responde")

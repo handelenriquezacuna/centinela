@@ -137,7 +137,7 @@ def prueba_el_dinero_del_perfil_tambien_es_entero() -> None:
 
 def prueba_la_fecha_sin_zona_se_rechaza() -> None:
     with pytest.raises(ValidationError) as fallo:
-        transaccion(fecha=datetime(2026, 9, 24, 22, 47))
+        transaccion(fecha=datetime(2026, 9, 24, 22, 47))  # noqa: DTZ001 - es lo que se rechaza
 
     assert "zona horaria" in str(fallo.value)
 
@@ -179,7 +179,7 @@ def prueba_el_historial_embebido_no_acepta_fecha_sin_zona() -> None:
                 {
                     "accion": "en_revision",
                     "agente_id": "AGT-001",
-                    "fecha": datetime(2026, 9, 24, 22, 49),
+                    "fecha": datetime(2026, 9, 24, 22, 49),  # noqa: DTZ001 - es lo que se rechaza
                 }
             ]
         )

@@ -71,11 +71,11 @@ Todos los ejemplos usan la misma víctima, para que se lea como una sola histori
 >
 > | Regla | Dispara | Peso |
 > |---|---|---|
-> | R-01 Monto sobre 10× el promedio | ✅ 16,6× | 35 |
-> | R-03 Destino nunca visto | ✅ | 25 |
-> | R-05 Fuera del horario habitual | ✅ 22:47 | 15 |
-> | R-07 Destino en lista de riesgo | ❌ | 0 |
-> | R-09 Velocidad anómala | ❌ | 0 |
+> | R-01 Monto sobre 10× el promedio | si 16,6× | 35 |
+> | R-03 Destino nunca visto | si | 25 |
+> | R-05 Fuera del horario habitual | si 22:47 | 15 |
+> | R-07 Destino en lista de riesgo | no | 0 |
+> | R-09 Velocidad anómala | no | 0 |
 >
 > **Puntaje 75 → severidad CRÍTICA.** Se crea la alerta y aparece en el panel
 > del agente en menos de un segundo.
