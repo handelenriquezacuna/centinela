@@ -35,6 +35,7 @@ para actuar se mide en minutos.
 | [04 · Arquitectura](docs/04-arquitectura.md) | Cómo se conecta todo y cómo evoluciona por etapas |
 | [05 · Infraestructura](docs/05-infraestructura.md) | Replica set, arranque, por qué no un mongod suelto |
 | [06 · Plataforma](docs/06-plataforma.md) | **Los contratos que comparten los cuatro**: dinero, fechas, identificadores, versión de esquema, estados de la alerta, configuración, comandos |
+| [07 · Plan de equipo](docs/07-plan-de-equipo.md) | **Cómo trabajamos**: reglas, flujo de ramas, quién toma qué, las tres entregas y el reparto del Avance 1 |
 
 ## Arquitectura visual
 

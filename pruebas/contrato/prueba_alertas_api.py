@@ -320,12 +320,11 @@ async def prueba_el_tope_respeta_la_configuracion_y_no_un_numero_del_codigo(
     doble = RepoAlertasFalso(alertas_como_documentos())
     aplicacion.dependency_overrides[dep_repo_alertas] = lambda: doble
 
-    async with LifespanManager(aplicacion) as gestionada:
-        async with AsyncClient(
-            transport=ASGITransport(app=gestionada.app), base_url="http://pruebas"
-        ) as cliente_http:
-            sin_limite = (await cliente_http.get(RUTA)).json()
-            excesivo = (await cliente_http.get(RUTA, params={"limite": 500})).json()
+    async with LifespanManager(aplicacion) as gestionada, AsyncClient(
+        transport=ASGITransport(app=gestionada.app), base_url="http://pruebas"
+    ) as cliente_http:
+        sin_limite = (await cliente_http.get(RUTA)).json()
+        excesivo = (await cliente_http.get(RUTA, params={"limite": 500})).json()
 
     assert sin_limite["limite"] == 1
     assert excesivo["limite"] == 2

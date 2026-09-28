@@ -73,7 +73,7 @@ class IndicadorDiario(DocumentoBase):
     calculado_en: MarcaTiempoUTC | None = None
 
     @model_validator(mode="after")
-    def completar_los_conteos(self) -> "IndicadorDiario":
+    def completar_los_conteos(self) -> IndicadorDiario:
         """Rellena con 0 los estados y severidades que no aparecen.
 
         El validador de la coleccion exige las cinco claves de estado y las tres de

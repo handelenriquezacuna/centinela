@@ -42,5 +42,22 @@ mongo:
   base: antifraude
   tiempo_espera_seleccion_ms: 5000
 
+# Vigilancia de las tareas de fondo, la que reporta GET /estado. Tiempos tecnicos:
+# cada cuanto el proceso se toma el pulso, y cuanto silencio se tolera antes de
+# declarar una tarea retrasada. La tolerancia es varias veces el intervalo a
+# proposito: si fueran parecidos, un latido que llega un instante tarde dejaria el
+# sistema en degradado sin que nada este mal.
+supervision:
+  intervalo_latido_segundos: 5
+  tolerancia_retraso_segundos: 30
+
+# Canal SSE de alertas (GET /api/v1/alertas/flujo).
+canal:
+  # Comentario de mantenimiento por la conexion abierta, para que un proxy no la
+  # cierre por inactividad cuando no hay alertas.
+  ping_segundos: 15
+  # Espera del navegador antes de reconectar; viaja como `retry` en la apertura.
+  reintento_ms: 3000
+
 registro:
   nivel: INFO

@@ -92,6 +92,47 @@ class AjustesMongo(BaseModel):
     tiempo_espera_seleccion_ms: int = Field(default=5000, ge=100)
 
 
+class AjustesSupervision(BaseModel):
+    """Tiempos de la vigilancia de tareas de fondo que publica `/estado`.
+
+    Son numeros tecnicos, no de negocio: no deciden si algo es fraude, deciden cada
+    cuanto el proceso se toma el pulso y cuanto silencio se tolera antes de declarar
+    una tarea retrasada. Por eso pueden vivir en el YAML.
+
+    La tolerancia tiene que ser varias veces el intervalo. Si fueran parecidos, un
+    latido que llega un instante tarde dejaria `/estado` en `degradado` sin que nada
+    este mal, y una alarma que grita sin motivo se aprende a ignorar.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    intervalo_latido_segundos: float = Field(default=5.0, gt=0)
+    tolerancia_retraso_segundos: float = Field(default=30.0, gt=0)
+
+    @model_validator(mode="after")
+    def la_tolerancia_supera_el_intervalo(self) -> AjustesSupervision:
+        if self.tolerancia_retraso_segundos <= self.intervalo_latido_segundos:
+            raise ValueError(
+                "supervision.tolerancia_retraso_segundos tiene que ser mayor que "
+                "supervision.intervalo_latido_segundos"
+            )
+        return self
+
+
+class AjustesCanal(BaseModel):
+    """El canal SSE de alertas. Tambien tecnico: ni un umbral, ni una severidad."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Cada cuanto se manda un comentario de mantenimiento por la conexion abierta. Sin
+    # esto, un proxy o un cortafuegos cierra una conexion sin trafico y el panel se
+    # queda en silencio pareciendo sano.
+    ping_segundos: int = Field(default=15, ge=1)
+    # Cuanto espera el navegador antes de reconectar. Se manda como `retry` en la
+    # apertura para no depender del valor por omision de cada navegador.
+    reintento_ms: int = Field(default=3000, ge=100)
+
+
 class AjustesRegistro(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -141,6 +182,8 @@ class Ajustes(BaseSettings):
     app: AjustesApp = AjustesApp()
     servidor: AjustesServidor = AjustesServidor()
     mongo: AjustesMongo
+    supervision: AjustesSupervision = AjustesSupervision()
+    canal: AjustesCanal = AjustesCanal()
     registro: AjustesRegistro = AjustesRegistro()
 
     @classmethod

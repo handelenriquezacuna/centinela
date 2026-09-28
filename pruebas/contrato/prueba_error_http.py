@@ -92,12 +92,11 @@ async def prueba_un_error_inesperado_no_filtra_el_detalle_interno() -> None:
     async def explota() -> None:
         raise RuntimeError("secreto de la base de datos que no debe salir")
 
-    async with LifespanManager(aplicacion) as gestionada:
-        async with AsyncClient(
-            transport=ASGITransport(app=gestionada.app, raise_app_exceptions=False),
-            base_url="http://pruebas",
-        ) as cliente_http:
-            respuesta = await cliente_http.get("/explota")
+    async with LifespanManager(aplicacion) as gestionada, AsyncClient(
+        transport=ASGITransport(app=gestionada.app, raise_app_exceptions=False),
+        base_url="http://pruebas",
+    ) as cliente_http:
+        respuesta = await cliente_http.get("/explota")
 
     assert respuesta.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
     error = afirmar_forma_de_error(respuesta.json())
@@ -123,12 +122,11 @@ async def prueba_una_transicion_invalida_sale_como_conflicto() -> None:
     async def resolver() -> None:
         exigir_transicion(EstadoAlerta.NUEVA, EstadoAlerta.CONFIRMADA)
 
-    async with LifespanManager(aplicacion) as gestionada:
-        async with AsyncClient(
-            transport=ASGITransport(app=gestionada.app, raise_app_exceptions=False),
-            base_url="http://pruebas",
-        ) as cliente_http:
-            respuesta = await cliente_http.post("/resolver-de-mentira")
+    async with LifespanManager(aplicacion) as gestionada, AsyncClient(
+        transport=ASGITransport(app=gestionada.app, raise_app_exceptions=False),
+        base_url="http://pruebas",
+    ) as cliente_http:
+        respuesta = await cliente_http.post("/resolver-de-mentira")
 
     assert respuesta.status_code == status.HTTP_409_CONFLICT
     error = afirmar_forma_de_error(respuesta.json())
@@ -153,12 +151,11 @@ async def prueba_un_error_de_dominio_respeta_su_estado_y_su_codigo() -> None:
             status.HTTP_404_NOT_FOUND,
         )
 
-    async with LifespanManager(aplicacion) as gestionada:
-        async with AsyncClient(
-            transport=ASGITransport(app=gestionada.app, raise_app_exceptions=False),
-            base_url="http://pruebas",
-        ) as cliente_http:
-            respuesta = await cliente_http.get("/no-hay")
+    async with LifespanManager(aplicacion) as gestionada, AsyncClient(
+        transport=ASGITransport(app=gestionada.app, raise_app_exceptions=False),
+        base_url="http://pruebas",
+    ) as cliente_http:
+        respuesta = await cliente_http.get("/no-hay")
 
     assert respuesta.status_code == status.HTTP_404_NOT_FOUND
     error = afirmar_forma_de_error(respuesta.json())

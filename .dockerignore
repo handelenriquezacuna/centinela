@@ -1,0 +1,21 @@
+# Lo que `infra/Dockerfile` no necesita para construir la imagen del servicio `app`.
+# El contexto de build es la raiz del repo (`context: ..` en infra/docker-compose.yml),
+# asi que esto evita mandarle al daemon de Docker el entorno virtual, el historial de
+# git y todo lo que es de desarrollo y no de ejecucion.
+
+.venv/
+.git/
+.github/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+
+docs/
+pruebas/
+scripts/
+.claude/
+CLAUDE.md
+
+*.log
+.DS_Store

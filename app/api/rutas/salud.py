@@ -19,8 +19,8 @@ from __future__ import annotations
 from fastapi import APIRouter, status
 
 from app.api.dependencias import AjustesDep, BaseDep
-from app.api.esquemas import Salud
 from app.api.errores import respuestas_documentadas
+from app.api.esquemas import Salud
 from app.repos.salud import estado_conexion
 
 enrutador = APIRouter(tags=["salud"])

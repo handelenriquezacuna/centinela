@@ -7,7 +7,9 @@ abrir la pagina localmente, y sin viewport no es responsive.
 
 Uso:  python3 scripts/build-pagina.py
 """
-import pathlib, re, sys
+import pathlib
+import re
+import sys
 
 RAIZ = pathlib.Path(__file__).resolve().parent.parent
 SRC = RAIZ / "docs" / "arquitectura" / "_contenido.html"
@@ -38,4 +40,4 @@ OUT.write_text(
     '\n</body>\n</html>\n',
     encoding="utf-8")
 
-print("Generado: %s (%d KB)" % (OUT.relative_to(RAIZ), OUT.stat().st_size // 1024))
+print(f"Generado: {OUT.relative_to(RAIZ)} ({OUT.stat().st_size // 1024} KB)")

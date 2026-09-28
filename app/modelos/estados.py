@@ -20,8 +20,8 @@ registra quien la tomo. `docs/01-vision-y-alcance.md` hablaba de un estado
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import StrEnum
-from typing import Mapping
 
 
 class EstadoAlerta(StrEnum):

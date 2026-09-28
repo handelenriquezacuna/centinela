@@ -18,10 +18,11 @@ lugares: lo carga `tareas.py datos-demo` y lo consumen las pruebas de la API.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from app.modelos import (
     COLECCIONES,
+    ZONA_COSTA_RICA,
     AccionHistorial,
     Agente,
     Alerta,
@@ -44,9 +45,9 @@ from app.modelos import (
     Transaccion,
 )
 
-# Costa Rica no tiene horario de verano, asi que el desplazamiento es fijo. Se
-# escribe la hora local del caso de uso (22:47) y el modelo la normaliza a UTC.
-ZONA_COSTA_RICA = timezone(timedelta(hours=-6), name="America/Costa_Rica")
+# La zona de presentacion se importa de app/modelos/base.py: una sola definicion
+# para el portal, el canal SSE y el demo. Se escribe la hora local del caso de uso
+# (22:47) y el modelo la normaliza a UTC al validar.
 
 DIA = "2026-09-24"
 

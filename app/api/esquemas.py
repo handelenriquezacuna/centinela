@@ -8,9 +8,17 @@ que no se guarda), no habra que romper nada para separarlos.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 from app.modelos.alertas import Alerta
+from app.supervision import (
+    EstadoSupervision,
+    EstadoTarea,
+    InformeSupervision,
+    InformeTarea,
+)
 
 
 class Pagina(BaseModel):
@@ -52,3 +60,96 @@ class Salud(BaseModel):
     detalle: str | None = Field(
         default=None, description="Motivo, cuando la base no responde"
     )
+
+
+class ErrorDeTarea(BaseModel):
+    """Ultimo error de una tarea de fondo, con cuando ocurrio."""
+
+    mensaje: str = Field(examples=["ConnectionError: la base no responde"])
+    fecha: datetime
+
+
+class TareaSupervisada(BaseModel):
+    """Una tarea de fondo tal como la publica `/estado`.
+
+    El mismo juego de campos para el latido de la plataforma y para D1/D2/D3 cuando
+    existan. Que sea uno solo es el punto: quien mire `/estado` no tiene que aprender
+    un formato distinto por disparador.
+    """
+
+    nombre: str = Field(examples=["latido", "d1_deteccion"])
+    estado: EstadoTarea
+    eventos_procesados: int = Field(
+        ge=0, description="Eventos que esta tarea termino de procesar desde que arranco"
+    )
+    ultimo_evento: datetime | None = Field(
+        default=None, description="Cuando se proceso el ultimo evento, en UTC"
+    )
+    retraso_segundos: float | None = Field(
+        default=None,
+        description="Segundos desde el ultimo evento procesado; nulo si todavia no hubo ninguno",
+    )
+    ultimo_error: ErrorDeTarea | None = None
+    historia: str | None = Field(
+        default=None,
+        description="La historia que construye esta tarea, cuando todavia no existe",
+        examples=["H-09"],
+    )
+
+
+class EstadoFuncional(BaseModel):
+    """Respuesta de `/estado`: el sistema esta HACIENDO su trabajo, o no.
+
+    Distinta de `/salud` a proposito, y la diferencia es la falla que arruina una
+    demo: un proceso vivo con la base contestando responde `/salud` 200 mientras el
+    detector lleva dos horas sin procesar una transaccion. `/estado` es la ruta que
+    puede decirlo.
+
+    Los disparadores que todavia no existen se reportan como `no_construida` con la
+    historia que los trae, y NO degradan el sistema: no estar construido todavia es
+    una verdad del calendario, no una falla.
+    """
+
+    estado: EstadoSupervision
+    version: str
+    entorno: str
+    tolerancia_retraso_segundos: float = Field(
+        gt=0, description="Silencio maximo tolerado antes de declarar una tarea retrasada"
+    )
+    tareas: list[TareaSupervisada]
+
+    @classmethod
+    def desde_informe(
+        cls, informe: InformeSupervision, *, version: str, entorno: str
+    ) -> EstadoFuncional:
+        """Traduce el informe del supervisor a la respuesta HTTP.
+
+        La traduccion vive aca y no en `app/supervision/` para que el supervisor no
+        tenga que saber que existe una API. Es la misma regla del motor: el que hace
+        el trabajo no conoce la pantalla.
+        """
+        return cls(
+            estado=informe.estado,
+            version=version,
+            entorno=entorno,
+            tolerancia_retraso_segundos=informe.tolerancia_retraso_segundos,
+            tareas=[cls._tarea(fila) for fila in informe.tareas],
+        )
+
+    @staticmethod
+    def _tarea(fila: InformeTarea) -> TareaSupervisada:
+        return TareaSupervisada(
+            nombre=fila.nombre,
+            estado=fila.estado,
+            eventos_procesados=fila.eventos_procesados,
+            ultimo_evento=fila.ultimo_evento,
+            retraso_segundos=fila.retraso_segundos,
+            ultimo_error=(
+                ErrorDeTarea(
+                    mensaje=fila.ultimo_error.mensaje, fecha=fila.ultimo_error.fecha
+                )
+                if fila.ultimo_error is not None
+                else None
+            ),
+            historia=fila.historia,
+        )

@@ -92,7 +92,42 @@ def prueba_los_nodos_comparten_el_espacio_de_red_del_primero(compose: dict) -> N
         assert servicios[nodo]["network_mode"] == "service:mongo1"
 
     publicados = servicios["mongo1"]["ports"]
-    assert len(publicados) == 3, "mongo1 publica los tres puertos por los tres nodos"
+    for puerto in ("27018:27018", "27019:27019", "27020:27020"):
+        assert puerto in publicados, f"mongo1 no publica {puerto}"
+
+
+def prueba_el_servicio_app_comparte_el_espacio_de_red_de_mongo1(compose: dict) -> None:
+    """La segunda modalidad de arranque (H-00B): `app` entra al espacio de red de
+    mongo1 igual que mongo2 y mongo3, y NO publica su propio puerto.
+
+    Un servicio con `network_mode: service:X` no tiene pila de red propia, asi que no
+    puede declarar `ports`: el puerto 8000 tiene que estar en la lista de mongo1, el
+    dueno del espacio de red. Es lo mismo que ya hace 27019 y 27020 por mongo2 y
+    mongo3, aplicado a la API.
+    """
+    servicios = compose["services"]
+
+    assert "app" in servicios, "falta el servicio app en infra/docker-compose.yml"
+    assert servicios["app"]["network_mode"] == "service:mongo1"
+    assert "ports" not in servicios["app"], (
+        "el puerto de la API se publica en mongo1, no en app: un servicio con "
+        "network_mode: service:X no puede declarar sus propios ports"
+    )
+
+    assert "8000:8000" in servicios["mongo1"]["ports"], (
+        "mongo1 tiene que publicar tambien el 8000 de la API"
+    )
+
+
+def prueba_el_servicio_app_no_arranca_con_un_up_sin_argumentos(compose: dict) -> None:
+    """`app` lleva un perfil explicito para no sorprender a quien solo quiere Mongo.
+
+    La modalidad A (Mongo en Compose, Python en el host) es la que el equipo usa a
+    diario y es la que un `docker compose up` sin mas tiene que seguir levantando.
+    Sin `profiles`, agregar `app` habria convertido ese comando en otra cosa para
+    todo el mundo.
+    """
+    assert compose["services"]["app"].get("profiles") == ["app"]
 
 
 def prueba_el_replica_set_se_llama_rsfraude(compose: dict) -> None:

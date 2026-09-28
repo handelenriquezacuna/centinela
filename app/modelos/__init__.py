@@ -27,6 +27,7 @@ from app.modelos.alertas import (
 )
 from app.modelos.base import (
     ESQUEMA_VERSION,
+    ZONA_COSTA_RICA,
     DocumentoBase,
     FechaDia,
     MarcaTiempoUTC,
@@ -99,6 +100,7 @@ __all__ = [
     "ESTADOS_TERMINALES",
     "ESTADO_INICIAL",
     "TRANSICIONES",
+    "ZONA_COSTA_RICA",
     "AccionHistorial",
     "Agente",
     "Alerta",

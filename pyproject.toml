@@ -14,6 +14,8 @@ dependencies = [
     "pydantic==2.13.5",
     "pydantic-settings==2.15.0",
     "pyyaml==6.0.3",
+    "sse-starlette==3.4.11",
+    "jinja2==3.1.6",
 ]
 
 [dependency-groups]
@@ -24,6 +26,7 @@ dev = [
     # AsyncClient de httpx no dispara el lifespan de la app; el cliente de Mongo se
     # crea justamente ahi. Sin esto las pruebas de API corren sin cliente.
     "asgi-lifespan==2.1.0",
+    "ruff==0.16.9",
 ]
 
 [tool.pytest.ini_options]
