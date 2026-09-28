@@ -4,6 +4,13 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Configuracion de cada maquina. El archivo base (config/centinela.yml) SI se
+# versiona; este solo lleva lo que una persona necesita cambiar en su equipo, y
+# le gana al base. Ver docs/06-plataforma.md.
+config/centinela.local.yml
 
 # Node / frontend
 node_modules/
@@ -26,3 +33,9 @@ data/
 # La version del repo es docs/arquitectura/index.html, generada con
 # scripts/build-pagina.py a partir de docs/arquitectura/_contenido.html
 docs/Arquitectura de Centinela.html
+
+# Tooling local de agentes (plugin de Claude). No va al repo.
+# Por eso los contratos de datos viven tambien en docs/06-plataforma.md, que si se
+# versiona: es el unico lugar donde el equipo los puede leer.
+.claude/
+CLAUDE.md

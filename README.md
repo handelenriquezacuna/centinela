@@ -4,8 +4,18 @@
 > ocurren, y actúa sobre las que el motor marca como probable estafa de vishing
 > antes de que el dinero salga del sistema.
 
-**Estado:** diseño. No hay código de aplicación todavía — por decisión: primero
-cerramos qué construimos y en qué orden.
+**Estado:** andamio de la plataforma en pie. El diseño está cerrado y la API arranca
+con datos de demo; el motor de detección y el portal siguen.
+
+```
+python tareas.py instalar     # entorno con uv (Python 3.13, versiones del lock)
+python tareas.py arriba       # replica set rsfraude en Docker
+python tareas.py datos-demo   # siembra y conjunto de demo
+python tareas.py dev          # API en http://127.0.0.1:8000/docs
+```
+
+Los contratos de datos y las reglas de arquitectura están en
+[06 · Plataforma](docs/06-plataforma.md). **Leerlo antes de escribir un documento.**
 
 ## El problema en una frase
 
@@ -21,11 +31,10 @@ para actuar se mide en minutos.
 |---|---|
 | [01 · Visión y alcance](docs/01-vision-y-alcance.md) | Qué es el MVP, para quién, qué queda fuera |
 | [02 · Casos de uso](docs/02-casos-de-uso.md) | Los 10 flujos del sistema, con datos de ejemplo |
-| [03 · Historias de usuario](docs/03-historias-usuario.md) | El backlog: 24 historias listas para tomar |
+| [03 · Historias de usuario](docs/03-historias-usuario.md) | El backlog: 27 historias listas para tomar |
 | [04 · Arquitectura](docs/04-arquitectura.md) | Cómo se conecta todo y cómo evoluciona por etapas |
 | [05 · Infraestructura](docs/05-infraestructura.md) | Replica set, arranque, por qué no un mongod suelto |
-| [06 · Checklist del Avance 1](docs/06-avance1-checklist.md) | Qué ya está escrito, qué falta, qué está bloqueado, orden de ataque |
-| [07 · Reparto de código — Práctica 1](docs/07-practica1-codigo.md) | Los 11 colecciones divididas en 4 archivos sin dependencias, contrato de IDs |
+| [06 · Plataforma](docs/06-plataforma.md) | **Los contratos que comparten los cuatro**: dinero, fechas, identificadores, versión de esquema, estados de la alerta, configuración, comandos |
 
 ## Arquitectura visual
 

@@ -5,6 +5,18 @@
 # service:mongo1). Asi los tres se ven entre si en localhost y el host
 # alcanza los tres por los puertos publicados, sin tocar /etc/hosts.
 
+# Nombre de proyecto explicito: sin esta clave, Compose lo deriva del nombre del
+# directorio del archivo ("infra"), asi que el proyecto depende de donde este clonado
+# el repo. Con el nombre fijo, dos personas con el repo en carpetas distintas obtienen
+# el mismo proyecto.
+#
+# Lo que este nombre NO resuelve: la colision entre varios checkouts del repo. Todos
+# comparten este archivo, asi que todos derivaban el mismo nombre antes y todos usan
+# `centinela` ahora: es la misma colision con otro nombre. Lo que la evita es la regla
+# de operacion -solo el checkout principal corre `docker compose`-, documentada en
+# docs/06-plataforma.md seccion 4.
+name: centinela
+
 services:
   mongo1:
     image: mongo:8
@@ -16,9 +28,15 @@ services:
       - "27020:27020"   # mongo3
     volumes:
       - mongo1data:/data/db
-      # Los scripts se montan para poder ejecutarlos con `mongosh --file`,
-      # que funciona igual en macOS, Linux y Windows. La redireccion `<`
-      # de shell no existe en PowerShell.
+      # Este montaje queda por compatibilidad, pero NO es la forma recomendada de
+      # correr un script, y conviene saber por que: el clúster es uno solo y lo
+      # recrea quien corre `up` de ultimo, asi que /scripts apunta a la carpeta del
+      # host de esa persona. Desde otro checkout, `mongosh --file /scripts/x.js`
+      # lee el archivo de otro, o no lo encuentra.
+      #
+      # La forma robusta es correr mongosh DESDE EL HOST con la ruta absoluta del
+      # host y la URI completa del replica set. Asi el archivo lo lee el host y el
+      # driver descubre el primario aunque no sea mongo1. Es lo que hace tareas.py.
       - ../scripts:/scripts:ro
     healthcheck:
       test: ["CMD","mongosh","--port","27018","--quiet","--eval","db.adminCommand('ping').ok"]
@@ -48,6 +66,18 @@ services:
       mongo1:
         condition: service_healthy
 
+# Volumenes normales, sin `external` y sin `name`: Compose los crea y los administra.
+#
+# Esto es deliberado y ya se equivoco una vez. Un volumen declarado `external: true`
+# Compose NO lo crea: asume que existe, y si no existe `up` falla con
+# `external volume "..." not found` antes de arrancar un solo contenedor. En la maquina
+# de quien clona el repo por primera vez -o en un corredor de CI, o en la del profesor
+# el dia de la defensa- eso es un arranque roto en el primer paso.
+#
+# El motivo para haberlos fijado era conservar una siembra existente, y la cuenta no
+# cerraba: la base entera se regenera en segundos con `datos-demo` (01 -> 02 -> 03 mas
+# los documentos de dominio, todo idempotente). Perder un volumen viejo no cuesta nada;
+# que un companero no pueda arrancar cuesta el proyecto.
 volumes:
   mongo1data:
   mongo2data:
