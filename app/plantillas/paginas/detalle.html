@@ -1,0 +1,115 @@
+{% extends "paginas/base.html" %}
+{% block titulo %}Alerta {{ alerta['_id'] }}{% endblock %}
+{% block contenido %}
+<link rel="stylesheet" href="/estaticos/detalle.css">
+<p class="migaja"><a href="/panel">Panel</a> / Alerta {{ alerta['_id'] }}</p>
+
+<div class="titulo-pantalla">
+  <div>
+    <h1>Alerta {{ alerta['_id'] }}</h1>
+    <p class="subtitulo">Transaccion <span class="id-corto">{{ alerta['transaccion_id'] }}</span>
+      · creada {{ alerta['fecha_creacion'] | hora_costa_rica }} (hora CR)</p>
+  </div>
+</div>
+
+<section class="tarjeta" aria-label="Resumen de la alerta">
+  <div class="resumen-alerta">
+    <div><span class="insignia es-{{ alerta['severidad'] | lower }}">Severidad {{ alerta['severidad'] | lower }}</span></div>
+    <div class="puntaje">{{ alerta['puntaje'] }}<small>puntaje / {{ puntaje['maximo'] }}</small></div>
+    <div><span id="insignia-estado" class="insignia insignia-estado es-{{ estado_alerta }}">{{ estado_alerta }}</span></div>
+    <div>
+      <dl class="lista-datos"><div><dt>Agente asignado</dt>
+        <dd id="agente-asignado">{{ alerta['agente_id'] or 'sin asignar' }}{% if alerta['agente_id'] and nombres.get(alerta['agente_id']) %} ({{ nombres[alerta['agente_id']] }}){% endif %}</dd></div></dl>
+    </div>
+  </div>
+</section>
+
+<section class="tarjeta" aria-label="Datos de la transaccion">
+  <h2 class="seccion-titulo">Transaccion</h2>
+  <dl class="lista-datos">
+    <div><dt>Id transaccion</dt><dd class="id-corto">{{ alerta['transaccion_id'] }}</dd></div>
+    <div><dt>Cuenta origen</dt><dd class="id-corto">{{ alerta['cuenta_origen'] }}{% if transaccion %} ({{ transaccion['cuenta_origen'] }}){% endif %}</dd></div>
+    <div><dt>Cuenta destino</dt><dd class="id-corto">{{ alerta['cuenta_destino'] }}</dd></div>
+    <div><dt>Monto</dt><dd class="monto">{{ alerta['monto_crc'] | colones }} {{ alerta['moneda'] }}</dd></div>
+    {% if transaccion %}<div><dt>Canal</dt><dd>{{ transaccion['canal'] }}</dd></div>{% endif %}
+    <div><dt>Fecha y hora (hora CR)</dt><dd class="hora">{{ (transaccion['fecha'] if transaccion else alerta['fecha_creacion']) | hora_costa_rica }}</dd></div>
+  </dl>
+  {% if not transaccion %}<p class="nota-tecnica">No se encontro la transaccion; se muestran los datos copiados en la alerta.</p>{% endif %}
+</section>
+
+<section class="tarjeta" aria-label="Perfil del cliente">
+  <h2 class="seccion-titulo">Perfil del cliente</h2>
+  <dl class="lista-datos">
+    <div><dt>Cliente</dt><dd>{{ cliente['nombre'] if cliente else alerta['cliente_nombre'] }}{% if cliente %} ({{ cliente['_id'] }}){% endif %}</dd></div>
+    {% if cliente %}<div><dt>Cedula</dt><dd>{{ cliente['cedula'] }}</dd></div>{% endif %}
+    {% if perfil %}
+    <div><dt>Transferencias</dt><dd>{{ perfil['num_transferencias'] }}</dd></div>
+    <div><dt>Monto promedio</dt><dd class="monto">{{ perfil['promedio_crc'] | colones }} CRC</dd></div>
+    <div><dt>Monto maximo</dt><dd class="monto">{{ perfil['maximo_crc'] | colones }} CRC</dd></div>
+    <div><dt>Horario habitual</dt><dd>{{ perfil['horario_habitual']['inicio'] }} - {{ perfil['horario_habitual']['fin'] }} (hora CR)</dd></div>
+    <div><dt>Destinos frecuentes</dt><dd>{{ perfil['destinos_frecuentes'] | length }}</dd></div>
+    {% endif %}
+  </dl>
+  {% if not perfil %}<p class="nota-tecnica">El cliente no tiene perfil materializado.</p>{% endif %}
+</section>
+
+<section class="tarjeta" aria-label="Reglas que dispararon">
+  <h2 class="seccion-titulo">Reglas que dispararon (aporte al puntaje)</h2>
+  {% if es_v2 %}
+  <table class="tabla-aportes" id="tabla-aportes">
+    <thead><tr><th>Regla</th><th>Version</th><th>Explicacion</th><th>Aporte</th><th>Acumulado</th></tr></thead>
+    <tbody>
+      {% for regla in puntaje['filas'] %}
+      <tr>
+        <td><strong>{{ regla['codigo'] }}</strong> <small>{{ regla['regla_id'] }}</small></td>
+        <td>v{{ regla['version'] }}</td>
+        <td>{{ regla['explicacion'] }}
+          <span class="barra-aporte"><span class="barra-aporte-relleno" style="width:{{ regla['ancho'] }}%"></span></span></td>
+        <td class="regla-peso">+{{ regla['peso'] }}</td>
+        <td class="regla-peso">{{ regla['acumulado'] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot><tr><td colspan="3">Suma de aportes</td><td class="regla-peso" id="suma-aportes">{{ puntaje['suma'] }}</td><td></td></tr></tfoot>
+  </table>
+  <div class="total-puntaje">
+    <span>Puntaje total{% if puntaje['tope'] %} (la suma {{ puntaje['suma'] }} se acota al maximo {{ puntaje['maximo'] }}){% endif %}</span>
+    <span id="puntaje-total">{{ alerta['puntaje'] }} <span aria-hidden="true">&rarr;</span> severidad {{ alerta['severidad'] | lower }}</span>
+  </div>
+  {% else %}
+  <div class="mensaje mensaje-error" role="note" id="aviso-v1">{{ aviso_v1 }}</div>
+  <p>Reglas disparadas:
+    {% for regla_id in alerta['reglas_disparadas'] %}<span class="id-corto">{{ regla_id }}</span>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+  {% endif %}
+
+  <h3 class="seccion-titulo">Politica y cortes de severidad</h3>
+  {% if politica_usada %}
+  <p>Politica usada: <span class="id-corto">{{ politica_usada['politica_id'] }}</span> version {{ politica_usada['version'] }}.</p>
+  {% else %}
+  <p>Politica usada: no registrada en la alerta (v1).</p>
+  {% endif %}
+  {% if politica %}
+  {% if politica_distinta %}<p class="nota-tecnica">La politica vigente ahora es {{ politica.politica_id }} version {{ politica.version }}; los cortes de abajo son los vigentes, no los de la alerta.</p>{% endif %}
+  <div class="barra-puntaje" role="img" aria-label="Puntaje {{ alerta['puntaje'] }} de {{ puntaje['maximo'] }}">
+    <span class="barra-puntaje-relleno" style="width:{{ puntaje['ancho_puntaje'] }}%"></span>
+    {% for corte in puntaje['cortes'] %}<span class="barra-puntaje-corte" style="left:{{ corte['inicio'] }}%" title="{{ corte['severidad'] }} desde {{ corte['minimo'] }}"></span>{% endfor %}
+  </div>
+  <table class="tabla-aportes" id="tabla-cortes">
+    <thead><tr><th>Severidad</th><th>Desde</th><th>Hasta</th><th></th></tr></thead>
+    <tbody>
+      {% for corte in puntaje['cortes'] %}
+      <tr{% if corte['alcanzado'] %} class="corte-alcanzado"{% endif %}>
+        <td>{{ corte['severidad'] }}</td><td>{{ corte['minimo'] }}</td><td>{{ corte['maximo'] }}</td>
+        <td>{% if corte['alcanzado'] %}corte alcanzado ({{ alerta['puntaje'] }}){% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="nota-tecnica">Umbral de creacion de alerta: {{ puntaje['umbral'] }}. Puntaje maximo: {{ puntaje['maximo'] }}.</p>
+  {% else %}
+  <p class="nota-tecnica">No hay politica vigente en la base.</p>
+  {% endif %}
+</section>
+
+{% include "paginas/detalle_acciones.html" %}
+{% endblock %}

@@ -777,7 +777,8 @@ vendorizados (`app/estaticos/PROCEDENCIA.md`). Arrancar con `uvicorn app.main:ap
 |---|---|
 | `/panel` | Cola ordenada por severidad y fecha; se mantiene por SSE (`/api/v1/alertas/flujo`). `resincronizar` y una reconexion piden de nuevo `/panel/cola` |
 | `/reglas` | Catalogo, edicion con `version_esperada` (409 visible), versiones anteriores, tipos soportados y politica vigente en solo lectura |
-| `/detalle`, `/busqueda`, `/tablero` | Maqueta estatica dentro de la plantilla base, marcada "en construccion" |
+| `/detalle/{alerta_id}` | H-18. Transaccion, perfil, cada regla con version, aporte y explicacion (tabla que suma hasta el puntaje, con los cortes de la politica y el alcanzado), politica usada, historial en orden y resolucion: botones solo para lo que permite la maquina de estados, selector de agente (sin autenticacion hasta H-25) y el 409 como mensaje. Una alerta v1 muestra los ids y "alerta v1: migrar con python tareas.py migrar". Resolver usa el mismo handler que `POST /api/v1/alertas/{id}/transiciones`; escalar muestra el caso creado |
+| `/detalle`, `/busqueda`, `/tablero` | Maqueta estatica dentro de la plantilla base, marcada "en construccion" (H-19 y H-20 pendientes) |
 
 La fila del panel es la misma plantilla (`sse/fila_alerta.html`) para la carga inicial y
 para cada evento SSE. El formulario de reglas reutiliza el handler de `PATCH

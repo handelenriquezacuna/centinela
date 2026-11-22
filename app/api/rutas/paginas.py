@@ -11,8 +11,12 @@ las dos puertas no pueden divergir.
   `GET /api/v1/alertas` porque HTMX inserta HTML.
 - `/reglas` (T-16): catalogo, edicion con concurrencia optimista, historia de versiones,
   tipos soportados y politica vigente en solo lectura.
-- `/detalle`, `/busqueda`, `/tablero`: la maqueta estatica dentro de la plantilla base,
-  marcada "en construccion", hasta que lleguen H-18, H-19 y H-20.
+- `/detalle/{alerta_id}` (H-18): la transaccion, el perfil, cada regla disparada con su
+  aporte, la politica, el historial y la resolucion desde ahi. Resolver llama al mismo
+  handler que `POST /api/v1/alertas/{id}/transiciones`, asi que las dos puertas no
+  divergen: misma maquina de estados, mismo 409.
+- `/detalle` (sin id), `/busqueda`, `/tablero`: la maqueta estatica dentro de la plantilla
+  base, marcada "en construccion", hasta que lleguen H-19 y H-20.
 
 Sin autenticacion hasta H-25.
 """
@@ -31,13 +35,20 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader, Undefined, select_autoescape
 from pydantic import ValidationError
 
-from app.api.dependencias import AjustesDep, RepoAlertasDep, RepoReglasDep
+from app.api.dependencias import (
+    AjustesDep,
+    RepoAlertasDep,
+    RepoDetalleDep,
+    RepoReglasDep,
+)
 from app.api.errores import ErrorCentinela
-from app.api.esquemas import EdicionRegla
+from app.api.esquemas import EdicionRegla, PeticionTransicion
 from app.api.fragmentos import ENTORNO as ENTORNO_FRAGMENTOS
 from app.api.fragmentos import RUTA_PLANTILLAS
+from app.api.rutas.alertas import AlertaIdRuta, transicionar_alerta
 from app.api.rutas.reglas import ReglaIdRuta, editar_regla
 from app.deteccion.evaluador import TIPOS_REGLA
+from app.modelos import EstadoAlerta, TransicionInvalida, transiciones_validas
 
 enrutador = APIRouter(include_in_schema=False)
 
@@ -242,7 +253,213 @@ async def guardar_regla(
 
 
 # ---------------------------------------------------------------------------
-# Maquetas, hasta que existan H-18, H-19 y H-20
+# Detalle de alerta (H-18)
+# ---------------------------------------------------------------------------
+
+# Orden y rotulo de los botones. Cuales aparecen lo decide la maquina de estados.
+ACCIONES = [
+    (EstadoAlerta.EN_REVISION, "Tomar", "boton-primario"),
+    (EstadoAlerta.CONFIRMADA, "Confirmar fraude", "boton-confirmar"),
+    (EstadoAlerta.DESCARTADA, "Descartar", "boton-descartar"),
+    (EstadoAlerta.ESCALADA, "Escalar a caso", "boton-escalar"),
+]
+
+AVISO_V1 = "alerta v1: migrar con python tareas.py migrar"
+
+
+def _porcentaje(valor: int, total: int) -> int:
+    return max(0, min(100, round(valor * 100 / total))) if total > 0 else 0
+
+
+def _explicacion_puntaje(alerta: dict[str, Any], politica: Any) -> dict[str, Any]:
+    """Los aportes en orden, el acumulado de cada uno y el corte que alcanza el puntaje.
+
+    Solo v2 trae aporte por regla; en v1 la lista es de ids y no hay nada que sumar.
+    """
+    puntaje = alerta["puntaje"]
+    maximo = politica.puntaje_maximo if politica is not None else 100
+    acumulado = 0
+    filas = []
+    for regla in alerta["reglas_disparadas"]:
+        if not isinstance(regla, dict):
+            continue
+        acumulado += regla["peso"]
+        filas.append(
+            {**regla, "acumulado": acumulado, "ancho": _porcentaje(regla["peso"], maximo)}
+        )
+    cortes = []
+    if politica is not None:
+        for corte in politica.cortes_severidad:
+            cortes.append(
+                {
+                    "severidad": str(corte.severidad),
+                    "minimo": corte.puntaje_minimo,
+                    "maximo": corte.puntaje_maximo,
+                    "inicio": _porcentaje(corte.puntaje_minimo, maximo),
+                    "alcanzado": corte.puntaje_minimo <= puntaje <= corte.puntaje_maximo,
+                }
+            )
+    return {
+        "filas": filas,
+        "suma": acumulado,
+        "tope": acumulado > puntaje,
+        "maximo": maximo,
+        "cortes": cortes,
+        "ancho_puntaje": _porcentaje(puntaje, maximo),
+        "umbral": politica.umbral_alerta if politica is not None else None,
+    }
+
+
+def _contexto_acciones(
+    alerta: dict[str, Any],
+    agentes: list[dict[str, Any]],
+    *,
+    caso_id: str | None,
+    mensaje: str | None = None,
+    es_error: bool = False,
+    oob: bool = False,
+) -> dict[str, Any]:
+    estado = EstadoAlerta(alerta["estado"])
+    permitidas = transiciones_validas(estado)
+    duenio = alerta.get("agente_id")
+    nombres = {a["_id"]: a["nombre"] for a in agentes}
+    seleccionable = [a for a in agentes if a.get("activo", True) or a["_id"] == duenio]
+    return {
+        "alerta": alerta,
+        "estado_alerta": estado.value,
+        "botones": [(e.value, rotulo, clase) for e, rotulo, clase in ACCIONES if e in permitidas],
+        "agentes": seleccionable,
+        "agente_por_omision": duenio or (seleccionable[0]["_id"] if seleccionable else ""),
+        "nombres": nombres,
+        "caso_id": caso_id,
+        "mensaje": mensaje,
+        "es_error": es_error,
+        "oob": oob,
+    }
+
+
+async def _caso_de(alerta: dict[str, Any], repo_detalle: RepoDetalleDep) -> str | None:
+    if alerta["estado"] != EstadoAlerta.ESCALADA.value:
+        return None
+    caso = await repo_detalle.caso_de_alerta(alerta["_id"])
+    return caso["_id"] if caso is not None else None
+
+
+@enrutador.get("/detalle/{alerta_id}", response_class=HTMLResponse)
+async def detalle(
+    alerta_id: AlertaIdRuta,
+    repo: RepoAlertasDep,
+    repo_detalle: RepoDetalleDep,
+    repo_reglas: RepoReglasDep,
+) -> HTMLResponse:
+    alerta = await repo.obtener(alerta_id)
+    if alerta is None:
+        return _pagina(
+            "paginas/detalle_no_existe.html", "detalle", estado=404, alerta_id=alerta_id
+        )
+    politica = await repo_reglas.politica_vigente()
+    contexto = await repo_detalle.contexto(alerta["transaccion_id"])
+    agentes = await repo_detalle.agentes()
+    es_v2 = bool(alerta["reglas_disparadas"]) and all(
+        isinstance(r, dict) for r in alerta["reglas_disparadas"]
+    )
+    usada = alerta.get("politica")
+    return _pagina(
+        "paginas/detalle.html",
+        "detalle",
+        es_v2=es_v2,
+        aviso_v1=AVISO_V1,
+        transaccion=contexto["transaccion"],
+        cliente=contexto["cliente"],
+        perfil=contexto["perfil"],
+        politica=politica,
+        politica_usada=usada,
+        # La alerta se calculo con otra version: los cortes que se ven son los vigentes.
+        politica_distinta=bool(
+            es_v2
+            and politica is not None
+            and usada
+            and (usada["politica_id"], usada["version"]) != (politica.politica_id, politica.version)
+        ),
+        puntaje=_explicacion_puntaje(alerta, politica),
+        **_contexto_acciones(alerta, agentes, caso_id=await _caso_de(alerta, repo_detalle)),
+    )
+
+
+def _fragmento_acciones(contexto: dict[str, Any], estado: int = 200) -> HTMLResponse:
+    html = ENTORNO.get_template("paginas/detalle_acciones.html").render(**contexto)
+    return HTMLResponse(html, status_code=estado)
+
+
+@enrutador.post("/detalle/{alerta_id}/transicion", response_class=HTMLResponse)
+async def resolver_desde_detalle(
+    alerta_id: AlertaIdRuta,
+    peticion: Request,
+    repo: RepoAlertasDep,
+    repo_detalle: RepoDetalleDep,
+) -> HTMLResponse:
+    """Mueve la alerta con el mismo handler que la API y devuelve la seccion de acciones.
+
+    Sin autenticacion (H-25) el agente viaja en el formulario. Un 409 (otro agente la
+    tomo, la transicion no esta en la tabla) vuelve como mensaje sobre la alerta tal
+    como esta ahora en la base, no como lo que el agente veia.
+    """
+    cuerpo = parse_qs((await peticion.body()).decode("utf-8"), keep_blank_values=True)
+
+    def campo(nombre: str) -> str:
+        return cuerpo.get(nombre, [""])[0]
+
+    agentes = await repo_detalle.agentes()
+    actual = await repo.obtener(alerta_id)
+    if actual is None:
+        return HTMLResponse(
+            f'<div class="mensaje mensaje-error" role="alert">No existe la alerta {alerta_id}</div>',
+            status_code=404,
+        )
+
+    mensaje: str | None = None
+    caso_id: str | None = None
+    estado_http = 200
+    try:
+        pedida = PeticionTransicion(
+            destino=campo("destino"),  # type: ignore[arg-type]
+            agente_id=campo("agente_id"),
+            nota=campo("nota").strip(),
+            estado_esperado=campo("estado_esperado") or None,  # type: ignore[arg-type]
+        )
+        resultado = await transicionar_alerta(alerta_id, pedida, repo)
+        caso_id = resultado.caso_id
+        mensaje = f"Listo: la alerta paso a {pedida.destino.value}"
+    except ValidationError as fallo:
+        estado_http = 422
+        mensaje = "Los datos no son validos: " + "; ".join(
+            f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in fallo.errors()
+        )
+    except ErrorCentinela as fallo:
+        estado_http = fallo.estado_http
+        mensaje = f"{fallo.estado_http}: {fallo.mensaje}"
+    except TransicionInvalida as fallo:
+        estado_http = 409
+        mensaje = f"409: {fallo}"
+
+    despues = await repo.obtener(alerta_id) or actual
+    if caso_id is None:
+        caso_id = await _caso_de(despues, repo_detalle)
+    return _fragmento_acciones(
+        _contexto_acciones(
+            despues,
+            agentes,
+            caso_id=caso_id,
+            mensaje=mensaje,
+            es_error=estado_http != 200,
+            oob=True,
+        ),
+        estado=estado_http,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Maquetas, hasta que existan H-19 y H-20
 # ---------------------------------------------------------------------------
 
 

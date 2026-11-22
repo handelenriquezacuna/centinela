@@ -19,6 +19,20 @@
     return valor === undefined ? 9 : valor;
   }
 
+  // Cada fila lleva al detalle de su alerta. La fila SSE no trae enlace (su plantilla no
+  // es de esta pantalla), asi que el id se envuelve aca, igual para filas iniciales y vivas.
+  function enlazar(cola) {
+    cola.querySelectorAll(".fila-alerta .alerta-id").forEach(function (celda) {
+      if (celda.querySelector("a")) { return; }
+      var id = celda.textContent.trim();
+      var enlace = document.createElement("a");
+      enlace.href = "/detalle/" + encodeURIComponent(id);
+      enlace.textContent = id;
+      celda.textContent = "";
+      celda.appendChild(enlace);
+    });
+  }
+
   function ordenar(cola) {
     var vistos = {};
     var filas = Array.prototype.slice.call(cola.querySelectorAll(".fila-alerta"));
@@ -36,6 +50,7 @@
       .forEach(function (par) { cola.appendChild(par.fila); });
     var vacio = document.getElementById("cola-vacia");
     if (vacio) { vacio.hidden = vigentes.length > 0; }
+    enlazar(cola);
   }
 
   document.body.addEventListener("htmx:afterSwap", function (evento) {
@@ -44,6 +59,8 @@
       ordenar(cola);
     }
   });
+  var colaInicial = document.getElementById("cola");
+  if (colaInicial) { enlazar(colaInicial); }
   document.body.addEventListener("htmx:sseOpen", function () {
     var estado = document.getElementById("estado-canal");
     if (estado) { estado.textContent = "en vivo"; }
