@@ -9,6 +9,12 @@ Los hechos de contexto son los del caso documentado (TXN-001 de Maria Rodriguez,
 puntaje 75): el catalogo y la politica copian `scripts/semilla/03-catalogos.js`, igual
 que `pruebas/unitarias/prueba_evaluador.py`.
 
+La calibracion T-33 (docs/08-calibracion.md) cambio en la semilla tres numeros que esta
+copia NO sigue: R-01 umbral 10 -> 8, R-05 holgura 0 -> 120 y umbral_alerta 40 -> 35 (MEDIA
+35-54). Se dejan en la linea base de H-07 a proposito: el caso documentado (R-01 + R-03 +
+R-05 = 75, CRITICA) no depende de ellos, y estas pruebas no miden la calibracion. Contra la
+semilla real lo verifica `pruebas/contrato/prueba_reglas_mongo.py`.
+
 Cumple `ProtocoloRepoDeteccion` de forma estructural; `prueba_d1.py` lo verifica.
 """
 

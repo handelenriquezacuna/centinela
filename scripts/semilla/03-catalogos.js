@@ -97,12 +97,18 @@ const reglas = [
   {
     _id: "REG-001",
     codigo: "R-01",
-    descripcion: "Monto sobre 10x el promedio del cliente",
+    descripcion: "Monto sobre 8x el promedio del cliente",
     tipo: "monto",
     // Veces el `promedio_crc` del perfil del cliente. TXN-001 va 16,6x: dispara.
     // Subirlo a 20 hace que TXN-001 deje de disparar esta regla, y eso es H-07 entera:
     // el comportamiento del motor cambio sin tocar una linea de codigo.
-    umbral: 10,
+    //
+    // CALIBRACION (T-33, docs/08-calibracion.md): antes 10, ahora 8. Junto con los cambios
+    // de R-05 y de umbral_alerta, sube la exhaustividad de validacion (91,7 % el peor
+    // conjunto, antes 90,0 %) sin abrir la puerta a lo legitimo: el generador no manda
+    // mas de 5x el promedio objetivo de un cliente (app/generador/poblacion.py). Con datos
+    // reales ese margen hay que volver a medirlo; 8 es el borde, no una verdad.
+    umbral: 8,
     peso: 35,
     activa: true,
     version: 1,
@@ -135,7 +141,13 @@ const reglas = [
     // UTC. Convertir es responsabilidad del evaluador: 22:47 en San Jose es 04:47 UTC
     // del dia siguiente. Con 0 cualquier minuto fuera de la ventana dispara; subirla a
     // 60 le perdona una hora de desfase y baja el ruido que UC-06 le achaca a R-05.
-    umbral: 0,
+    //
+    // CALIBRACION (T-33, docs/08-calibracion.md): antes 0, ahora 120. Con 0, comprar a las
+    // 19:01 cuando el horario termina a las 19:00 ya sumaba 15 puntos; R-03 + R-05 (40)
+    // era el origen de la mayoria de los falsos positivos. Con 120 solo cuenta salirse
+    // mas de dos horas, que es donde caen los episodios de vishing (22:47 en TXN-001 va
+    // 227 minutos fuera). TXN-001 sigue disparando R-05.
+    umbral: 120,
     peso: 15,
     activa: true,
     version: 1,
@@ -221,9 +233,17 @@ const politica = {
   version: 1,
   // Minimo para que una transaccion se convierta en alerta. Por debajo de esto la
   // transaccion no se pierde: queda en `transacciones` para la busqueda forense (UC-05).
-  // Con estos pesos, ninguna regla sola llega a 40 salvo R-07 (lista de riesgo): hace
-  // falta que dos senales coincidan, que es la defensa mas barata contra falsos positivos.
-  umbral_alerta: 40,
+  // Con estos pesos, solo R-07 (40) y R-01 (35) abren alerta por si solas; el resto
+  // necesita que dos senales coincidan, que es la defensa mas barata contra falsos
+  // positivos.
+  //
+  // CALIBRACION (T-33, docs/08-calibracion.md): antes 40, ahora 35. Con 40 una
+  // transferencia con monto muy atipico para el perfil (R-01, 35 puntos) pero a una
+  // hora normal y a un destino ya usado quedaba sin alerta aunque el monto solo ya era
+  // senal de fraude. Con 35 pasa a MEDIA (35-54). Es el cambio que mas exhaustividad
+  // compra y el que mas precision cuesta; el supervisor lo puede subir por la API sin
+  // desplegar (UC-07).
+  umbral_alerta: 35,
   // El puntaje se topa aqui. No es capricho: `alertas.puntaje` esta validado hasta 100 y
   // los pesos se pasan de ahi. Los dos numeros, para que nadie los confunda: las 6 reglas
   // del catalogo suman 165, y las 5 que nacen activas suman 145 (R-11 nace apagada).
@@ -237,7 +257,7 @@ const politica = {
   // el supervisor le baje el peso a R-05 (el ejemplo de UC-07), el caso sigue siendo
   // critico y la demo no se cae por cinco puntos.
   cortes_severidad: [
-    { severidad: "MEDIA", puntaje_minimo: 40, puntaje_maximo: 54 },
+    { severidad: "MEDIA", puntaje_minimo: 35, puntaje_maximo: 54 },
     { severidad: "ALTA", puntaje_minimo: 55, puntaje_maximo: 69 },
     { severidad: "CRITICA", puntaje_minimo: 70, puntaje_maximo: 100 }
   ],

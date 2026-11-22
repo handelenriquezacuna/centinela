@@ -155,10 +155,10 @@ documento**, no una parecida:
   descripcion: "Cortes de severidad y umbral de creacion de alerta",
   vigente: true,
   version: 1,                 // version de la politica, distinta de esquema_version
-  umbral_alerta: 40,          // bajo esto no se crea alerta
+  umbral_alerta: 35,          // bajo esto no se crea alerta (40 antes de la calibracion, docs/08-calibracion.md)
   puntaje_maximo: 100,
   cortes_severidad: [         // ARREGLO de objetos, no un objeto
-    { severidad: "MEDIA",   puntaje_minimo: 40, puntaje_maximo: 54 },
+    { severidad: "MEDIA",   puntaje_minimo: 35, puntaje_maximo: 54 },
     { severidad: "ALTA",    puntaje_minimo: 55, puntaje_maximo: 69 },
     { severidad: "CRITICA", puntaje_minimo: 70, puntaje_maximo: 100 }
   ],

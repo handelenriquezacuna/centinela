@@ -36,7 +36,7 @@ BASE_DE_TRABAJO = "antifraude"
 RUTA = "/api/v1/politica"
 
 CORTES_NUEVOS = [
-    {"severidad": "MEDIA", "puntaje_minimo": 40, "puntaje_maximo": 59},
+    {"severidad": "MEDIA", "puntaje_minimo": 35, "puntaje_maximo": 59},
     {"severidad": "ALTA", "puntaje_minimo": 60, "puntaje_maximo": 79},
     {"severidad": "CRITICA", "puntaje_minimo": 80, "puntaje_maximo": 100},
 ]
@@ -120,7 +120,7 @@ async def prueba_un_corte_con_hueco_da_422_y_no_escribe(
     base_con_politica: Any, cliente_con_mongo: AsyncClient
 ) -> None:
     con_hueco = [
-        {"severidad": "MEDIA", "puntaje_minimo": 40, "puntaje_maximo": 54},
+        {"severidad": "MEDIA", "puntaje_minimo": 35, "puntaje_maximo": 54},
         {"severidad": "ALTA", "puntaje_minimo": 56, "puntaje_maximo": 69},
         {"severidad": "CRITICA", "puntaje_minimo": 70, "puntaje_maximo": 100},
     ]
@@ -146,7 +146,7 @@ async def prueba_el_cambio_rige_en_la_siguiente_evaluacion_de_d1(
 
     politica = await d1.leer_politica_vigente()
     assert politica.version == 2
-    assert [c.puntaje_minimo for c in politica.cortes_severidad] == [40, 60, 80]
+    assert [c.puntaje_minimo for c in politica.cortes_severidad] == [35, 60, 80]
 
     simulada = await cliente_con_mongo.post(
         "/api/v1/reglas/simular", json=cuerpo_simulacion_txn_001()
@@ -161,8 +161,8 @@ async def prueba_la_edicion_concurrente_no_pisa(base_con_politica: Any) -> None:
     leida = await repo.politica_documento()
     assert leida is not None
 
-    primera = await repo.editar_politica(leida, {"umbral_alerta": 40}, datetime.now(UTC))
-    segunda = await repo.editar_politica(leida, {"umbral_alerta": 41}, datetime.now(UTC))
+    primera = await repo.editar_politica(leida, {"umbral_alerta": 35}, datetime.now(UTC))
+    segunda = await repo.editar_politica(leida, {"umbral_alerta": 36}, datetime.now(UTC))
 
     assert primera is not None
     assert segunda is None
