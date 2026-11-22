@@ -1,4 +1,5 @@
-# CI de Centinela: se dispara en cada pull request hacia `dev`.
+# CI de Centinela: se dispara en cada pull request hacia `dev` o `main` y en cada
+# push a `dev` (lo que queda en el tronco despues de un merge tambien se prueba).
 #
 # Compuertas, en este orden: ruff, y las pruebas de los cuatro tipos que declara
 # docs/06-plataforma.md (unitarias, contrato, integracion, arquitectura). Si
@@ -35,6 +36,27 @@
 # pruebas/contrato/prueba_configuracion.py verifica. Es el mismo mecanismo que
 # cualquier persona del equipo usaria para apuntar a otra base sin tocar el repo.
 #
+# La base sembrada y el modo estricto. Las pruebas de validadores leen los
+# `$jsonSchema` reales de la base `antifraude`, y sin semilla se saltaban: la primera
+# corrida de este workflow salio verde con 13 passed y 26 skipped. Por eso, despues de
+# levantar Mongo, se corren 01 -> 02 -> 03 de scripts/semilla/ (el mismo orden que
+# `python tareas.py datos-demo`; los scripts escriben a `antifraude` con
+# getSiblingDB) y el paso de integracion corre con CENTINELA_EXIGIR_MONGO=1: con esa
+# variable, "Mongo no responde" o "la base no esta sembrada" son fallas, no saltos
+# (pruebas/conftest.py, `saltar_o_fallar`). `-rs` deja en el log el motivo de
+# cualquier salto que quede.
+#
+# Endurecimiento: el token del job solo lee el repo, una corrida nueva en la misma
+# rama cancela la anterior, y las acciones van fijadas por SHA de commit (la
+# etiqueta, en el comentario) para que nadie pueda mover lo que corre aca moviendo
+# una etiqueta. Para actualizar una: `gh api repos/<duenio>/<accion>/git/ref/tags/<tag>`
+# y, si el objeto es de tipo `tag`, desreferenciarlo hasta el commit.
+#
+# Auditoria de dependencias: NO esta como paso. `uv export --format requirements-txt
+# --no-hashes | uvx pip-audit -r /dev/stdin` reporta hoy vulnerabilidades en certifi,
+# dnspython y pymongo; agregarlo bloquearia todo PR por algo que se arregla subiendo
+# versiones en pyproject.toml y uv.lock. Entra cuando corra limpio.
+#
 # Lo que a proposito NO esta aqui: pruebas de rendimiento y de resiliencia. La
 # resiliencia (que el replica set elija otro primario si el actual cae) necesita
 # como minimo tres nodos con eleccion real; con un solo nodo no hay a quien elegir.
@@ -44,17 +66,28 @@ name: CI
 
 on:
   pull_request:
+    branches: [dev, main]
+  push:
     branches: [dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   pruebas:
     runs-on: ubuntu-latest
     steps:
       - name: Descargar el repositorio
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Instalar uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
           python-version: "3.13"
 
@@ -68,7 +101,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          docker run -d --name centinela-mongo -p 27018:27018 mongo:8 \
+          # scripts/semilla se monta de solo lectura para correr la semilla con
+          # --file desde dentro del contenedor, igual que tareas.py la corre desde el host.
+          docker run -d --name centinela-mongo -p 27018:27018 \
+            -v "$GITHUB_WORKSPACE/scripts/semilla:/semilla:ro" mongo:8 \
             mongod --replSet rsfraude --port 27018 --bind_ip_all
 
           echo "Esperando a que el nodo responda..."
@@ -92,6 +128,15 @@ jobs:
             done
           '
 
+      - name: Sembrar la base antifraude (01 -> 02 -> 03, el orden de datos-demo)
+        run: |
+          set -euo pipefail
+          for script in 01-colecciones.js 02-indices.js 03-catalogos.js; do
+            echo "Sembrando $script..."
+            docker exec centinela-mongo mongosh --port 27018 --quiet \
+              --file "/semilla/$script"
+          done
+
       - name: Compuerta -- pruebas unitarias, de contrato y de arquitectura (sin Mongo)
         env:
           CENTINELA_MONGO__URI: "mongodb://localhost:27018/?replicaSet=rsfraude"
@@ -100,7 +145,8 @@ jobs:
       - name: Compuerta -- pruebas de integracion (Mongo real, change streams)
         env:
           CENTINELA_MONGO__URI: "mongodb://localhost:27018/?replicaSet=rsfraude"
-        run: uv run pytest -m mongo -q
+          CENTINELA_EXIGIR_MONGO: "1"
+        run: uv run pytest -m mongo -q -rs
 
       - name: Apagar Mongo
         if: always()
