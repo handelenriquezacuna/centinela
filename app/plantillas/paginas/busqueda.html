@@ -1,0 +1,82 @@
+{% extends "paginas/base.html" %}
+{% block titulo %}Busqueda forense{% endblock %}
+{% block contenido %}
+<div class="titulo-pantalla">
+  <div>
+    <h1>Busqueda forense</h1>
+    <p class="subtitulo">Filtros combinables sobre el historico de transacciones. Las fechas son dias de Costa Rica.</p>
+  </div>
+</div>
+
+<section class="tarjeta" aria-label="Filtros de busqueda">
+  <h2 class="seccion-titulo">Filtros</h2>
+  {% if errores %}
+  <div class="nota-tecnica" role="alert">
+    <strong>La busqueda tiene parametros invalidos:</strong>
+    <ul>{% for campo, mensaje in errores %}<li>{{ campo }}: {{ mensaje }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  <form class="barra-filtros" method="get" action="/busqueda">
+    <div class="campo">
+      <label for="b-desde">Fecha desde</label>
+      <input type="date" id="b-desde" name="desde" value="{{ valores.desde }}">
+    </div>
+    <div class="campo">
+      <label for="b-hasta">Fecha hasta</label>
+      <input type="date" id="b-hasta" name="hasta" value="{{ valores.hasta }}">
+    </div>
+    <div class="campo">
+      <label for="b-monto-min">Monto minimo (CRC)</label>
+      <input type="number" id="b-monto-min" name="monto_min" value="{{ valores.monto_min }}" step="1" min="0">
+    </div>
+    <div class="campo">
+      <label for="b-monto-max">Monto maximo (CRC)</label>
+      <input type="number" id="b-monto-max" name="monto_max" value="{{ valores.monto_max }}" step="1" min="0" placeholder="Sin tope">
+    </div>
+    <div class="campo">
+      <label for="b-cuenta">Cuenta (origen o destino)</label>
+      <input type="text" id="b-cuenta" name="cuenta" value="{{ valores.cuenta }}" placeholder="CTA-001 o 8712-4455" maxlength="32">
+    </div>
+    <div class="campo">
+      <label for="b-canal">Canal</label>
+      <select id="b-canal" name="canal">
+        <option value="">Todos</option>
+        {% for canal in canales %}
+        <option value="{{ canal }}"{% if valores.canal == canal %} selected{% endif %}>{{ canal }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="b-estado-alerta">Estado de la alerta asociada</label>
+      <select id="b-estado-alerta" name="estado_alerta">
+        <option value="">Cualquiera</option>
+        {% for estado in estados %}
+        <option value="{{ estado }}"{% if valores.estado_alerta == estado %} selected{% endif %}>{{ estado }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="b-limite">Resultados por pagina</label>
+      <select id="b-limite" name="limite">
+        {% for opcion in (10, 25, 50, 100) %}
+        <option value="{{ opcion }}"{% if limite == opcion %} selected{% endif %}>{{ opcion }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="b-depurar">
+        <input type="checkbox" id="b-depurar" name="depurar" value="on"{% if depurar %} checked{% endif %} style="width:auto; margin-right:6px;">
+        Mostrar plan de ejecucion
+      </label>
+    </div>
+    <div class="campo campo-acciones">
+      <button type="submit" class="boton boton-primario">Buscar</button>
+      <a class="boton boton-secundario" href="/busqueda">Limpiar</a>
+    </div>
+  </form>
+</section>
+
+{% if resultado is not none %}
+{% include "paginas/busqueda_resultados.html" %}
+{% endif %}
+{% endblock %}

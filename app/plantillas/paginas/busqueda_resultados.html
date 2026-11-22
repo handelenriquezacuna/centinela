@@ -1,0 +1,63 @@
+<section class="tarjeta" aria-label="Resultados de busqueda">
+  <div class="titulo-pantalla" style="margin-bottom: var(--espacio-3);">
+    <div>
+      <strong>{{ resultado.total }} resultados</strong>
+      {% if resultado.documentos %}<span class="subtitulo">mostrando {{ primero }} a {{ ultimo }}</span>{% endif %}
+    </div>
+    <div class="grupo-botones">
+      <a class="boton boton-secundario" href="{{ enlace_csv }}" download>Exportar CSV</a>
+    </div>
+  </div>
+  <p class="nota-tecnica">El CSV aplica estos mismos filtros, con montos enteros y fechas en hora de Costa Rica, hasta {{ limite_exportacion }} filas.</p>
+
+  {% if resultado.plan %}
+  <p class="nota-tecnica">
+    Plan de ejecucion: <code>{{ resultado.plan.etapas | join(" > ") }}</code>
+    {% if resultado.plan.indices %}· indice <code>{{ resultado.plan.indices | join(", ") }}</code>{% else %}· sin indice{% endif %}
+    · {{ resultado.plan.documentos_examinados }} documentos examinados
+    · {{ resultado.plan.claves_examinadas }} claves
+    · {{ resultado.plan.milisegundos }} ms
+  </p>
+  {% endif %}
+
+  {% if resultado.documentos %}
+  <table class="tabla-responsiva">
+    <thead>
+      <tr>
+        <th scope="col">Transaccion</th>
+        <th scope="col">Fecha y hora (CR)</th>
+        <th scope="col">Cuenta origen</th>
+        <th scope="col">Cuenta destino</th>
+        <th scope="col">Monto</th>
+        <th scope="col">Canal</th>
+        <th scope="col">Alerta relacionada</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in resultado.documentos %}
+      <tr>
+        <td data-etiqueta="Transaccion" class="id-corto">{{ t._id }}</td>
+        <td data-etiqueta="Fecha y hora (CR)" class="hora">{{ t.fecha | hora_costa_rica }}</td>
+        <td data-etiqueta="Cuenta origen" class="id-corto">{{ t.cuenta_origen }}</td>
+        <td data-etiqueta="Cuenta destino" class="id-corto">{{ t.cuenta_destino }}</td>
+        <td data-etiqueta="Monto" class="monto">{{ t.monto_crc | colones }} CRC</td>
+        <td data-etiqueta="Canal">{{ t.canal }}</td>
+        <td data-etiqueta="Alerta relacionada">
+          {% if t.alerta_id %}<a href="/detalle/{{ t.alerta_id }}"><span class="insignia insignia-estado es-{{ t.alerta_estado }}">{{ t.alerta_id }} · {{ t.alerta_estado }}</span></a>
+          {% else %}<span class="insignia insignia-estado">Sin alerta</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="paginacion">
+    <span>Mostrando {{ primero }} a {{ ultimo }} de {{ resultado.total }}</span>
+    <div class="controles">
+      {% if enlace_anterior %}<a href="{{ enlace_anterior }}" aria-label="Pagina anterior">Anterior</a>{% else %}<a href="#" aria-disabled="true">Anterior</a>{% endif %}
+      {% if enlace_siguiente %}<a href="{{ enlace_siguiente }}" aria-label="Pagina siguiente">Siguiente</a>{% else %}<a href="#" aria-disabled="true">Siguiente</a>{% endif %}
+    </div>
+  </div>
+  {% else %}
+  <p class="cola-vacia">No hay transacciones que cumplan los filtros.</p>
+  {% endif %}
+</section>

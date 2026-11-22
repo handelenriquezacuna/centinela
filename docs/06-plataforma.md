@@ -859,3 +859,29 @@ cadena es por eslabon: la salida tiene que ser posterior a la llegada y caer den
 aplica despues, en Python (`filtrar_por_eslabon`, puro), sobre lo que devolvio el
 `$graphLookup`. Una prueba unitaria falla si el repositorio deja de mandar el
 `$graphLookup`.
+
+## Busqueda forense (H-15) y su pantalla (H-19)
+
+`GET /api/v1/transacciones`, con filtros combinables (AND): `desde` / `hasta` (sobre
+`fecha`, con `$gte` y `$lte`), `monto_min` / `monto_max` (colones enteros; un monto con
+decimales o un rango invertido es 422 en la forma unica del error), `cuenta`, `canal`
+(repetible, va con `$in`) y `estado_alerta`. Paginacion acotada por `app.pagina_maxima`
+como las alertas; orden por `fecha` descendente con `_id` de desempate. Con
+`depurar=true` la respuesta trae `plan`: etapas, indices, documentos y claves examinados
+y milisegundos del `explain` en `executionStats`.
+
+- `cuenta` busca en `cuenta_origen` (CTA), `sinpe_origen` o `cuenta_destino` con un
+  `$or`; cada rama usa su indice de `02-indices.js`.
+- `estado_alerta` se resuelve sin `$lookup`: una consulta previa a `alertas` por estado
+  (tope de 50.000 ids) y `_id: {$in: [...]}` sobre `transacciones`. La alerta asociada de
+  cada fila (`alerta_id`, `alerta_estado`) se resuelve para toda la pagina en una consulta
+  con `transaccion_id: {$in: [...]}` (indice unico).
+- Pantalla `/busqueda`: los mismos filtros con formulario (los campos en blanco son "sin
+  filtro"; las fechas son dias de Costa Rica). `/busqueda/exportar.csv` aplica los mismos
+  filtros en el servidor: montos enteros, fechas en hora de Costa Rica, hasta 10.000 filas
+  (`X-Total-Coincidencias` y `X-Filas-Exportadas` dicen si se recorto).
+- Rendimiento (100.000 transacciones, 2.000 clientes): p95 de 20 consultas
+  representativas por la API completa, bajo 200 ms. Los filtros que no tienen indice
+  (`fecha` sola, `canal` solo, sin filtros) hacen COLLSCAN y cuestan decenas de ms; ver
+  la duda de indices en el informe de la historia. La prueba `volumen` imprime el p95 de
+  cada consulta.

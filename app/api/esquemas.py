@@ -49,6 +49,34 @@ class PaginaAlertas(Pagina):
     elementos: list[Alerta]
 
 
+class ElementoTransaccion(BaseModel):
+    """Una transaccion del historico con su alerta asociada (H-15).
+
+    No expone `simulacion` (la etiqueta oculta del generador). `alerta_id` y
+    `alerta_estado` son nulos cuando la transaccion no produjo alerta.
+    """
+
+    transaccion_id: str = Field(description="TXN-001")
+    cuenta_origen: str = Field(description="Cuenta propia del banco, CTA-001")
+    sinpe_origen: str | None = None
+    cuenta_destino: str
+    monto_crc: int = Field(ge=0, description="Colones enteros")
+    moneda: str
+    canal: str
+    fecha: MarcaTiempoUTC
+    alerta_id: str | None = None
+    alerta_estado: EstadoAlerta | None = None
+
+
+class PaginaTransacciones(Pagina):
+    """Pagina de la busqueda forense. `plan` solo viene con `depurar=true`."""
+
+    elementos: list[ElementoTransaccion]
+    plan: dict[str, Any] | None = Field(
+        default=None, description="Resumen del explain (executionStats) bajo depurar=true"
+    )
+
+
 class PeticionTransicion(BaseModel):
     """Mover una alerta por la maquina de estados (H-14).
 

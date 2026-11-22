@@ -19,6 +19,7 @@ from pymongo.asynchronous.database import AsyncDatabase
 from app.nucleo.config import Ajustes, obtener_ajustes
 from app.nucleo.db import obtener_base as _base_del_cliente
 from app.repos.alertas import ProtocoloRepoAlertas, RepoAlertas
+from app.repos.busqueda import ProtocoloRepoBusqueda, RepoBusqueda
 from app.repos.detalle import ProtocoloRepoDetalle, RepoDetalle
 from app.repos.flujo_alertas import ProtocoloFlujoAlertas, RepoFlujoAlertas
 from app.repos.reglas import ProtocoloRepoReglas, RepoReglas
@@ -62,6 +63,12 @@ def dep_repo_alertas(
     return RepoAlertas(base)
 
 
+def dep_repo_busqueda(
+    base: Annotated[AsyncDatabase, Depends(dep_base)],
+) -> ProtocoloRepoBusqueda:
+    return RepoBusqueda(base)
+
+
 def dep_repo_reglas(
     base: Annotated[AsyncDatabase, Depends(dep_base)],
 ) -> ProtocoloRepoReglas:
@@ -101,6 +108,7 @@ def dep_supervisor(peticion: Request) -> Supervisor:
 AjustesDep = Annotated[Ajustes, Depends(dep_ajustes)]
 BaseDep = Annotated[AsyncDatabase, Depends(dep_base)]
 RepoAlertasDep = Annotated[ProtocoloRepoAlertas, Depends(dep_repo_alertas)]
+RepoBusquedaDep = Annotated[ProtocoloRepoBusqueda, Depends(dep_repo_busqueda)]
 RepoReglasDep = Annotated[ProtocoloRepoReglas, Depends(dep_repo_reglas)]
 RepoDetalleDep = Annotated[ProtocoloRepoDetalle, Depends(dep_repo_detalle)]
 FlujoAlertasDep = Annotated[ProtocoloFlujoAlertas, Depends(dep_flujo_alertas)]

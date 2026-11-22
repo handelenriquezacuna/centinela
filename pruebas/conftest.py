@@ -50,15 +50,19 @@ _JS_SEMILLA = """
 const destino = db.getMongo().getDB("%(base)s");
 destino.dropDatabase();
 db.getSiblingDB = function () { return destino; };
+// 01 reasigna `db` a `destino` y 02 vuelve a llamar getSiblingDB sobre el: tambien se
+// redirige, o los indices irian a `antifraude`.
+destino.getSiblingDB = function () { return destino; };
 print = function () {};
 load("%(semilla)s/01-colecciones.js");
+load("%(semilla)s/02-indices.js");
 var BASE_CENTINELA = "%(base)s";
 load("%(semilla)s/03-catalogos.js");
 """
 
 
 async def _asegurar_semilla(uri: str) -> None:
-    """Carga la semilla real (01 y 03) en `BASE_SEMILLA`, una vez por proceso y URI."""
+    """Carga la semilla real (01, 02 y 03) en `BASE_SEMILLA`, una vez por proceso y URI."""
     if uri in _SEMILLA_LISTA:
         return
     import asyncio
