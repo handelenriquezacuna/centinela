@@ -104,10 +104,11 @@ class RepoAlertasFalso:
             if self._cumple(documento, estado, severidad, desde, hasta)
         ]
 
-        # Mismo orden que ORDEN_PANEL del repositorio real: fecha_creacion
-        # descendente, _id ascendente como desempate.
+        # Mismo orden que ORDEN_PANEL del repositorio real: puntaje descendente,
+        # fecha_creacion descendente, _id ascendente como desempate.
         filtrados.sort(key=lambda documento: documento["_id"])
         filtrados.sort(key=lambda documento: documento["fecha_creacion"], reverse=True)
+        filtrados.sort(key=lambda documento: documento.get("puntaje", 0), reverse=True)
 
         total = len(filtrados)
         pagina = filtrados[desplazamiento : desplazamiento + limite]
