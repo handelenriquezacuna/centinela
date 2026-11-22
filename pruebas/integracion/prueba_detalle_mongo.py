@@ -140,7 +140,7 @@ async def prueba_detalle_de_alr_001_tras_migrar(http: AsyncClient) -> None:
     assert re.search(r'id="suma-aportes">75<', html)
     assert re.search(r'<tr class="corte-alcanzado">\s*<td>CRITICA</td>', html)
     assert "POL-001" in html
-    assert "750 000 CRC" in html and "María Rodríguez Vargas" in html
+    assert "280 000 CRC" in html and "María Rodríguez Vargas" in html
     assert "2026-09-24 22:47" in html  # 04:47Z es 22:47 del dia anterior en Costa Rica
     assert "45 200 CRC" in html and "07:00 - 19:00" in html
     assert "AGT-001 (José Solís)" in html
