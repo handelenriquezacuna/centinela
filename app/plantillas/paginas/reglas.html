@@ -1,0 +1,50 @@
+{% extends "paginas/base.html" %}
+{% block titulo %}Reglas{% endblock %}
+{% block contenido %}
+<div class="titulo-pantalla">
+  <div>
+    <h1>Reglas de deteccion</h1>
+    <p class="subtitulo">Cada edicion sube la version y conserva la anterior. Si otra persona edito la
+      regla en el medio, el guardado se rechaza con un 409 y no se escribe nada.</p>
+  </div>
+</div>
+
+<section class="tarjeta" aria-label="Politica vigente">
+  <h2 class="seccion-titulo">Politica vigente (solo lectura)</h2>
+{% if politica %}
+  <p>Umbral de alerta <strong>{{ politica['umbral_alerta'] }}</strong> · puntaje maximo
+    <strong>{{ politica['puntaje_maximo'] }}</strong> · version {{ politica['version'] }}</p>
+  <table class="tabla-simple">
+    <thead><tr><th>Severidad</th><th>Desde</th><th>Hasta</th></tr></thead>
+    <tbody>
+{% for corte in politica['cortes_severidad'] %}
+      <tr><td>{{ corte['severidad'] }}</td><td>{{ corte['puntaje_minimo'] }}</td><td>{{ corte['puntaje_maximo'] }}</td></tr>
+{% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p class="subtitulo">No hay una politica vigente en la base.</p>
+{% endif %}
+</section>
+
+<section class="tarjeta" aria-label="Tipos soportados">
+  <h2 class="seccion-titulo">Tipos de regla que el motor sabe evaluar</h2>
+  <table class="tabla-simple">
+    <thead><tr><th>Tipo</th><th>Que significa el umbral</th><th>Parametros que lee</th><th>Evaluable</th></tr></thead>
+    <tbody>
+{% for tipo, declaracion in tipos %}
+      <tr><td><code>{{ tipo }}</code></td><td>{{ declaracion.umbral }}</td>
+        <td>{% for nombre, descripcion in declaracion.parametros.items() %}<code>{{ nombre }}</code> ({{ descripcion }}){% if not loop.last %}; {% endif %}{% else %}ninguno{% endfor %}</td>
+        <td>{{ 'Si' if declaracion.evaluable else 'No, todavia' }}</td></tr>
+{% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<h2 class="seccion-titulo">Catalogo ({{ reglas | length }})</h2>
+{% for regla in reglas %}
+{% include "paginas/regla_tarjeta.html" %}
+{% else %}
+<p class="subtitulo">No hay reglas en la base.</p>
+{% endfor %}
+{% endblock %}

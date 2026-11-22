@@ -1,0 +1,29 @@
+{% extends "paginas/base.html" %}
+{% block titulo %}Panel de alertas{% endblock %}
+{% block contenido %}
+<div class="titulo-pantalla">
+  <div>
+    <h1>Panel de alertas</h1>
+    <p class="subtitulo">Cola ordenada por severidad (critica primero) y luego por fecha.
+      <span class="estado-canal">Canal: <strong id="estado-canal">conectando</strong></span></p>
+  </div>
+  <div class="grupo-botones">
+    <button type="button" class="boton boton-secundario"
+            hx-get="/panel/cola" hx-target="#cola" hx-swap="innerHTML">Actualizar cola</button>
+  </div>
+</div>
+
+<section class="tarjeta" aria-label="Cola de alertas" hx-ext="sse" sse-connect="/api/v1/alertas/flujo">
+  {# El evento `resincronizar` no trae fila: pide la cola entera, que es lo que promete H-17. #}
+  <div hx-get="/panel/cola" hx-trigger="sse:resincronizar" hx-target="#cola" hx-swap="innerHTML"></div>
+  <div class="cola-encabezado" aria-hidden="true">
+    <span>Alerta</span><span>Severidad</span><span>Puntaje</span><span>Cliente</span>
+    <span>Cuentas</span><span>Monto</span><span>Creada (hora CR)</span><span>Estado</span>
+  </div>
+  <div id="cola" sse-swap="alerta" hx-swap="afterbegin">
+{% include "paginas/cola.html" %}
+  </div>
+  <p id="cola-vacia" class="cola-vacia"{% if alertas %} hidden{% endif %}>No hay alertas en la cola.</p>
+</section>
+{% endblock %}
+{% block scripts %}<script src="/estaticos/panel.js"></script>{% endblock %}

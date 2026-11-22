@@ -22,7 +22,7 @@ ESTATICOS = RAIZ / "app" / "estaticos"
 
 # Lo que el navegador necesita y por eso vive en el repo. La extension es parte del
 # contrato: un `.js` que llego como `.txt` no lo sirve el navegador como script.
-VENDORIZADOS = ("htmx-ext-sse.js",)
+VENDORIZADOS = ("htmx-ext-sse.js", "htmx.min.js")
 
 # Dominios de los que NO se carga nada. Si aparece uno en `app/`, alguien cambio un
 # archivo local por una etiqueta con `src` a internet.
@@ -48,17 +48,31 @@ def prueba_el_vendorizado_existe_y_no_esta_vacio(nombre: str) -> None:
 
 @pytest.mark.parametrize("nombre", VENDORIZADOS)
 def prueba_el_vendorizado_tiene_contenido_real_y_no_un_marcador(nombre: str) -> None:
-    """Un archivo de una linea pasa el chequeo de tamaño y no sirve para nada.
+    """Un marcador (`TODO: bajar el archivo`) pesa unos bytes; la biblioteca, varios KB.
 
-    El umbral no es una medida de calidad: es la diferencia entre la biblioteca y un
-    `TODO: bajar el archivo`.
+    Se mide en bytes y no en lineas: un `.min.js` legitimo ocupa una sola linea.
     """
-    contenido = (ESTATICOS / nombre).read_text(encoding="utf-8")
-    lineas = [linea for linea in contenido.splitlines() if linea.strip()]
-    assert len(lineas) > 20, (
-        f"{nombre} tiene {len(lineas)} lineas con contenido: parece un marcador, "
-        "no la biblioteca"
+    tamano = (ESTATICOS / nombre).stat().st_size
+    assert tamano > 2_000, (
+        f"{nombre} pesa {tamano} bytes: parece un marcador, no la biblioteca"
     )
+
+
+@pytest.mark.parametrize("nombre", VENDORIZADOS)
+def prueba_el_vendorizado_coincide_con_el_hash_de_su_procedencia(nombre: str) -> None:
+    """El archivo servido es exactamente el que PROCEDENCIA.md dice que se bajo."""
+    import hashlib
+    import re
+
+    procedencia = (ESTATICOS / "PROCEDENCIA.md").read_text(encoding="utf-8")
+    fila = next(
+        (linea for linea in procedencia.splitlines() if f"`{nombre}`" in linea), None
+    )
+    assert fila is not None, f"{nombre} no tiene fila en PROCEDENCIA.md"
+    esperado = re.findall(r"`([0-9a-f]{64})`", fila)
+    assert esperado, f"la fila de {nombre} en PROCEDENCIA.md no trae SHA-256"
+    real = hashlib.sha256((ESTATICOS / nombre).read_bytes()).hexdigest()
+    assert real == esperado[0], f"{nombre} no coincide con el hash de PROCEDENCIA.md"
 
 
 @pytest.mark.parametrize("nombre", VENDORIZADOS)

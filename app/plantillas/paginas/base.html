@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Centinela - {% block titulo %}Portal{% endblock %}</title>
+<link rel="stylesheet" href="/estaticos/centinela.css">
+{# 409 y 422 traen un fragmento con el mensaje de error: htmx los intercambia en vez de descartarlos. #}
+<meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"409|422","swap":true,"error":false},{"code":"[45]..","swap":false,"error":true}]}'>
+<script src="/estaticos/htmx.min.js"></script>
+<script src="/estaticos/htmx-ext-sse.js"></script>
+</head>
+<body>
+<header class="encabezado">
+  <a class="marca" href="/panel">Centinela <span class="marca-sufijo">portal de fraude</span></a>
+  <nav class="nav-portal" aria-label="Navegacion principal">
+    {% for destino, etiqueta, clave in navegacion %}
+    <a href="{{ destino }}"{% if clave == activa %} aria-current="page"{% endif %}>{{ etiqueta }}</a>
+    {% endfor %}
+  </nav>
+  <div class="sesion-agente">
+    <span class="aviso-modo-local" title="Sin autenticacion hasta H-25">modo local</span>
+  </div>
+</header>
+<main class="contenedor">
+{% block contenido %}{% endblock %}
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

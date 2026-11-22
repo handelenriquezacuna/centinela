@@ -1,8 +1,10 @@
 # Estaticos vendorizados
 
-| Archivo | Que es | Version | Origen |
-|---|---|---|---|
-| `htmx-ext-sse.js` | Extension SSE de htmx (`hx-ext="sse"`) | `htmx-ext-sse` 2.2.4 | `https://unpkg.com/htmx-ext-sse@2.2.4/dist/sse.js` |
+| Archivo | Que es | Version | Origen | SHA-256 |
+|---|---|---|---|---|
+| `htmx.min.js` | Nucleo de htmx | `htmx.org` 2.0.4 | `https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js` | `e209dda5c8235479f3166defc7750e1dbcd5a5c1808b7792fc2e6733768fb447` |
+| `htmx-ext-sse.js` | Extension SSE de htmx (`hx-ext="sse"`) | `htmx-ext-sse` 2.2.4 | `https://unpkg.com/htmx-ext-sse@2.2.4/dist/sse.js` | `3b5992a541619babefc4c169505af474df5c3039da51e59b96ccf9241ecd61d2` |
+| `panel.js` | Orden y deduplicacion de la cola del panel. Propio, no vendorizado | n/a | `app/estaticos/panel.js` | n/a |
 
 ## Por que vendorizado y no por CDN
 

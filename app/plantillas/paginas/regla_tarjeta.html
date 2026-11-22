@@ -1,0 +1,53 @@
+<section id="regla-{{ regla['_id'] }}" class="tarjeta{% if not regla['activa'] %} regla-apagada{% endif %}">
+  <div class="regla-cabecera">
+    <h3><span class="chip">{{ regla['codigo'] }}</span> {{ regla['descripcion'] }}</h3>
+    <span class="id-corto">{{ regla['_id'] }}</span>
+    <span class="chip">tipo {{ regla['tipo'] }}</span>
+    <span class="chip">version {{ regla['version'] }}</span>
+    <span class="insignia insignia-estado {{ 'es-confirmada' if regla['activa'] else 'es-descartada' }}">{{ 'Activa' if regla['activa'] else 'Apagada' }}</span>
+  </div>
+  <p class="subtitulo">Umbral <strong>{{ regla['umbral'] }}</strong> · peso <strong>{{ regla['peso'] }}</strong>
+    · parametros <code>{{ regla['parametros'] | json_compacto }}</code></p>
+{% if mensaje %}
+  <div class="mensaje {{ 'mensaje-error' if es_error else 'mensaje-ok' }}" role="{{ 'alert' if es_error else 'status' }}">
+    {{ mensaje }}
+{% if detalles %}
+    <ul>{% for d in detalles %}<li>{{ d }}</li>{% endfor %}</ul>
+{% endif %}
+  </div>
+{% endif %}
+  <form class="form-regla" hx-post="/reglas/{{ regla['_id'] }}" hx-target="#regla-{{ regla['_id'] }}" hx-swap="outerHTML"
+        method="post" action="/reglas/{{ regla['_id'] }}">
+    <input type="hidden" name="version_esperada" value="{{ regla['version'] }}">
+    <div class="campo"><label for="umbral-{{ regla['_id'] }}">Umbral</label>
+      <input type="number" step="any" min="0" id="umbral-{{ regla['_id'] }}" name="umbral" value="{{ regla['umbral'] }}"></div>
+    <div class="campo"><label for="peso-{{ regla['_id'] }}">Peso (0-100)</label>
+      <input type="number" step="1" min="0" max="100" id="peso-{{ regla['_id'] }}" name="peso" value="{{ regla['peso'] }}"></div>
+    <div class="campo"><label for="activa-{{ regla['_id'] }}">Activa</label>
+      <select id="activa-{{ regla['_id'] }}" name="activa">
+        <option value="true"{% if regla['activa'] %} selected{% endif %}>Si</option>
+        <option value="false"{% if not regla['activa'] %} selected{% endif %}>No</option>
+      </select></div>
+    <div class="campo campo-parametros"><label for="parametros-{{ regla['_id'] }}">Parametros (JSON)</label>
+      <input type="text" id="parametros-{{ regla['_id'] }}" name="parametros" value="{{ regla['parametros'] | json_compacto }}"></div>
+    <div class="campo campo-acciones"><button type="submit" class="boton boton-primario">Guardar</button></div>
+  </form>
+{% set anteriores = regla.get('versiones_anteriores') or [] %}
+  <details>
+    <summary>Versiones anteriores ({{ anteriores | length }})</summary>
+{% if anteriores %}
+    <table class="tabla-simple">
+      <thead><tr><th>Version</th><th>Umbral</th><th>Peso</th><th>Activa</th><th>Parametros</th><th>Reemplazada (hora CR)</th></tr></thead>
+      <tbody>
+{% for v in anteriores | reverse %}
+        <tr><td>{{ v['version'] }}</td><td>{{ v['umbral'] }}</td><td>{{ v['peso'] }}</td>
+          <td>{{ 'Si' if v['activa'] else 'No' }}</td><td><code>{{ v['parametros'] | json_compacto }}</code></td>
+          <td>{{ v['reemplazada_en'] | hora_costa_rica }}</td></tr>
+{% endfor %}
+      </tbody>
+    </table>
+{% else %}
+    <p class="subtitulo">Esta regla nunca se ha editado.</p>
+{% endif %}
+  </details>
+</section>
