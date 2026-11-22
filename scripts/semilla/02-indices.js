@@ -94,6 +94,13 @@ db.transacciones.createIndex(
   { monto_crc: -1, fecha: -1 },
   { name: "idx_transacciones_monto_fecha" }
 );
+// H-23: $graphLookup de la red de mulas une cada eslabon con el siguiente por
+// connectToField "sinpe_origen", y restrictSearchWithMatch acota "fecha" a la
+// ventana del episodio. El indice sirve las dos cosas en cada nivel.
+db.transacciones.createIndex(
+  { sinpe_origen: 1, fecha: 1 },
+  { name: "idx_transacciones_sinpe_origen_fecha" }
+);
 
 // ------------------------------------------------------------
 // agentes

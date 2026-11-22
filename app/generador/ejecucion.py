@@ -90,7 +90,10 @@ def generar_conjunto(ajustes: AjustesGenerador) -> Conjunto:
         poblacion, perfiles, ajustes, random.Random(f"{ajustes.semilla}:fraude"), fraude_total
     )
 
-    transacciones = ordenar_y_numerar(legitimas + fraude)
+    transacciones = ordenar_y_numerar(
+        legitimas + fraude,
+        {cuenta.cuenta_id: cuenta.cuenta_sinpe for cuenta in poblacion.cuentas},
+    )
 
     return Conjunto(
         poblacion=poblacion,

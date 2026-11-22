@@ -54,6 +54,10 @@ class Transaccion(DocumentoBase):
     # Texto y no CuentaId a proposito: el destino puede ser una cuenta mula, que no
     # tiene documento en `cuentas`.
     cuenta_destino: CuentaSinpe
+    # SINPE de la cuenta de origen, copia de `cuentas.cuenta_sinpe`: el mismo espacio de
+    # valores que `cuenta_destino`, para que `$graphLookup` una un eslabon con el
+    # siguiente (H-23). Opcional: lo viejo lo recibe con la migracion 002.
+    sinpe_origen: CuentaSinpe | None = None
     monto_crc: MontoCRC
     moneda: Moneda = "CRC"
     canal: Canal = Canal.SINPE_MOVIL

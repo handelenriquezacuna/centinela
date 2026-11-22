@@ -6,7 +6,8 @@ desde la victima y comprueba que aparecen TODOS los eslabones, en orden de salto
 sus montos, que la salida externa queda como nodo externo y que las receptoras se
 proponen para la lista de riesgo (sin escribir en ella).
 
-No hace falta D1: la red se lee de `transacciones` y `cuentas`. Base propia,
+No hace falta D1: la red se lee de `transacciones` (con `sinpe_origen`, que el
+generador escribe siempre) y `cuentas`. Base propia,
 `antifraude_pruebas_red_mulas`, con los validadores reales copiados de `antifraude` y los
 indices de `02-indices.js` que usa la consulta, con el mismo nombre.
 """
@@ -15,7 +16,6 @@ from __future__ import annotations
 
 import os
 from collections.abc import AsyncIterator, Iterator
-from datetime import timedelta
 from itertools import pairwise
 from typing import Any
 
@@ -45,7 +45,8 @@ COLECCIONES = (
     "listas_riesgo",
 )
 GENERADOR = AjustesGenerador(clientes=200, transacciones=5000)
-INDICE_SALTO = "idx_transacciones_cuenta_origen_fecha"
+INDICE_GRAFO = "idx_transacciones_sinpe_origen_fecha"
+INDICE_ORIGEN = "idx_transacciones_cuenta_origen_fecha"
 INDICE_PUENTE = "idx_cuentas_sinpe"
 
 
@@ -62,7 +63,12 @@ async def base_red(base_mongo: Any) -> AsyncIterator[Any]:
     for nombre in COLECCIONES:
         await recrear_con_validador(base, nombre, validadores[nombre])
     await base["transacciones"].create_index(
-        [("cuenta_origen", 1), ("fecha", -1)], name=INDICE_SALTO
+        [("sinpe_origen", 1), ("fecha", 1)], name=INDICE_GRAFO
+    )
+    # El de la busqueda forense, presente como en la base real: la prueba de indices
+    # comprueba que el recorrido NO va por este.
+    await base["transacciones"].create_index(
+        [("cuenta_origen", 1), ("fecha", -1)], name=INDICE_ORIGEN
     )
     await base["cuentas"].create_index("cuenta_sinpe", unique=True, name=INDICE_PUENTE)
     await base["listas_riesgo"].create_index(
@@ -89,19 +95,22 @@ def _cadenas(conjunto: Conjunto) -> dict[str, list[dict]]:
     return episodios
 
 
-def _indices_usados(explicacion: Any) -> Iterator[str]:
+def _etapas(explicacion: Any) -> list[str]:
+    """Nombres de las etapas de la agregacion explicada, en orden."""
+    return [next(iter(etapa)) for etapa in explicacion.get("stages", [])]
+
+
+def _indices_de_cursor(explicacion: Any) -> Iterator[str]:
     """Nombres de indice en cualquier rincon de un `explain` (cambia entre motores)."""
     if isinstance(explicacion, dict):
         for clave, valor in explicacion.items():
             if clave == "indexName" and isinstance(valor, str):
                 yield valor
-            elif clave == "indexesUsed" and isinstance(valor, list):
-                yield from (nombre for nombre in valor if isinstance(nombre, str))
             else:
-                yield from _indices_usados(valor)
+                yield from _indices_de_cursor(valor)
     elif isinstance(explicacion, list):
         for elemento in explicacion:
-            yield from _indices_usados(elemento)
+            yield from _indices_de_cursor(elemento)
 
 
 @pytest.mark.asyncio
@@ -167,19 +176,39 @@ async def prueba_desde_la_primera_mula_el_salto_1_es_su_salida(
 
 
 @pytest.mark.asyncio
-async def prueba_cada_salto_usa_indices(base_red: Any, conjunto: Conjunto) -> None:
-    """El salto 1 de una cadena real: la salida de la victima y su destino resuelto.
+async def prueba_el_recorrido_es_un_graphlookup_por_el_indice_nuevo(
+    base_red: Any, conjunto: Conjunto
+) -> None:
+    """El plan: `$match` en `cuentas` por `idx_cuentas_sinpe`, y un `$graphLookup` de
+    6 niveles cuyas busquedas van por `idx_transacciones_sinpe_origen_fecha`.
 
-    Tiene que devolver algo; un `$lookup` que no recibe documentos no reporta indice.
+    El `explain` de un `$graphLookup` no nombra el indice de sus busquedas internas;
+    el contador de `$indexStats` si. Sube el del indice nuevo y no el de
+    `cuenta_origen`: el recorrido no volvio a ser un salto por agregacion.
     """
     primero = next(iter(_cadenas(conjunto).values()))[0]
-    frontera = [(primero["cuenta_origen"], primero["fecha"], True)]
+    repo = RepoRedMulas(base_red)
 
-    explicacion = await RepoRedMulas(base_red).explicar_salto(frontera, timedelta(minutes=60))
+    explicacion = await repo.explicar(primero["cuenta_origen"], desde=primero["fecha"])
+    etapas = _etapas(explicacion)
+    assert "$graphLookup" in etapas, etapas
+    grafo = next(e["$graphLookup"] for e in explicacion["stages"] if "$graphLookup" in e)
+    assert (grafo["connectFromField"], grafo["connectToField"]) == (
+        "cuenta_destino",
+        "sinpe_origen",
+    )
+    assert grafo["maxDepth"] == SALTOS_MAXIMOS - 1
+    assert INDICE_PUENTE in set(_indices_de_cursor(explicacion))
 
-    usados = set(_indices_usados(explicacion))
-    assert INDICE_SALTO in usados, usados
-    assert INDICE_PUENTE in usados, usados
+    antes = await repo.usos_de_indices()
+    red = await repo.recorrer(primero["cuenta_origen"], desde=primero["fecha"])
+    despues = await repo.usos_de_indices()
+
+    assert red.aristas
+    usos = despues[INDICE_GRAFO] - antes[INDICE_GRAFO]
+    print(f"\n$graphLookup: {usos} busquedas por {INDICE_GRAFO}, {red.saltos_recorridos} saltos")
+    assert usos >= red.saltos_recorridos, (antes, despues)
+    assert despues[INDICE_ORIGEN] == antes[INDICE_ORIGEN]
 
 
 @pytest.mark.asyncio

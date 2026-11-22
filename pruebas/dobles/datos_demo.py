@@ -153,6 +153,7 @@ TRANSACCIONES = [
     Transaccion(
         _id="TXN-001",
         cuenta_origen="CTA-001",
+        sinpe_origen="8712-4455",
         cuenta_destino="6033-9001",
         monto_crc=280_000,
         canal=Canal.SINPE_MOVIL,
@@ -161,6 +162,7 @@ TRANSACCIONES = [
     Transaccion(
         _id="TXN-002",
         cuenta_origen="CTA-002",
+        sinpe_origen="6210-3387",
         cuenta_destino="5544-9021",
         monto_crc=25_000,
         canal=Canal.SINPE_MOVIL,
@@ -169,6 +171,7 @@ TRANSACCIONES = [
     Transaccion(
         _id="TXN-003",
         cuenta_origen="CTA-003",
+        sinpe_origen="5544-9021",
         cuenta_destino="3390-6612",
         monto_crc=48_300,
         canal=Canal.SINPE_MOVIL,
@@ -177,6 +180,7 @@ TRANSACCIONES = [
     Transaccion(
         _id="TXN-004",
         cuenta_origen="CTA-004",
+        sinpe_origen="3390-6612",
         cuenta_destino="6210-3387",
         monto_crc=12_750,
         canal=Canal.SINPE_MOVIL,
