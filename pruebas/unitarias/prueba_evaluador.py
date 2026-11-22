@@ -162,9 +162,9 @@ def prueba_las_explicaciones_muestran_observado_contra_umbral() -> None:
         ).reglas_disparadas
     }
 
-    assert "750.000 CRC" in explicaciones["R-01"]
-    assert "16,6 veces" in explicaciones["R-01"]
-    assert "45.200 CRC" in explicaciones["R-01"]
+    assert "280.000 CRC" in explicaciones["R-01"]
+    assert "11,2 veces" in explicaciones["R-01"]
+    assert "25.000 CRC" in explicaciones["R-01"]
     assert "0 transferencias previas en 90 dias" in explicaciones["R-03"]
     assert "22:47 hora de Costa Rica" in explicaciones["R-05"]
     assert "07:00-19:00" in explicaciones["R-05"]
@@ -399,3 +399,12 @@ def prueba_el_evaluador_es_puro() -> None:
         m for m in modulos if m.startswith(("app.api", "app.repos", "pymongo", "bson"))
     }
     assert not {"now", "utcnow", "today", "time"} & nombres
+
+
+def prueba_el_monto_del_caso_no_supera_el_tope_de_sinpe_movil() -> None:
+    """D-18: el caso documentado debe ser posible en SINPE Movil (tope maximo 300.000)."""
+    from pruebas.dobles.datos_demo import PERFILES
+
+    assert TXN_001.monto_crc <= 300_000
+    assert all(p.maximo_crc <= 300_000 for p in PERFILES)
+    assert TXN_001.monto_crc > 10 * PERFILES[0].promedio_crc

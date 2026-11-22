@@ -36,7 +36,7 @@ MAXIMO_ENTERO_64 = 2**63 - 1
 # ---------------------------------------------------------------------------
 # Dinero
 # ---------------------------------------------------------------------------
-# strict=True es la parte importante: sin eso Pydantic acepta 750000.0 y lo
+# strict=True es la parte importante: sin eso Pydantic acepta 280000.0 y lo
 # convierte a int, y un flotante se cuela en un campo de dinero sin que nadie lo
 # note. Con strict, un flotante es un error de validacion.
 #

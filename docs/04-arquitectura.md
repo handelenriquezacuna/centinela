@@ -95,7 +95,7 @@ sequenceDiagram
     participant WS as Canal SSE
     participant AG as Agente
 
-    G->>DB: insert transacción ₡750.000 → destino nuevo
+    G->>DB: insert transacción ₡280.000 → destino nuevo
     DB-->>D1: Change Stream: evento insert
     D1->>DB: lee perfil del cliente
     D1->>DB: lee reglas activas

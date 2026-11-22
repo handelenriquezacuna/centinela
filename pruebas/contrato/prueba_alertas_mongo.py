@@ -40,7 +40,7 @@ async def prueba_el_dinero_vuelve_de_mongo_como_entero(
     cuerpo = (await cliente_con_mongo.get(RUTA, params={"estado": "confirmada"})).json()
     alerta = cuerpo["elementos"][0]
 
-    assert alerta["monto_crc"] == 750_000
+    assert alerta["monto_crc"] == 280_000
     assert isinstance(alerta["monto_crc"], int)
     assert alerta["moneda"] == "CRC"
 

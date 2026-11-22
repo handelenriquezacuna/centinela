@@ -189,7 +189,7 @@ async def prueba_la_transaccion_del_caso_produce_la_alerta_de_75(base_d1: Any) -
     assert "POL-001 v1" in alerta["historial"][0]["nota"]
     # El dinero sale como long de 64 bits, no como int32 ni double.
     assert await base_d1["alertas"].count_documents(
-        {"_id": "ALR-001", "monto_crc": {"$type": "long", "$eq": 750_000}}
+        {"_id": "ALR-001", "monto_crc": {"$type": "long", "$eq": 280_000}}
     ) == 1
     assert fila.estado == "corriendo"
     assert fila.ultimo_error is None
