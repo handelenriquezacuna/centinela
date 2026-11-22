@@ -73,3 +73,36 @@ deteccion:
 
 registro:
   nivel: INFO
+
+# Generador de datos sinteticos (H-03, H-04, H-05): `python -m app.generador`.
+# Son parametros de simulacion, no reglas de deteccion: las reglas siguen en Mongo.
+# Cada valor se puede pasar tambien por la linea de comandos (--clientes, etc.).
+generador:
+  # Misma semilla, mismos datos.
+  semilla: 20261207
+  clientes: 200
+  transacciones: 5000
+  # Transacciones por segundo al insertar; 0 = sin limite. Con el detector D1
+  # corriendo, un valor bajo (20) permite ver las alertas aparecer en vivo.
+  ritmo_por_segundo: 0
+  # Fraccion del volumen que se inyecta como anomalo (0.012 = 1,2 %). Tiene que ser
+  # menor a 0.02: el generador rechaza un valor mayor.
+  proporcion_anomalos: 0.012
+  # La historia generada termina en esta fecha (UTC) y cubre dias_historia hacia atras.
+  fecha_fin: 2026-11-22
+  dias_historia: 30
+  tamano_lote: 1000
+  # Fraccion (0 a 1) de las cuentas mula de las cadenas que se reporta en
+  # listas_riesgo, con fecha anterior a su primera transaccion recibida.
+  proporcion_mulas_reportadas: 0.5
+  # SINPE Movil depende del banco: el tope por transferencia va de 100.000 a 300.000
+  # colones segun la entidad. Ninguna transaccion generada supera el tope de la
+  # entidad de su cuenta de origen. Agregar o cambiar entidades no toca codigo.
+  # Valores ilustrativos dentro del rango real de SINPE Movil (100.000 a 300.000
+  # segun la entidad).
+  entidades:
+    - { nombre: "Entidad A", tope_crc: 300000 }
+    - { nombre: "Entidad B", tope_crc: 200000 }
+    - { nombre: "Entidad C", tope_crc: 150000 }
+    - { nombre: "Entidad D", tope_crc: 100000 }
+    - { nombre: "Entidad E", tope_crc: 250000 }

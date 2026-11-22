@@ -240,3 +240,35 @@ def prueba_el_yaml_local_no_esta_versionado() -> None:
     assert not (RUTA_RAIZ / "config" / NOMBRE_YAML_LOCAL).exists(), (
         "config/centinela.local.yml no se crea en el repo: es de cada maquina"
     )
+
+
+# ---------------------------------------------------------------------------
+# Bloque `generador` (H-03, H-04, H-05)
+# ---------------------------------------------------------------------------
+
+
+def prueba_el_bloque_generador_del_repo_es_valido() -> None:
+    """Parametros de simulacion: la proporcion de fraude es minoria y hay al menos
+    cuatro entidades con topes de SINPE entre 100.000 y 300.000 colones."""
+    generador = Ajustes().generador
+
+    assert 0 <= generador.proporcion_anomalos < 0.02
+    assert len(generador.entidades) >= 4
+    assert all(100_000 <= e.tope_crc <= 300_000 for e in generador.entidades)
+
+
+def prueba_una_clave_desconocida_en_el_bloque_generador_no_arranca(
+    directorio_yaml: Path,
+) -> None:
+    escribir_local(directorio_yaml, {"generador": {"semilla_rara": 1}})
+
+    with pytest.raises(Exception, match="semilla_rara"):
+        Ajustes()
+
+
+def prueba_el_entorno_sobrescribe_el_generador(
+    directorio_yaml: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CENTINELA_GENERADOR__CLIENTES", "37")
+
+    assert Ajustes().generador.clientes == 37
