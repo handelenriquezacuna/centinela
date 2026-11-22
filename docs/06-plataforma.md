@@ -169,8 +169,10 @@ documento**, no una parecida:
 ```
 
 Los pesos de las 6 reglas suman más de 100, así que el puntaje se calcula como
-`min(suma, puntaje_maximo)`. `politica_deteccion` no tiene modelo Pydantic todavía: es
-de H-07/H-08, y quien lo escriba **lee el documento de la base antes de modelarlo**.
+`min(suma, puntaje_maximo)`. El modelo es `PoliticaDeteccion` (H-08, en
+`app/deteccion/evaluador.py`) y **se lee en un solo lugar** (T-19):
+`leer_politica_vigente` en `app/repos/reglas.py`, que usan la API de reglas y D1.
+`pruebas/arquitectura/prueba_politica_unica.py` impide una segunda lectura.
 
 ### 1.6 La alerta lleva copia de los campos de despliegue
 
@@ -192,15 +194,31 @@ en la mano.
 > **número SINPE** (`8712-4455`), porque es un campo para mostrar y el agente lee el
 > número, no una llave interna. Está así en el validador y en el modelo.
 
-### 1.7 `reglas_disparadas`: hoy referencias, mañana copia embebida
+### 1.7 `reglas_disparadas`: v1 referencias, v2 copia embebida (H-26)
 
-Hoy `alertas.reglas_disparadas` es la lista de identificadores de regla
-(`["REG-001", "REG-002", "REG-003"]`), tal como la fija `CONTRATO-IDS.md`.
+`alertas` es la primera colección con dos versiones de esquema (decisiones D-01, D-12,
+D-14). La versión es **por colección**: las demás siguen en `esquema_version: 1`.
 
-`docs/04-arquitectura.md` pide copia embebida con versión, y eso llega en **H-08**,
-subiendo `esquema_version` de 1 a 2. **Esa es la migración real que H-26 demuestra el 19
-de octubre**, en vez de una inventada para la ocasión. Mientras tanto, el aporte de cada
-regla se reconstruye leyendo `reglas_deteccion`.
+| | `reglas_disparadas` | `politica` | Dónde queda la versión de cada regla |
+|---|---|---|---|
+| v1 | `["REG-001", "REG-002", "REG-003"]` | no existe | solo como texto en `historial[0].nota` |
+| v2 | `[{regla_id, codigo, version, peso, explicacion}]` | `{politica_id, version}` | en el dato |
+
+- **D1 escribe v2** con lo que ya produce el evaluador (`ReglaDisparada`): la alerta se
+  explica sola dentro de un año aunque la regla cambie.
+- **Lectura dual.** `Alerta` (en `app/modelos/alertas.py`) lee las dos; `esquema_version`
+  decide qué forma es válida, y una mezcla se rechaza en el modelo y en el validador
+  (`oneOf` del bloque de `alertas` en `01-colecciones.js`). `alerta.regla_ids` sirve
+  igual en v1 y v2; `alerta.reglas_aplicadas` trae la copia embebida (vacía en v1).
+- **Migración** `scripts/migraciones/001-alertas-v1-a-v2.js`, con `python tareas.py
+  migrar`. Reejecutable e idempotente: imprime cuántas migró y cuántas ya estaban en v2.
+  La versión sale de la nota de D1 y, si no la dice, de la que regía en
+  `fecha_creacion` según `versiones_anteriores` de la regla (H-16). La explicación se
+  reconstruye desde la regla **en esa versión**; si esa versión ya no existe queda
+  `"no disponible: regla editada"` y se cuenta. La `ALR-001` sembrada queda en v1 a
+  propósito: es lo que la migración demuestra.
+- **D-15.** Re-sembrar (`python tareas.py datos-demo`) borra la historia de versiones
+  de las reglas; el comando lo avisa.
 
 ### 1.8 El historial embebido empieza cuando nace la alerta
 
@@ -508,6 +526,26 @@ de redacción sin romper a nadie. El vocabulario de códigos es cerrado:
 Una transición fuera de la máquina de estados sale como **409**, no 422: la petición es
 válida, lo que no se puede es aplicarla al estado actual del recurso.
 
+### `POST /api/v1/alertas/{alerta_id}/transiciones` (H-14)
+
+Cuerpo `{destino, agente_id, nota?, estado_esperado?}`; responde `{alerta, caso_id}`.
+POST y no PATCH del estado: una transición es una entrada que se **agrega** al
+historial, no un campo que se pisa.
+
+| Caso | Respuesta |
+|---|---|
+| Par fuera de `TRANSICIONES` | 409 `transicion_invalida`, con el estado actual en `detalles` |
+| Otro agente la tomó, o cambió entre la lectura y la escritura | 409 `conflicto`, sin escribir |
+| `estado_esperado` no coincide | 409 `conflicto`, sin escribir |
+| `en_revision -> X` pedido por quien no la tomó | 409 `conflicto` |
+| No existe | 404 `no_encontrado` |
+
+La escritura es `$set` del estado más `$push` al historial, filtrada por el estado y el
+agente leídos (`planear_transicion` en `app/repos/alertas.py`, pura). Escalar crea el
+caso `CAS-xxx` (derivado de `ALR-xxx`) y mueve la alerta en **una transacción
+multi-documento**: el caso se inserta primero y, si la alerta ya no coincide o el caso
+existe, se deshacen las dos escrituras.
+
 El esquema publicado dice la verdad: `prueba_openapi.py` verifica que el 422 documentado
 sea `RespuestaError` y no el `HTTPValidationError` que FastAPI documenta por omisión.
 
@@ -526,6 +564,11 @@ Una tarea que muere no se pierde en silencio: deja el sistema en `degradado` y s
 error queda a la vista. Los disparadores D1, D2 y D3 todavía no existen —son H-09, H-11
 y H-22— pero el andamio que los va a vigilar sí, y se prueba matando una tarea a mano.
 `/estado` nombra la historia de cada uno, así que la ruta dice quién lo va a construir.
+
+**T-18.** Una tarea viva puede estar `degradada`: D1 sin reglas activas late, pero no
+puede generar una sola alerta. D1 mira el catálogo al abrir el change stream y en cada
+transacción; mientras esté vacío, su fila trae `advertencia` con el motivo y el sistema
+queda `degradado`. Se limpia sola cuando vuelve a haber reglas.
 
 `/salud` responde 200 aunque Mongo no conteste, con `mongo_conectado: false` y el
 motivo en `detalle`: la ruta cumplió su trabajo respondiendo, y quien la consulta

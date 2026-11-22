@@ -32,6 +32,7 @@ def alerta(**cambios: object) -> Alerta:
     creacion del historial, que el contrato exige siempre."""
     base = {
         "_id": "ALR-001",
+        "esquema_version": 1,
         "transaccion_id": "TXN-001",
         "reglas_disparadas": ["REG-001"],
         "puntaje": 75,
@@ -353,21 +354,84 @@ def prueba_la_alerta_exige_al_menos_una_regla() -> None:
         alerta(reglas_disparadas=[])
 
 
-def prueba_las_reglas_disparadas_son_referencias_en_esquema_1() -> None:
-    """Contrato vigente: lista de identificadores de regla.
+EMBEBIDA = {
+    "regla_id": "REG-001",
+    "codigo": "R-01",
+    "version": 1,
+    "peso": 35,
+    "explicacion": "monto 16,6 veces el promedio; umbral 10 veces",
+}
+POLITICA = {"politica_id": "POL-001", "version": 1}
 
-    En H-08 esto pasa a copia embebida con version y `esquema_version` sube a 2. Esta
-    prueba es la que va a fallar cuando eso ocurra, y tiene que fallar: es el
-    recordatorio de que el cambio es una migracion, no un ajuste.
-    """
+
+def prueba_esquema_1_son_referencias() -> None:
+    """v1 (antes de H-26): lista de identificadores, sin politica."""
     creada = alerta(reglas_disparadas=["REG-001", "REG-002", "REG-003"])
 
     assert creada.esquema_version == 1
-    assert creada.a_documento()["reglas_disparadas"] == [
-        "REG-001",
-        "REG-002",
-        "REG-003",
-    ]
+    assert creada.a_documento()["reglas_disparadas"] == ["REG-001", "REG-002", "REG-003"]
+    assert "politica" not in creada.a_documento()
+    assert creada.reglas_aplicadas == []
+
+
+def prueba_esquema_2_es_copia_embebida_con_politica() -> None:
+    """v2 (H-26): cada regla con su version, peso y explicacion, y la politica usada."""
+    creada = alerta(esquema_version=2, reglas_disparadas=[EMBEBIDA], politica=POLITICA)
+    documento = creada.a_documento()
+
+    assert documento["esquema_version"] == 2
+    assert documento["reglas_disparadas"] == [EMBEBIDA]
+    assert documento["politica"] == POLITICA
+
+
+def prueba_por_omision_se_escribe_la_version_2() -> None:
+    from app.modelos import ESQUEMA_ALERTA_VIGENTE
+
+    assert ESQUEMA_ALERTA_VIGENTE == 2
+    assert Alerta.model_fields["esquema_version"].default == 2
+
+
+def prueba_lectura_dual_el_mismo_modelo_lee_v1_y_v2() -> None:
+    """El criterio de H-26: el sistema lee las dos versiones durante la transicion."""
+    v1 = Alerta.model_validate(alerta().a_documento())
+    v2 = Alerta.model_validate(
+        alerta(esquema_version=2, reglas_disparadas=[EMBEBIDA], politica=POLITICA).a_documento()
+    )
+
+    assert v1.regla_ids == v2.regla_ids == ["REG-001"]
+    assert v2.reglas_aplicadas[0].peso == 35
+
+
+@pytest.mark.parametrize(
+    "mezcla",
+    [
+        pytest.param({"esquema_version": 2, "reglas_disparadas": ["REG-001"]}, id="v2-con-ids"),
+        pytest.param(
+            {"esquema_version": 2, "reglas_disparadas": [EMBEBIDA]}, id="v2-sin-politica"
+        ),
+        pytest.param({"esquema_version": 1, "reglas_disparadas": [EMBEBIDA]}, id="v1-embebida"),
+        pytest.param(
+            {"esquema_version": 1, "reglas_disparadas": ["REG-001"], "politica": POLITICA},
+            id="v1-con-politica",
+        ),
+        pytest.param(
+            {"esquema_version": 2, "reglas_disparadas": [EMBEBIDA, "REG-002"], "politica": POLITICA},
+            id="lista-mezclada",
+        ),
+        pytest.param({"esquema_version": 3}, id="version-desconocida"),
+        pytest.param(
+            {
+                "esquema_version": 2,
+                "reglas_disparadas": [{**EMBEBIDA, "explicacion": ""}],
+                "politica": POLITICA,
+            },
+            id="v2-sin-explicacion",
+        ),
+    ],
+)
+def prueba_una_mezcla_de_versiones_se_rechaza(mezcla: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        alerta(**mezcla)
 
 
 def prueba_el_puntaje_va_de_0_a_100() -> None:

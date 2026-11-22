@@ -12,6 +12,11 @@ edicion pisaria la primera y su version anterior quedaria mal registrada.
 
 `instantanea` y `siguiente_regla_id` son funciones puras para que el doble de
 `pruebas/dobles/` use exactamente la misma regla que el repositorio real.
+
+T-19: `leer_politica_vigente` es la UNICA lectura de `politica_deteccion` del sistema.
+La usan la API de reglas (simular) y D1 (`app/repos/deteccion.py`); antes cada uno
+tenia su propio `find_one` y su propia forma de devolverla (un dict aca, el modelo
+alla). `pruebas/arquitectura/prueba_politica_unica.py` impide que vuelva a duplicarse.
 """
 
 from __future__ import annotations
@@ -24,6 +29,7 @@ from pymongo import ASCENDING, ReturnDocument
 from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import DuplicateKeyError
 
+from app.deteccion.evaluador import PoliticaDeteccion
 from app.modelos import COLECCION_POLITICA
 from app.repos.carga_demo import a_entero_64
 
@@ -33,6 +39,17 @@ PREFIJO_REGLA = "REG-"
 # Campos que el historial NO copia: el `_id` es el de la regla misma y anidar la
 # historia dentro de la historia la haria crecer al cuadrado.
 _FUERA_DE_LA_INSTANTANEA = frozenset({"_id", "versiones_anteriores"})
+
+
+# La politica vigente es la unica con `vigente: true` (lo sostiene el indice de
+# 02-indices.js). Es la consulta que fija docs/06-plataforma.md, 1.5.
+FILTRO_POLITICA_VIGENTE: dict[str, Any] = {"vigente": True}
+
+
+async def leer_politica_vigente(base: AsyncDatabase) -> PoliticaDeteccion | None:
+    """La politica vigente, ya como modelo, o None si no hay ninguna."""
+    documento = await base[COLECCION_POLITICA].find_one(FILTRO_POLITICA_VIGENTE)
+    return PoliticaDeteccion.model_validate(documento) if documento is not None else None
 
 
 class CodigoDuplicado(Exception):
@@ -77,18 +94,18 @@ class ProtocoloRepoReglas(Protocol):
         ahora: datetime,
     ) -> dict[str, Any] | None: ...
 
-    async def politica_vigente(self) -> dict[str, Any] | None: ...
+    async def politica_vigente(self) -> PoliticaDeteccion | None: ...
 
 
 class RepoReglas:
-    """Acceso a `reglas_deteccion` y lectura de la politica vigente."""
+    """Acceso a `reglas_deteccion`; la politica vigente sale de `leer_politica_vigente`."""
 
     # Reintentos si dos altas simultaneas calculan el mismo REG-NNN.
     _INTENTOS_ALTA = 3
 
     def __init__(self, base: AsyncDatabase) -> None:
+        self._base = base
         self._reglas = base[COLECCION_REGLAS]
-        self._politica = base[COLECCION_POLITICA]
 
     async def listar(self, *, activa: bool | None = None) -> list[dict[str, Any]]:
         filtro: dict[str, Any] = {} if activa is None else {"activa": activa}
@@ -137,5 +154,5 @@ class RepoReglas:
             return_document=ReturnDocument.AFTER,
         )
 
-    async def politica_vigente(self) -> dict[str, Any] | None:
-        return await self._politica.find_one({"vigente": True})
+    async def politica_vigente(self) -> PoliticaDeteccion | None:
+        return await leer_politica_vigente(self._base)

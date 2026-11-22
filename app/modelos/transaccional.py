@@ -18,6 +18,7 @@ from app.modelos.base import (
     CuentaSinpe,
     DocumentoBase,
     MarcaTiempoUTC,
+    ModeloCentinela,
     Moneda,
     MontoCRC,
     ReglaId,
@@ -58,6 +59,27 @@ class Transaccion(DocumentoBase):
     fecha: MarcaTiempoUTC
 
 
+class VersionAnteriorRegla(ModeloCentinela):
+    """Una version de la regla que ya no rige, tal como estaba justo antes de editarse.
+
+    La escribe H-16 (`app/repos/reglas.py`, `instantanea`) en el mismo documento de la
+    regla. Con esto una alerta vieja se explica con la regla con que se evaluo: la
+    alerta v2 guarda `regla_id` y `version`, y la version se busca aca si ya no es la
+    vigente.
+    """
+
+    codigo: str
+    descripcion: str
+    tipo: str
+    umbral: float | None = None
+    parametros: dict[str, int | float] = Field(default_factory=dict)
+    peso: int
+    activa: bool
+    version: int = Field(ge=1)
+    esquema_version: int = Field(ge=1)
+    reemplazada_en: MarcaTiempoUTC = Field(description="Cuando dejo de regir, en UTC")
+
+
 class Regla(DocumentoBase):
     """Regla de deteccion. Vive en la base, no en el codigo: cambiar un umbral no
     requiere desplegar.
@@ -93,6 +115,24 @@ class Regla(DocumentoBase):
     # copia la version con la que se evaluo). Hasta que el validador la acepte, no se
     # escribe: el documento en Mongo manda.
     version: int | None = Field(default=None, ge=1)
+    # D-14: la historia de la regla es parte del documento, y el modelo la declara.
+    # Antes la publicaba solo la API (`ReglaConHistoria`); declararla aqui es lo que
+    # deja a la migracion de alertas y a H-18 explicar una alerta vieja con la version
+    # de la regla con que se evaluo, leyendo el mismo modelo que el motor.
+    versiones_anteriores: list[VersionAnteriorRegla] = Field(
+        default_factory=list,
+        description="Versiones que ya no rigen, de la mas vieja a la mas reciente",
+    )
+
+    def en_version(self, version: int) -> VersionAnteriorRegla | Regla | None:
+        """La regla tal como estaba en `version`: la vigente, una anterior o None.
+
+        None quiere decir que esa version ya no existe en el documento (por ejemplo,
+        re-sembrar `03-catalogos.js` borra la historia: D-15).
+        """
+        if self.version == version:
+            return self
+        return next((v for v in self.versiones_anteriores if v.version == version), None)
 
 
 class EntradaListaRiesgo(DocumentoBase):

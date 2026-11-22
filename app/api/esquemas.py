@@ -15,7 +15,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.deteccion import ContextoEvaluacion, PoliticaDeteccion
 from app.modelos.alertas import Alerta
-from app.modelos.base import MarcaTiempoUTC, ModeloCentinela
+from app.modelos.base import AgenteId, ModeloCentinela
+from app.modelos.estados import EstadoAlerta
 from app.modelos.transaccional import Regla, Transaccion
 from app.supervision import (
     EstadoSupervision,
@@ -42,7 +43,34 @@ class Pagina(BaseModel):
 
 
 class PaginaAlertas(Pagina):
+    """Lectura dual (H-26): cada elemento es v1 o v2 segun su `esquema_version`."""
+
     elementos: list[Alerta]
+
+
+class PeticionTransicion(BaseModel):
+    """Mover una alerta por la maquina de estados (H-14).
+
+    `estado_esperado` es opcional y sirve para que el portal diga "la vi en este
+    estado": si ya no lo esta, 409 sin escribir. Aunque no venga, la escritura se
+    condiciona al estado leido, asi que dos agentes no pueden pisarse.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    destino: EstadoAlerta = Field(description="Estado al que pasa la alerta")
+    agente_id: AgenteId = Field(description="Quien hace la accion. Sin autenticacion hasta H-25")
+    nota: str = Field(default="", max_length=1000, description="Queda en el historial")
+    estado_esperado: EstadoAlerta | None = Field(
+        default=None, description="Si viene y la alerta ya no esta asi, 409 sin escribir"
+    )
+
+
+class ResultadoTransicion(BaseModel):
+    """La alerta como quedo y, si se escalo, el caso que se abrio con ella."""
+
+    alerta: Alerta
+    caso_id: str | None = Field(default=None, examples=["CAS-003"])
 
 
 class Salud(BaseModel):
@@ -98,6 +126,13 @@ class TareaSupervisada(BaseModel):
         default=None,
         description="La historia que construye esta tarea, cuando todavia no existe",
         examples=["H-09"],
+    )
+    advertencia: str | None = Field(
+        default=None,
+        description=(
+            "Condicion vigente que degrada la tarea aunque siga viva; por ejemplo D1 "
+            "sin reglas activas (T-18)"
+        ),
     )
 
 
@@ -156,6 +191,7 @@ class EstadoFuncional(BaseModel):
                 else None
             ),
             historia=fila.historia,
+            advertencia=fila.advertencia,
         )
 
 
@@ -163,44 +199,18 @@ class EstadoFuncional(BaseModel):
 # Reglas (H-16)
 # ---------------------------------------------------------------------------
 #
-# `Regla` (app/modelos) describe el documento tal como lo lee el motor e ignora
-# `versiones_anteriores`. La API la publica completa, con su historia, sin tocar el
-# modelo del dominio: por eso `ReglaConHistoria` extiende `Regla` aca.
+# D-14: `Regla` (app/modelos) ya declara `versiones_anteriores`, asi que la API publica
+# el modelo del dominio tal cual. Antes habia aca un `ReglaConHistoria` que lo
+# extendia; con el campo en el modelo, la extension sobraba.
 
 ParametrosRegla = dict[str, int | float]
-
-
-class VersionAnteriorRegla(ModeloCentinela):
-    """Una version que ya no rige, tal como estaba justo antes de editarse.
-
-    Con esto una alerta vieja se explica con la regla con que se evaluo: la alerta
-    guarda `regla_id` y `version`, y la version se busca aca si ya no es la vigente.
-    """
-
-    codigo: str
-    descripcion: str
-    tipo: str
-    umbral: float | None = None
-    parametros: ParametrosRegla = Field(default_factory=dict)
-    peso: int
-    activa: bool
-    version: int = Field(ge=1)
-    esquema_version: int = Field(ge=1)
-    reemplazada_en: MarcaTiempoUTC = Field(description="Cuando dejo de regir, en UTC")
-
-
-class ReglaConHistoria(Regla):
-    versiones_anteriores: list[VersionAnteriorRegla] = Field(
-        default_factory=list,
-        description="Versiones anteriores, de la mas vieja a la mas reciente",
-    )
 
 
 class ListaReglas(BaseModel):
     """El catalogo completo. Son pocas reglas: no se pagina."""
 
     total: int = Field(ge=0)
-    elementos: list[ReglaConHistoria]
+    elementos: list[Regla]
 
 
 class _Peticion(ModeloCentinela):

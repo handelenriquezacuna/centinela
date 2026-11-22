@@ -174,12 +174,19 @@ async def prueba_la_transaccion_del_caso_produce_la_alerta_de_75(base_d1: Any) -
     assert alerta["_id"] == "ALR-001"
     assert alerta["puntaje"] == 75
     assert alerta["severidad"] == "CRITICA"
-    assert alerta["reglas_disparadas"] == ["REG-001", "REG-002", "REG-003"]
+    # H-26: v2. Tres reglas embebidas con version, peso y la explicacion del evaluador,
+    # y la politica usada; el validador real de `alertas` las acepto al insertar.
+    assert [
+        (r["regla_id"], r["codigo"], r["version"], r["peso"])
+        for r in alerta["reglas_disparadas"]
+    ] == [("REG-001", "R-01", 1, 35), ("REG-002", "R-03", 1, 25), ("REG-003", "R-05", 1, 15)]
+    assert all(r["explicacion"] for r in alerta["reglas_disparadas"])
+    assert alerta["politica"] == {"politica_id": "POL-001", "version": 1}
     assert alerta["estado"] == "nueva"
     assert alerta["cliente_nombre"] == "Maria Rodriguez Vargas"
     assert (alerta["cuenta_origen"], alerta["cuenta_destino"]) == ("8712-4455", "6033-9001")
-    assert alerta["esquema_version"] == 1
-    assert "R-01 REG-001 v1" in alerta["historial"][0]["nota"]
+    assert alerta["esquema_version"] == 2
+    assert "POL-001 v1" in alerta["historial"][0]["nota"]
     # El dinero sale como long de 64 bits, no como int32 ni double.
     assert await base_d1["alertas"].count_documents(
         {"_id": "ALR-001", "monto_crc": {"$type": "long", "$eq": 750_000}}

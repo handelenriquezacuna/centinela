@@ -187,3 +187,89 @@ async def prueba_la_fecha_del_indicador_es_texto_y_no_isodate(base_mongo: Any) -
         await destino.insert_one(
             {**documento, "_id": "x", "fecha": datetime(2026, 9, 24, tzinfo=UTC)}
         )
+
+
+# ---------------------------------------------------------------------------
+# H-26: el validador de `alertas` acepta v1 y v2, y rechaza una mezcla
+# ---------------------------------------------------------------------------
+
+EMBEBIDAS_V2 = [
+    {
+        "regla_id": regla_id,
+        "codigo": codigo,
+        "version": 1,
+        "peso": peso,
+        "explicacion": f"{codigo} disparo",
+    }
+    for regla_id, codigo, peso in (("REG-001", "R-01", 35), ("REG-002", "R-03", 25))
+]
+POLITICA_V2 = {"politica_id": "POL-001", "version": 1}
+
+
+def _alerta_v1() -> dict[str, Any]:
+    return a_entero_64(DATOS_DEMO["alertas"][0].a_documento())
+
+
+def _alerta_v2(**cambios: Any) -> dict[str, Any]:
+    return {
+        **_alerta_v1(),
+        "_id": "ALR-1001",
+        "transaccion_id": "TXN-1001",
+        "esquema_version": 2,
+        "reglas_disparadas": EMBEBIDAS_V2,
+        "politica": POLITICA_V2,
+        **cambios,
+    }
+
+
+@pytest.mark.asyncio
+async def prueba_el_validador_acepta_alerta_v1_y_v2(base_mongo: Any) -> None:
+    """Lectura dual tambien en la base: conviven las dos versiones (H-26). El `_id` de
+    cuatro digitos prueba que los patrones del bloque aceptan 3 o mas."""
+    destino = await _preparar(base_mongo, "alertas")
+
+    await destino.insert_one(_alerta_v1())
+    await destino.insert_one(_alerta_v2())
+
+    assert await destino.count_documents({"esquema_version": 1}) == 1
+    assert await destino.count_documents({"esquema_version": 2}) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mezcla",
+    [
+        pytest.param({"reglas_disparadas": ["REG-001"]}, id="v2-con-ids"),
+        pytest.param({"politica": None}, id="v2-sin-politica"),
+        pytest.param({"esquema_version": 1}, id="v1-con-embebidas-y-politica"),
+        pytest.param(
+            {"reglas_disparadas": [EMBEBIDAS_V2[0], "REG-002"]}, id="lista-mezclada"
+        ),
+        pytest.param(
+            {"reglas_disparadas": [{**EMBEBIDAS_V2[0], "explicacion": ""}]},
+            id="v2-explicacion-vacia",
+        ),
+        pytest.param(
+            {"reglas_disparadas": [{k: v for k, v in EMBEBIDAS_V2[0].items() if k != "version"}]},
+            id="v2-sin-version-de-regla",
+        ),
+        pytest.param({"esquema_version": 3}, id="version-desconocida"),
+    ],
+)
+async def prueba_el_validador_rechaza_una_mezcla_de_versiones(
+    base_mongo: Any, mezcla: dict[str, Any]
+) -> None:
+    destino = await _preparar(base_mongo, "alertas")
+    documento = _alerta_v2(**mezcla)
+    documento = {k: v for k, v in documento.items() if v is not None}
+
+    with pytest.raises(WriteError):
+        await destino.insert_one(documento)
+
+
+@pytest.mark.asyncio
+async def prueba_el_validador_rechaza_v1_con_politica(base_mongo: Any) -> None:
+    destino = await _preparar(base_mongo, "alertas")
+
+    with pytest.raises(WriteError):
+        await destino.insert_one({**_alerta_v1(), "politica": POLITICA_V2})

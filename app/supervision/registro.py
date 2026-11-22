@@ -52,6 +52,8 @@ class EstadoTarea(StrEnum):
     """Estado de una tarea supervisada. El valor es lo que sale por HTTP."""
 
     CORRIENDO = "corriendo"
+    # Viva y latiendo, pero sin poder hacer su trabajo: D1 sin reglas activas (T-18).
+    DEGRADADA = "degradada"
     RETRASADA = "retrasada"
     DETENIDA = "detenida"
     FALLIDA = "fallida"
@@ -89,6 +91,8 @@ class _Pulso:
     eventos_procesados: int = 0
     ultimo_evento: datetime | None = None
     ultimo_error: ErrorRegistrado | None = None
+    # Condicion funcional vigente que degrada la tarea aunque siga latiendo (T-18).
+    advertencia: str | None = None
     # Referencias monotonas: para medir el retraso sin depender del reloj de pared.
     registrada_en: float = field(default_factory=time.monotonic)
     ultimo_evento_monotono: float | None = None
@@ -105,6 +109,7 @@ class InformeTarea:
     retraso_segundos: float | None
     ultimo_error: ErrorRegistrado | None
     historia: str | None
+    advertencia: str | None = None
 
 
 @dataclass(frozen=True)
@@ -199,6 +204,20 @@ class Supervisor:
             mensaje=f"{type(fallo).__name__}: {fallo}", fecha=datetime.now(UTC)
         )
 
+    def advertir(self, nombre: str, motivo: str | None) -> None:
+        """Marca (o limpia, con None) una condicion que degrada la tarea viva.
+
+        Distinto de `anotar_error`: un error es algo que paso y del que la tarea se
+        recupera; una advertencia es algo que SIGUE pasando (D1 sin reglas activas,
+        T-18) y degrada el sistema mientras dure. La tarea la limpia cuando se resuelve.
+        """
+        pulso = self._pulsos.get(nombre)
+        if pulso is None:  # pragma: no cover - solo si alguien advierte antes de lanzar
+            return
+        if motivo != pulso.advertencia:
+            registro_log.warning("%s: %s", nombre, motivo or "condicion resuelta")
+        pulso.advertencia = motivo
+
     # -- Informe ----------------------------------------------------------
 
     def informe(self) -> InformeSupervision:
@@ -247,6 +266,7 @@ class Supervisor:
             retraso_segundos=round(retraso, 3) if retraso is not None else None,
             ultimo_error=pulso.ultimo_error,
             historia=pulso.historia,
+            advertencia=pulso.advertencia,
         )
 
     def _estado_de(self, pulso: _Pulso, transcurrido: float) -> EstadoTarea:
@@ -258,6 +278,8 @@ class Supervisor:
             return EstadoTarea.DETENIDA if tarea.cancelled() else EstadoTarea.FALLIDA
         if transcurrido > self._tolerancia:
             return EstadoTarea.RETRASADA
+        if pulso.advertencia is not None:
+            return EstadoTarea.DEGRADADA
         return EstadoTarea.CORRIENDO
 
     def _resumen(self, filas: list[InformeTarea]) -> EstadoSupervision:
