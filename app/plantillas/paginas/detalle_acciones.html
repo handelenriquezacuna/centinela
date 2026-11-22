@@ -1,0 +1,59 @@
+{# Estado, resolucion e historial de una alerta. Es la seccion que HTMX reemplaza al resolver:
+   la pagina la incluye y POST /detalle/{id}/transicion la devuelve sola.
+   `oob` agrega la insignia de estado del resumen, que queda fuera de esta seccion. #}
+{% set nombre_agente = nombres.get(alerta['agente_id']) if alerta['agente_id'] else None %}
+{% if oob %}
+<span id="insignia-estado" hx-swap-oob="true" class="insignia insignia-estado es-{{ estado_alerta }}">{{ estado_alerta }}</span>
+<span id="agente-asignado" hx-swap-oob="true">{{ alerta['agente_id'] or 'sin asignar' }}{% if nombre_agente %} ({{ nombre_agente }}){% endif %}</span>
+{% endif %}
+<div id="acciones">
+  <section class="tarjeta" aria-label="Resolver alerta">
+    <h2 class="seccion-titulo">Resolver alerta</h2>
+    {% if mensaje %}
+    <div class="mensaje {{ 'mensaje-error' if es_error else 'mensaje-ok' }}" role="{{ 'alert' if es_error else 'status' }}">{{ mensaje }}</div>
+    {% endif %}
+    {% if caso_id %}
+    <p class="mensaje mensaje-ok" id="caso-creado">Caso abierto: <span class="id-corto">{{ caso_id }}</span> (en investigacion)</p>
+    {% endif %}
+    {% if botones %}
+    <div id="form-resolver" class="form-regla">
+      <input type="hidden" name="estado_esperado" value="{{ estado_alerta }}">
+      <div class="campo">
+        <label for="agente-id">Agente (sin autenticacion hasta H-25)</label>
+        <select id="agente-id" name="agente_id">
+          {% for agente in agentes %}
+          <option value="{{ agente['_id'] }}"{% if agente['_id'] == agente_por_omision %} selected{% endif %}>{{ agente['nombre'] }} ({{ agente['_id'] }}){% if not agente.get('activo', True) %} - inactivo{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="nota-resolucion">Nota (se agrega al historial)</label>
+        <input type="text" id="nota-resolucion" name="nota" maxlength="1000">
+      </div>
+    </div>
+    <div class="grupo-botones">
+      {% for destino, rotulo, clase in botones %}
+      <button type="button" class="boton {{ clase }}" data-destino="{{ destino }}"
+              hx-post="/detalle/{{ alerta['_id'] }}/transicion" hx-include="#form-resolver"
+              hx-vals='{"destino": "{{ destino }}"}' hx-target="#acciones" hx-swap="outerHTML">{{ rotulo }}</button>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="nota-tecnica">La alerta esta {{ estado_alerta }}: es un estado terminal y no admite mas acciones.</p>
+    {% endif %}
+  </section>
+
+  <section class="tarjeta" aria-label="Historial de acciones">
+    <h2 class="seccion-titulo">Historial de acciones</h2>
+    <ol class="historial">
+      {% for accion in alerta['historial'] %}
+      <li class="historial-item">
+        <div class="cuando">{{ accion['fecha'] | hora_costa_rica }} (hora CR)</div>
+        <div class="quien">{% if accion['agente_id'] %}{{ nombres.get(accion['agente_id'], '') }} {{ accion['agente_id'] }}{% else %}Sistema{% endif %}</div>
+        <div>Accion: <strong>{{ accion['accion'] }}</strong></div>
+        {% if accion['nota'] %}<div class="nota">"{{ accion['nota'] }}"</div>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+  </section>
+</div>
