@@ -31,14 +31,14 @@ from app.modelos import Alerta
 from app.nucleo.config import Ajustes
 from app.repos.carga_demo import a_entero_64
 from app.repos.esquemas import obtener_validadores, recrear_con_validador
-from pruebas.conftest import saltar_o_fallar
+from pruebas.conftest import BASE_SEMILLA, saltar_o_fallar
 from pruebas.dobles.datos_demo import DATOS_DEMO
 
 pytestmark = pytest.mark.mongo
 
 RAIZ = Path(__file__).resolve().parents[2]
 SCRIPT = RAIZ / "scripts" / "migraciones" / "001-alertas-v1-a-v2.js"
-BASE_DE_TRABAJO = "antifraude"
+BASE_DE_TRABAJO = BASE_SEMILLA  # semilla propia de las pruebas, no `antifraude`
 BASE_MIGRACION = "antifraude_pruebas_migracion"
 
 
@@ -56,7 +56,7 @@ async def base_migracion(base_mongo: Any) -> AsyncIterator[Any]:
     for nombre in ("reglas_deteccion", "politica_deteccion"):
         documentos = await trabajo[nombre].find({}).to_list(length=None)
         if not documentos:
-            saltar_o_fallar(f"{BASE_DE_TRABAJO}.{nombre} vacia; correr 03-catalogos.js")
+            saltar_o_fallar(f"{BASE_DE_TRABAJO}.{nombre} vacia: la semilla de pruebas no cargo")
         await base[nombre].insert_many(documentos)
     try:
         yield base

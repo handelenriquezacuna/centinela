@@ -28,14 +28,14 @@ import pytest_asyncio
 from app.nucleo.config import Ajustes
 from app.repos.carga_demo import a_entero_64
 from app.repos.esquemas import obtener_validadores, recrear_con_validador
-from pruebas.conftest import saltar_o_fallar
+from pruebas.conftest import BASE_SEMILLA, saltar_o_fallar
 from pruebas.dobles.datos_demo import DATOS_DEMO
 
 pytestmark = pytest.mark.mongo
 
 RAIZ = Path(__file__).resolve().parents[2]
 SCRIPT = RAIZ / "scripts" / "migraciones" / "002-transacciones-sinpe-origen.js"
-BASE_DE_TRABAJO = "antifraude"
+BASE_DE_TRABAJO = BASE_SEMILLA  # semilla propia de las pruebas, no `antifraude`
 BASE_MIGRACION = "antifraude_pruebas_migracion_002"
 
 

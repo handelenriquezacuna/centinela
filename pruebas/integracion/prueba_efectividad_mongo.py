@@ -37,11 +37,11 @@ from app.repos.efectividad import RepoEfectividad
 from app.repos.esquemas import obtener_validadores, recrear_con_validador
 from app.repos.generador import RepoGenerador
 from app.supervision import Supervisor
-from pruebas.conftest import saltar_o_fallar
+from pruebas.conftest import BASE_SEMILLA, saltar_o_fallar
 
 pytestmark = pytest.mark.mongo
 
-BASE_DE_TRABAJO = "antifraude"
+BASE_DE_TRABAJO = BASE_SEMILLA  # semilla propia de las pruebas, no `antifraude`
 BASE_EFECTIVIDAD = "antifraude_pruebas_efectividad"
 CON_VALIDADOR = (
     "clientes",
@@ -97,7 +97,7 @@ async def base_efectividad(base_mongo: Any) -> AsyncIterator[Any]:
     for nombre in CATALOGO:
         documentos = await trabajo[nombre].find({}).to_list(length=None)
         if not documentos:
-            saltar_o_fallar(f"{BASE_DE_TRABAJO}.{nombre} vacia; correr 03-catalogos.js")
+            saltar_o_fallar(f"{BASE_DE_TRABAJO}.{nombre} vacia: la semilla de pruebas no cargo")
         await base[nombre].insert_many(documentos)
 
     try:

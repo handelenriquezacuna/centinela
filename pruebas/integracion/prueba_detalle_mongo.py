@@ -30,13 +30,13 @@ from httpx import ASGITransport, AsyncClient
 from app.main import crear_aplicacion
 from app.nucleo.config import Ajustes, obtener_ajustes
 from app.repos.esquemas import obtener_validadores, recrear_con_validador
-from pruebas.conftest import saltar_o_fallar
+from pruebas.conftest import BASE_SEMILLA, saltar_o_fallar
 
 pytestmark = pytest.mark.mongo
 
 RAIZ = Path(__file__).resolve().parents[2]
 SCRIPT = RAIZ / "scripts" / "migraciones" / "001-alertas-v1-a-v2.js"
-BASE_DE_TRABAJO = "antifraude"
+BASE_DE_TRABAJO = BASE_SEMILLA  # semilla propia de las pruebas, no `antifraude`
 BASE_DETALLE = "antifraude_pruebas_detalle"
 COPIADAS = (
     "clientes",
@@ -64,7 +64,7 @@ async def base_detalle(base_mongo: Any) -> AsyncIterator[Any]:
     for nombre in COPIADAS:
         documentos = await trabajo[nombre].find({}).to_list(length=None)
         if not documentos:
-            saltar_o_fallar(f"{BASE_DE_TRABAJO}.{nombre} vacia; correr la siembra")
+            saltar_o_fallar(f"{BASE_DE_TRABAJO}.{nombre} vacia: la semilla de pruebas no cargo")
         await base[nombre].insert_many(documentos)
     alerta = await trabajo["alertas"].find_one({"_id": "ALR-001"})
     if alerta is None or alerta["esquema_version"] != 1:

@@ -33,11 +33,12 @@ from app.repos.carga_demo import a_entero_64, cargar_demo
 from app.repos.deteccion import RepoDeteccion
 from app.repos.esquemas import obtener_validadores, recrear_con_validador
 from app.supervision import Supervisor
+from pruebas.conftest import BASE_SEMILLA
 from pruebas.dobles.datos_demo import DATOS_DEMO, TRANSACCIONES
 
 pytestmark = pytest.mark.mongo
 
-BASE_DE_TRABAJO = "antifraude"
+BASE_DE_TRABAJO = BASE_SEMILLA  # semilla propia de las pruebas, no `antifraude`
 BASE_D1 = "antifraude_pruebas_d1"
 CON_VALIDADOR = ("transacciones", "alertas", "deteccion_estado")
 DE_IDENTIDAD = ("clientes", "cuentas", "perfiles_comportamiento", "listas_riesgo")

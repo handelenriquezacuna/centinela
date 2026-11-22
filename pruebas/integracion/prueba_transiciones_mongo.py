@@ -23,12 +23,12 @@ from app.modelos import Alerta, EstadoAlerta
 from app.repos.alertas import ConflictoAlerta, RepoAlertas, planear_transicion
 from app.repos.carga_demo import cargar_demo
 from app.repos.esquemas import obtener_validadores, recrear_con_validador
-from pruebas.conftest import saltar_o_fallar
+from pruebas.conftest import BASE_SEMILLA, saltar_o_fallar
 from pruebas.dobles.datos_demo import DATOS_DEMO
 
 pytestmark = pytest.mark.mongo
 
-BASE_DE_TRABAJO = "antifraude"
+BASE_DE_TRABAJO = BASE_SEMILLA  # semilla propia de las pruebas, no `antifraude`
 BASE_H14 = "antifraude_pruebas_h14"
 AHORA = datetime(2026, 9, 25, 5, 0, tzinfo=UTC)
 

@@ -31,11 +31,11 @@ from app.nucleo.config import AjustesGenerador, obtener_ajustes
 from app.repos.esquemas import obtener_validadores, recrear_con_validador
 from app.repos.generador import RepoGenerador
 from app.repos.red_mulas import SALTOS_MAXIMOS, RepoRedMulas
-from pruebas.conftest import saltar_o_fallar
+from pruebas.conftest import BASE_SEMILLA, saltar_o_fallar
 
 pytestmark = pytest.mark.mongo
 
-BASE_DE_TRABAJO = "antifraude"
+BASE_DE_TRABAJO = BASE_SEMILLA  # semilla propia de las pruebas, no `antifraude`
 BASE_RED = "antifraude_pruebas_red_mulas"
 COLECCIONES = (
     "clientes",
