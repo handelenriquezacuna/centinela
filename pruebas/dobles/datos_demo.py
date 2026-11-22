@@ -22,6 +22,7 @@ from datetime import datetime, timedelta
 
 from app.modelos import (
     COLECCIONES,
+    ESQUEMA_ALERTA_V1,
     ZONA_COSTA_RICA,
     AccionHistorial,
     Agente,
@@ -192,12 +193,17 @@ AGENTES = [
     Agente(_id="AGT-002", nombre="Laura Mendez", rol=RolAgente.AGENTE),
 ]
 
+# Las tres alertas del demo son v1 (H-26): `reglas_disparadas` como lista de REG-xxx,
+# igual que la ALR-001 sembrada por 01-colecciones.js. Son "lo que habia antes" y es lo
+# que la migracion 001 convierte; la API las lee igual gracias a la lectura dual.
+#
 # ALR-001 es la del caso: puntaje 75 (35 + 25 + 15), severidad CRITICA, confirmada por
 # AGT-001 a las 22:53 con la nota documentada. El historial muestra los dos pasos de
 # la maquina de estados, porque `nueva -> confirmada` no existe: primero la toma.
 ALERTAS = [
     Alerta(
         _id="ALR-001",
+        esquema_version=ESQUEMA_ALERTA_V1,
         transaccion_id="TXN-001",
         reglas_disparadas=["REG-001", "REG-002", "REG-003"],
         puntaje=75,
@@ -236,6 +242,7 @@ ALERTAS = [
     # GET /api/v1/alertas se puedan probar de verdad y no contra un solo documento.
     Alerta(
         _id="ALR-002",
+        esquema_version=ESQUEMA_ALERTA_V1,
         transaccion_id="TXN-003",
         reglas_disparadas=["REG-003"],
         puntaje=40,
@@ -256,6 +263,7 @@ ALERTAS = [
     ),
     Alerta(
         _id="ALR-003",
+        esquema_version=ESQUEMA_ALERTA_V1,
         transaccion_id="TXN-004",
         reglas_disparadas=["REG-002", "REG-003"],
         puntaje=60,

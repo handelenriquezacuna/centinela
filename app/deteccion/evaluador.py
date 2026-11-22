@@ -132,8 +132,10 @@ class Evaluacion(_Congelado):
 
     @property
     def regla_ids(self) -> list[str]:
-        """Forma v1 de `alertas.reglas_disparadas` (lista de REG-xxx), mientras el
-        modelo de la alerta no suba a la copia embebida."""
+        """Forma v1 de `alertas.reglas_disparadas` (lista de REG-xxx).
+
+        D1 escribe v2 con la copia embebida; esto queda para leer alertas v1 y
+        para quien solo necesite los identificadores."""
         return [disparada.regla_id for disparada in self.reglas_disparadas]
 
 

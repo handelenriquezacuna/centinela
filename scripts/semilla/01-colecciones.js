@@ -42,9 +42,10 @@
 //   - esquema_version: entero, obligatorio desde el primer documento, en
 //     las 11 colecciones.
 //   - snake_case en espanol. Prohibido "id", "type", "class" como campo.
-//   - alertas.reglas_disparadas es arreglo de cadenas por ahora (v1). En
-//     H-08 evoluciona a copia embebida con version (esquema_version 1->2,
-//     migracion de H-26). No se adelanta esa forma aqui.
+//   - alertas.reglas_disparadas: en v1 es un arreglo de REG-xxx; en v2 es la
+//     copia embebida {regla_id, codigo, version, peso, explicacion} con la
+//     politica usada. El validador acepta las dos; la migracion de H-26 es
+//     scripts/migraciones/001-alertas-v1-a-v2.js.
 //   - Maquina de estados de alertas.estado: nueva -> en_revision ->
 //     confirmada / descartada / escalada. El validador la restringe.
 //
@@ -579,9 +580,17 @@ db.agentes.insertMany([
 // Relacion alertas -> historial: EMBEBIDA. Justificacion: el historial de
 // acciones se lee siempre junto con la alerta, nunca solo, y crece acotado
 // (pocas acciones por alerta) -- exactamente el criterio de docs/04.
-// reglas_disparadas: arreglo de cadenas (v1, esquema_version=1). H-08 lo
-// evoluciona a copia embebida con version de la regla (esquema_version 2,
-// migracion de H-26); no se adelanta esa forma en este archivo.
+// reglas_disparadas tiene DOS formas, decididas por esquema_version (H-26,
+// decisiones D-01/D-12/D-14), y el validador acepta las dos con oneOf:
+//   v1: arreglo de REG-xxx; la version de cada regla y la politica solo
+//       quedaban como texto en historial[0].nota. Sin campo politica.
+//   v2: arreglo de {regla_id, codigo, version, peso, explicacion} y el
+//       campo politica {politica_id, version}. Es lo que escribe D1.
+// Una mezcla (v2 con cadenas, v1 con politica, una lista con las dos
+// formas) no cumple ninguna rama y se rechaza. La conversion v1 -> v2 es
+// scripts/migraciones/001-alertas-v1-a-v2.js (python tareas.py migrar).
+// Los patrones de identificador aceptan 3 o mas digitos (ALR-1000 existe
+// en cuanto el generador pasa de 999 transacciones).
 // agente_id NO es obligatorio: una alerta "nueva" puede no tener agente
 // asignado todavia.
 // cuenta_origen, cuenta_destino, monto_crc, moneda y cliente_nombre son
@@ -605,7 +614,7 @@ recrearColeccion("alertas", {
   properties: {
     _id: {
       bsonType: "string",
-      pattern: "^ALR-[0-9]{3}$",
+      pattern: "^ALR-[0-9]{3,}$",
       description: "Identificador legible del contrato de IDs, ej. ALR-001"
     },
     transaccion_id: {
@@ -641,8 +650,17 @@ recrearColeccion("alertas", {
       bsonType: "array",
       minItems: 1,
       uniqueItems: true,
-      items: { bsonType: "string", pattern: "^REG-[0-9]{3}$" },
-      description: "v1: arreglo de codigos de reglas_deteccion. Evoluciona a copia embebida con version en H-08/H-26 (esquema_version 2)"
+      description: "v1: arreglo de REG-xxx. v2: copia embebida con version, peso y explicacion. La forma de los elementos la fija la rama de oneOf que corresponde a esquema_version"
+    },
+    politica: {
+      bsonType: "object",
+      required: ["politica_id", "version"],
+      additionalProperties: false,
+      description: "Solo v2: la politica_deteccion con que se calculo la severidad",
+      properties: {
+        politica_id: { bsonType: "string", pattern: "^POL-[0-9]{3,}$" },
+        version: { bsonType: "int", minimum: 1 }
+      }
     },
     puntaje: {
       bsonType: "int",
@@ -660,7 +678,7 @@ recrearColeccion("alertas", {
     },
     agente_id: {
       bsonType: "string",
-      pattern: "^AGT-[0-9]{3}$",
+      pattern: "^AGT-[0-9]{3,}$",
       description: "Referencia a agentes._id; ausente mientras la alerta este sin asignar"
     },
     fecha_creacion: {
@@ -697,12 +715,47 @@ recrearColeccion("alertas", {
     },
     esquema_version: {
       bsonType: "int",
-      minimum: 1,
-      description: "Version del esquema del documento (1 = reglas_disparadas como arreglo de cadenas)"
+      enum: [1, 2],
+      description: "1 = reglas_disparadas como arreglo de REG-xxx; 2 = copia embebida y politica"
     }
-  }
+  },
+  oneOf: [
+    {
+      title: "alerta v1",
+      properties: {
+        esquema_version: { enum: [1] },
+        reglas_disparadas: {
+          items: { bsonType: "string", pattern: "^REG-[0-9]{3,}$" }
+        }
+      },
+      not: { required: ["politica"] }
+    },
+    {
+      title: "alerta v2",
+      required: ["politica"],
+      properties: {
+        esquema_version: { enum: [2] },
+        reglas_disparadas: {
+          items: {
+            bsonType: "object",
+            required: ["regla_id", "codigo", "version", "peso", "explicacion"],
+            additionalProperties: false,
+            properties: {
+              regla_id: { bsonType: "string", pattern: "^REG-[0-9]{3,}$" },
+              codigo: { bsonType: "string", pattern: "^R-[0-9]{2}$" },
+              version: { bsonType: "int", minimum: 1, description: "Version de la regla con que se evaluo" },
+              peso: { bsonType: "int", minimum: 0, maximum: 100, description: "Aporte al puntaje, antes del tope" },
+              explicacion: { bsonType: "string", minLength: 1, description: "Del evaluador, o reconstruida por la migracion 001" }
+            }
+          }
+        }
+      }
+    }
+  ]
 });
 
+// ALR-001 se siembra en v1 A PROPOSITO: es el documento "de antes" que la
+// migracion 001 convierte a v2, y lo que la Practica 4 demuestra.
 // ALR-001 es exactamente UC-02/UC-03: puntaje 75, severidad CRITICA, las 3
 // reglas de relleno del contrato, resuelta por AGT-001 (Jose Solis) como
 // "confirmada" con la nota del caso de uso. Los campos desnormalizados

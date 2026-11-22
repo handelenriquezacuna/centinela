@@ -14,6 +14,7 @@ Uso:
     python tareas.py instalar        sincroniza dependencias con uv
     python tareas.py dev             corre la API en el host, con recarga
     python tareas.py datos-demo      carga el conjunto de demo
+    python tareas.py migrar          corre las migraciones de esquema (H-26)
     python tareas.py pruebas         corre las pruebas
     python tareas.py verificar       instala, prueba y reporta
 
@@ -44,6 +45,22 @@ SCRIPTS_SEMILLA = (
     "01-colecciones.js",  # colecciones y validadores $jsonSchema (H-01)
     "02-indices.js",      # indices con nombre (H-06)
     "03-catalogos.js",    # reglas de deteccion y politica de severidad (H-07)
+)
+
+
+# Migraciones de esquema (H-26). Se corren TODAS, en orden de nombre: cada una es
+# idempotente (solo toca documentos de la version que convierte), asi que correrlas de
+# nuevo no cambia nada.
+DIRECTORIO_MIGRACIONES = RAIZ / "scripts" / "migraciones"
+
+# D-15. La historia de versiones de una regla (H-16) vive DENTRO del documento de la
+# regla, y 01-colecciones.js hace drop + create de `reglas_deteccion`.
+AVISO_HISTORIA_REGLAS = (
+    "AVISO (D-15): re-sembrar BORRA la historia de versiones de las reglas.\n"
+    "  01-colecciones.js recrea reglas_deteccion y 03-catalogos.js la deja en version 1,\n"
+    "  sin versiones_anteriores. Las ediciones hechas desde la API (H-16) se pierden, y\n"
+    "  una alerta evaluada con una version editada ya no se podra explicar con ella\n"
+    "  (la migracion 001 la marca como 'no disponible: regla editada').\n"
 )
 
 
@@ -316,6 +333,8 @@ def tarea_datos_demo(args: argparse.Namespace) -> None:
     presentes = [directorio / nombre for nombre in SCRIPTS_SEMILLA]
     faltantes = [ruta.name for ruta in presentes if not ruta.is_file()]
 
+    print(AVISO_HISTORIA_REGLAS)
+
     if faltantes:
         print(
             "AVISO: no estan en este checkout los scripts de semilla "
@@ -330,6 +349,22 @@ def tarea_datos_demo(args: argparse.Namespace) -> None:
 
     print("Cargando los documentos de dominio del demo...")
     correr(uv("run", "python", "-m", "pruebas.dobles.datos_demo"), dry_run=args.dry_run)
+
+
+def tarea_migrar(args: argparse.Namespace) -> None:
+    """Corre las migraciones de esquema de scripts/migraciones, en orden.
+
+    Hoy es una: `001-alertas-v1-a-v2.js` (H-26). Cada script imprime cuantos documentos
+    migro y cuantos ya estaban migrados; una segunda corrida migra cero. Se corre desde
+    el host con la URI completa, igual que la siembra, por las mismas razones (ver
+    `mongosh`).
+    """
+    scripts = sorted(DIRECTORIO_MIGRACIONES.glob("*.js"))
+    if not scripts:
+        raise Fallo(f"no hay migraciones en {DIRECTORIO_MIGRACIONES}")
+    for ruta in scripts:
+        print(f"Migrando con {ruta.name}...", flush=True)
+        correr(mongosh("--file", str(ruta)), dry_run=args.dry_run)
 
 
 def tarea_pruebas(args: argparse.Namespace) -> None:
@@ -361,6 +396,7 @@ TAREAS = {
     "instalar": tarea_instalar,
     "dev": tarea_dev,
     "datos-demo": tarea_datos_demo,
+    "migrar": tarea_migrar,
     "pruebas": tarea_pruebas,
     "verificar": tarea_verificar,
 }

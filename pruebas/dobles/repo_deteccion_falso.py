@@ -80,6 +80,8 @@ class RepoDeteccionFalso:
       `ChangeStreamHistoryLost`.
     - `alertas_existentes`: transacciones que ya tienen alerta (el indice unico).
     - `fallos_al_insertar`: cuantas veces falla `insertar_alerta` antes de funcionar.
+    - `reglas`: el catalogo activo; por omision el del caso. `[]` simula el catalogo
+      vacio de T-18.
     """
 
     def __init__(
@@ -90,8 +92,10 @@ class RepoDeteccionFalso:
         rechazar_token: bool = False,
         alertas_existentes: Sequence[str] = (),
         fallos_al_insertar: int = 0,
+        reglas: Sequence[Regla] | None = None,
     ) -> None:
         self._vueltas = list(vueltas)
+        self._reglas = list(REGLAS_DEL_CASO if reglas is None else reglas)
         self.token_guardado = token_guardado
         self._rechazar_token = rechazar_token
         self.alertas: dict[str, Alerta] = {}
@@ -127,7 +131,7 @@ class RepoDeteccionFalso:
     # -- Lecturas ---------------------------------------------------------
 
     async def leer_reglas_activas(self) -> list[Regla]:
-        return list(REGLAS_DEL_CASO)
+        return list(self._reglas)
 
     async def leer_politica_vigente(self) -> PoliticaDeteccion:
         return POLITICA_DEL_CASO

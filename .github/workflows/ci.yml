@@ -142,6 +142,12 @@ jobs:
           CENTINELA_MONGO__URI: "mongodb://localhost:27018/?replicaSet=rsfraude"
         run: uv run pytest -m "not mongo" -q
 
+      # Las pruebas de migracion corren scripts/migraciones/*.js con mongosh desde el
+      # host, igual que `python tareas.py migrar`. El runner no lo trae: se instala con
+      # version fija para que el resultado no cambie con cada publicacion de mongosh.
+      - name: Instalar mongosh en el runner
+        run: npm install -g mongosh@2.9.2 && mongosh --version
+
       - name: Compuerta -- pruebas de integracion (Mongo real, change streams)
         env:
           CENTINELA_MONGO__URI: "mongodb://localhost:27018/?replicaSet=rsfraude"

@@ -90,6 +90,7 @@ async def prueba_cada_tarea_publica_evento_retraso_y_error(
         "retraso_segundos",
         "ultimo_error",
         "historia",
+        "advertencia",
     }
     assert fila["estado"] == "corriendo"
     assert fila["eventos_procesados"] == 1
@@ -129,6 +130,26 @@ async def prueba_matar_la_tarea_deja_el_estado_degradado(
     assert cuerpo["estado"] == "degradado"
     fila = next(t for t in cuerpo["tareas"] if t["nombre"] == NOMBRE_LATIDO)
     assert fila["estado"] == "detenida"
+
+
+@pytest.mark.asyncio
+async def prueba_d1_sin_reglas_activas_deja_el_estado_degradado(
+    cliente_estado: AsyncClient, supervisor: Supervisor
+) -> None:
+    """T-18 por HTTP: la tarea vive y late, pero sin reglas no detecta nada."""
+    from app.deteccion.d1 import MOTIVO_SIN_REGLAS, NOMBRE_D1, vigilar_catalogo
+
+    supervisor.lanzar(NOMBRE_D1, _nunca_termina())
+    supervisor.latir(NOMBRE_D1)
+    vigilar_catalogo(supervisor, NOMBRE_D1, 0)
+
+    cuerpo = (await cliente_estado.get(RUTA)).json()
+    fila = next(t for t in cuerpo["tareas"] if t["nombre"] == NOMBRE_D1)
+    assert cuerpo["estado"] == "degradado"
+    assert (fila["estado"], fila["advertencia"]) == ("degradada", MOTIVO_SIN_REGLAS)
+
+    vigilar_catalogo(supervisor, NOMBRE_D1, 6)
+    assert (await cliente_estado.get(RUTA)).json()["estado"] == "ok"
 
 
 @pytest.mark.asyncio

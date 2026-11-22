@@ -33,7 +33,6 @@ from app.deteccion.evaluador import ContextoEvaluacion, PoliticaDeteccion, Venta
 from app.modelos import (
     COLECCION_ALERTAS,
     COLECCION_DETECCION_ESTADO,
-    COLECCION_POLITICA,
     COLECCION_TRANSACCIONES,
     COLECCIONES,
     ESQUEMA_VERSION,
@@ -48,6 +47,7 @@ from app.repos.flujo_alertas import (
     CHANGE_STREAM_HISTORY_LOST,
     TokenDeReanudacionInvalido,
 )
+from app.repos.reglas import leer_politica_vigente
 
 registro_log = logging.getLogger("centinela.deteccion")
 
@@ -257,10 +257,11 @@ class RepoDeteccion:
         return reglas
 
     async def leer_politica_vigente(self) -> PoliticaDeteccion:
-        documento = await self._base[COLECCION_POLITICA].find_one({"vigente": True})
-        if documento is None:
+        """La misma lectura que la API de reglas (T-19). Sin politica no hay cortes."""
+        politica = await leer_politica_vigente(self._base)
+        if politica is None:
             raise LookupError("no hay politica_deteccion vigente; sin ella no hay cortes")
-        return PoliticaDeteccion.model_validate(documento)
+        return politica
 
     # -- Contexto ---------------------------------------------------------
 

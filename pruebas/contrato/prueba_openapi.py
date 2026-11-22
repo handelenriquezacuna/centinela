@@ -30,11 +30,26 @@ def prueba_estan_publicadas_las_rutas_decididas() -> None:
         "/estado",
         "/api/v1/alertas",
         "/api/v1/alertas/flujo",
+        "/api/v1/alertas/{alerta_id}/transiciones",
         "/api/v1/reglas",
         "/api/v1/reglas/tipos",
         "/api/v1/reglas/simular",
         "/api/v1/reglas/{regla_id}",
     }
+
+
+def prueba_la_ruta_de_transiciones_publica_sus_errores() -> None:
+    """H-14: POST con 404, 409 (transicion invalida o conflicto), 422 y 500 en la forma
+    unica del error, y el cuerpo cerrado (`additionalProperties: false`)."""
+    ruta = ESQUEMA["paths"]["/api/v1/alertas/{alerta_id}/transiciones"]
+    assert set(ruta) == {"post"}
+    respuestas = ruta["post"]["responses"]
+    for codigo in ("404", "409", "422", "500"):
+        referencia = respuestas[codigo]["content"]["application/json"]["schema"]["$ref"]
+        assert referencia.endswith("/RespuestaError"), codigo
+    peticion = ESQUEMA["components"]["schemas"]["PeticionTransicion"]
+    assert set(peticion["properties"]) == {"destino", "agente_id", "nota", "estado_esperado"}
+    assert peticion["additionalProperties"] is False
 
 
 def prueba_las_rutas_de_reglas_publican_sus_metodos_y_errores() -> None:
@@ -93,6 +108,7 @@ def prueba_el_estado_publica_las_tareas_con_su_vocabulario() -> None:
     }
     assert set(componentes["EstadoTarea"]["enum"]) == {
         "corriendo",
+        "degradada",
         "retrasada",
         "detenida",
         "fallida",
@@ -106,6 +122,7 @@ def prueba_el_estado_publica_las_tareas_con_su_vocabulario() -> None:
         "retraso_segundos",
         "ultimo_error",
         "historia",
+        "advertencia",
     }
 
 

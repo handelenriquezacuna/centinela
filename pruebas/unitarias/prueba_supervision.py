@@ -298,3 +298,29 @@ async def prueba_detener_cancela_todas_las_tareas() -> None:
 
     assert primera.cancelled() and segunda.cancelled()
     assert supervisor.informe().estado is EstadoSupervision.DEGRADADO
+
+
+# ---------------------------------------------------------------------------
+# T-18: una condicion que sigue pasando degrada aunque la tarea lata
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def prueba_una_advertencia_degrada_y_al_limpiarla_vuelve_a_ok() -> None:
+    from app.supervision import EstadoSupervision, EstadoTarea
+
+    supervisor = Supervisor(tolerancia_segundos=30)
+    supervisor.lanzar("d1_deteccion", asyncio.Event().wait())
+    supervisor.latir("d1_deteccion")
+
+    supervisor.advertir("d1_deteccion", "sin reglas activas")
+    degradado = supervisor.informe()
+    supervisor.advertir("d1_deteccion", None)
+    sano = supervisor.informe()
+    await supervisor.detener()
+
+    assert degradado.tarea("d1_deteccion").estado == EstadoTarea.DEGRADADA
+    assert degradado.tarea("d1_deteccion").advertencia == "sin reglas activas"
+    assert degradado.estado == EstadoSupervision.DEGRADADO
+    assert sano.tarea("d1_deteccion").estado == EstadoTarea.CORRIENDO
+    assert sano.estado == EstadoSupervision.OK

@@ -26,9 +26,9 @@ from pydantic import (
     field_validator,
 )
 
-# Version de esquema de los documentos que escribe este codigo. Sube a 2 cuando
-# H-08 convierta alertas.reglas_disparadas en copia embebida con version; esa es la
-# migracion que H-26 demuestra el 19 de octubre.
+# Version de esquema por omision de los documentos que escribe este codigo. La
+# version es POR COLECCION: `alertas` ya va en 2 (H-26, copia embebida de las reglas;
+# ver ESQUEMA_ALERTA_VIGENTE en app/modelos/alertas.py) y las demas siguen en 1.
 ESQUEMA_VERSION = 1
 
 MAXIMO_ENTERO_64 = 2**63 - 1

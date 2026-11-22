@@ -18,11 +18,16 @@ invente con otro nombre.
 from __future__ import annotations
 
 from app.modelos.alertas import (
+    ESQUEMA_ALERTA_V1,
+    ESQUEMA_ALERTA_V2,
+    ESQUEMA_ALERTA_VIGENTE,
     AccionHistorial,
     Agente,
     Alerta,
     Caso,
     EstadoCaso,
+    PoliticaAplicada,
+    ReglaAplicada,
     RolAgente,
 )
 from app.modelos.base import (
@@ -63,6 +68,7 @@ from app.modelos.transaccional import (
     EntradaListaRiesgo,
     Regla,
     Transaccion,
+    VersionAnteriorRegla,
 )
 
 # El mapa unico de nombres de coleccion. Cualquier codigo que necesite el nombre de
@@ -83,6 +89,7 @@ COLECCIONES: dict[str, type[DocumentoBase]] = {
 }
 
 COLECCION_ALERTAS = "alertas"
+COLECCION_CASOS = "casos"
 COLECCION_TRANSACCIONES = "transacciones"
 
 # Colecciones de operacion, todavia sin modelo (H-00B y H-09).
@@ -92,9 +99,13 @@ COLECCION_DETECCION_ESTADO = "deteccion_estado"
 __all__ = [
     "COLECCIONES",
     "COLECCION_ALERTAS",
+    "COLECCION_CASOS",
     "COLECCION_DETECCION_ESTADO",
     "COLECCION_POLITICA",
     "COLECCION_TRANSACCIONES",
+    "ESQUEMA_ALERTA_V1",
+    "ESQUEMA_ALERTA_V2",
+    "ESQUEMA_ALERTA_VIGENTE",
     "ESQUEMA_VERSION",
     "ESTADOS_ABIERTOS",
     "ESTADOS_TERMINALES",
@@ -122,11 +133,14 @@ __all__ = [
     "MontoCRC",
     "Notificacion",
     "PerfilComportamiento",
+    "PoliticaAplicada",
     "Regla",
+    "ReglaAplicada",
     "RolAgente",
     "Severidad",
     "Transaccion",
     "TransicionInvalida",
+    "VersionAnteriorRegla",
     "exigir_transicion",
     "transicion_permitida",
     "transiciones_validas",

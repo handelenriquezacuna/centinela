@@ -15,18 +15,65 @@ import copy
 from datetime import datetime
 from typing import Any
 
+from app.deteccion import PoliticaDeteccion
 from app.modelos import EstadoAlerta, Severidad
 from app.modelos.base import asumir_utc
+from app.repos.alertas import ConflictoAlerta, PlanTransicion
 from app.repos.reglas import CodigoDuplicado, instantanea, siguiente_regla_id
 
 
 class RepoAlertasFalso:
-    """Repositorio de alertas en memoria."""
+    """Repositorio de alertas en memoria.
+
+    Para H-14 aplica en Python el plan que arma `planear_transicion` (la misma funcion
+    pura que usa el real): el filtro condicionado, el `$set` y el `$push`. No
+    reimplementa la regla, solo la escritura.
+
+    - `interferir_antes_de_transicionar`: simula a otro agente que la toma justo antes
+      de que llegue la escritura (el filtro deja de coincidir).
+    - `casos`: los casos creados al escalar, por `_id`.
+    """
 
     def __init__(self, documentos: list[dict[str, Any]]) -> None:
         # Copia: una prueba que modifique un documento no debe ensuciar a la que sigue.
-        self._documentos = [dict(documento) for documento in documentos]
+        self._documentos = [copy.deepcopy(documento) for documento in documentos]
         self.llamadas: list[dict[str, Any]] = []
+        self.casos: dict[str, dict[str, Any]] = {}
+        self.interferir_antes_de_transicionar = False
+        self.escrituras = 0
+
+    async def obtener(self, alerta_id: str) -> dict[str, Any] | None:
+        documento = next((d for d in self._documentos if d["_id"] == alerta_id), None)
+        return copy.deepcopy(documento) if documento is not None else None
+
+    async def aplicar_transicion(self, plan: PlanTransicion) -> dict[str, Any]:
+        guardado = next(d for d in self._documentos if d["_id"] == plan.alerta_id)
+        if self.interferir_antes_de_transicionar:
+            guardado["estado"] = "en_revision"
+            guardado["agente_id"] = "AGT-999"
+        if not self._coincide(guardado, plan.filtro):
+            raise ConflictoAlerta(f"La alerta {plan.alerta_id} cambio mientras se resolvia")
+        if plan.caso is not None and plan.caso["_id"] in self.casos:
+            raise ConflictoAlerta(f"Ya existe el caso {plan.caso['_id']}")
+        guardado.update(copy.deepcopy(plan.actualizacion["$set"]))
+        guardado["historial"] = [
+            *guardado["historial"],
+            copy.deepcopy(plan.actualizacion["$push"]["historial"]),
+        ]
+        if plan.caso is not None:
+            self.casos[plan.caso["_id"]] = copy.deepcopy(plan.caso)
+        self.escrituras += 1
+        return copy.deepcopy(guardado)
+
+    @staticmethod
+    def _coincide(documento: dict[str, Any], filtro: dict[str, Any]) -> bool:
+        for campo, esperado in filtro.items():
+            if isinstance(esperado, dict) and esperado == {"$exists": False}:
+                if campo in documento:
+                    return False
+            elif documento.get(campo) != esperado:
+                return False
+        return True
 
     async def listar(
         self,
@@ -144,5 +191,8 @@ class RepoReglasFalso:
         self.escrituras += 1
         return copy.deepcopy(guardado)
 
-    async def politica_vigente(self) -> dict[str, Any] | None:
-        return copy.deepcopy(self._politica)
+    async def politica_vigente(self) -> PoliticaDeteccion | None:
+        """Mismo contrato que `leer_politica_vigente` (T-19): el modelo, o None."""
+        if self._politica is None:
+            return None
+        return PoliticaDeteccion.model_validate(copy.deepcopy(self._politica))

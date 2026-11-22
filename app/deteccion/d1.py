@@ -50,7 +50,15 @@ from typing import Any
 from pydantic import ValidationError
 
 from app.deteccion.evaluador import Evaluacion, evaluar
-from app.modelos import ESTADO_INICIAL, AccionHistorial, Alerta, Transaccion
+from app.modelos import (
+    ESQUEMA_ALERTA_V2,
+    ESTADO_INICIAL,
+    AccionHistorial,
+    Alerta,
+    PoliticaAplicada,
+    ReglaAplicada,
+    Transaccion,
+)
 from app.nucleo.config import AjustesDeteccion
 from app.repos.deteccion import DatosOrigen, ProtocoloRepoDeteccion
 from app.repos.flujo_alertas import TokenDeReanudacionInvalido
@@ -66,6 +74,11 @@ PREFIJO_TRANSACCION = "TXN-"
 PREFIJO_ALERTA = "ALR-"
 
 Reloj = Callable[[], datetime]
+
+MOTIVO_SIN_REGLAS = (
+    "sin reglas activas en reglas_deteccion: ninguna transaccion puede generar alerta "
+    "(sembrar scripts/semilla/03-catalogos.js o reactivar una regla)"
+)
 
 
 def _ahora() -> datetime:
@@ -99,20 +112,33 @@ def alerta_id_para(transaccion_id: str) -> str:
 
 
 def nota_de_creacion(evaluacion: Evaluacion) -> str:
-    """Primera entrada del historial: con que politica y que version de cada regla.
+    """Primera entrada del historial, para la persona que lee la bitacora.
 
-    `reglas_disparadas` es v1 (solo identificadores) hasta H-26. Mientras tanto la
-    version de cada regla usada queda escrita aqui, dentro de la alerta (H-16): si la
-    regla cambia manana, esta alerta sigue diciendo con cual se evaluo.
+    Desde H-26 la alerta es v2: la version de cada regla y la politica van como datos
+    en `reglas_disparadas` y `politica`, no como texto. La nota queda corta y legible,
+    con la politica y los codigos, y no es la fuente de nada.
     """
-    reglas = ", ".join(
-        f"{disparada.codigo} {disparada.regla_id} v{disparada.version} (+{disparada.peso})"
-        for disparada in evaluacion.reglas_disparadas
+    codigos = ", ".join(
+        f"{disparada.codigo} v{disparada.version}" for disparada in evaluacion.reglas_disparadas
     )
     return (
         f"Creada por D1 con {evaluacion.politica_id} v{evaluacion.politica_version}; "
-        f"reglas: {reglas}"
+        f"reglas: {codigos}"
     )
+
+
+def reglas_aplicadas(evaluacion: Evaluacion) -> list[ReglaAplicada]:
+    """`ReglaDisparada` del evaluador -> copia embebida v2 de la alerta. Sin perder nada."""
+    return [
+        ReglaAplicada(
+            regla_id=disparada.regla_id,
+            codigo=disparada.codigo,
+            version=disparada.version,
+            peso=disparada.peso,
+            explicacion=disparada.explicacion,
+        )
+        for disparada in evaluacion.reglas_disparadas
+    ]
 
 
 def construir_alerta(
@@ -121,7 +147,7 @@ def construir_alerta(
     origen: DatosOrigen,
     ahora: datetime,
 ) -> Alerta | None:
-    """La alerta v1 que corresponde a la evaluacion, o `None` si no supera el umbral."""
+    """La alerta v2 que corresponde a la evaluacion, o `None` si no supera el umbral."""
     if not evaluacion.genera_alerta:
         return None
     if evaluacion.severidad is None:
@@ -133,8 +159,12 @@ def construir_alerta(
         )
     return Alerta(
         _id=alerta_id_para(transaccion.transaccion_id),
+        esquema_version=ESQUEMA_ALERTA_V2,
         transaccion_id=transaccion.transaccion_id,
-        reglas_disparadas=evaluacion.regla_ids,
+        reglas_disparadas=reglas_aplicadas(evaluacion),
+        politica=PoliticaAplicada(
+            politica_id=evaluacion.politica_id, version=evaluacion.politica_version
+        ),
         puntaje=evaluacion.puntaje,
         severidad=evaluacion.severidad,
         estado=ESTADO_INICIAL,
@@ -155,6 +185,16 @@ def construir_alerta(
     )
 
 
+def vigilar_catalogo(supervisor: Supervisor, nombre: str, reglas_activas: int) -> None:
+    """T-18: sin reglas activas D1 late pero no detecta nada, y `/estado` lo dice.
+
+    Pasa si se re-siembra `01-colecciones.js` sin correr despues `03-catalogos.js`, o si
+    un supervisor apaga todas las reglas desde la API. El proceso esta sano; el sistema
+    no esta haciendo su trabajo, y eso es exactamente lo que `/estado` viene a decir.
+    """
+    supervisor.advertir(nombre, MOTIVO_SIN_REGLAS if reglas_activas == 0 else None)
+
+
 def espera_progresiva(intento: int, ajustes: AjustesDeteccion) -> float:
     """Segundos a esperar antes del intento siguiente: se duplica hasta el tope."""
     return min(
@@ -168,11 +208,21 @@ def espera_progresiva(intento: int, ajustes: AjustesDeteccion) -> float:
 
 
 async def procesar_transaccion(
-    repo: ProtocoloRepoDeteccion, documento: Mapping[str, Any], *, ahora: datetime
+    repo: ProtocoloRepoDeteccion,
+    documento: Mapping[str, Any],
+    *,
+    ahora: datetime,
+    al_leer_reglas: Callable[[int], None] | None = None,
 ) -> Resultado:
-    """Contexto -> evaluar -> alerta. No toca el token: eso es de quien llama."""
+    """Contexto -> evaluar -> alerta. No toca el token: eso es de quien llama.
+
+    `al_leer_reglas` recibe cuantas reglas activas hubo: es como D1 le cuenta al
+    supervisor que el catalogo quedo vacio (T-18) sin que esta funcion lo conozca.
+    """
     transaccion = Transaccion.model_validate(documento)
     reglas = await repo.leer_reglas_activas()
+    if al_leer_reglas is not None:
+        al_leer_reglas(len(reglas))
     if not reglas:
         # Pasa, por ejemplo, si se re-siembra 01-colecciones.js sin correr despues
         # 03-catalogos.js. Sin reglas ninguna transaccion alcanza el umbral, y eso no
@@ -231,7 +281,12 @@ async def _procesar_con_reintentos(
     while True:
         intentos += 1
         try:
-            return await procesar_transaccion(repo, documento, ahora=reloj())
+            return await procesar_transaccion(
+                repo,
+                documento,
+                ahora=reloj(),
+                al_leer_reglas=lambda activas: vigilar_catalogo(supervisor, nombre, activas),
+            )
         except asyncio.CancelledError:
             raise
         except ValidationError as fallo:
@@ -334,6 +389,9 @@ async def d1(
     vigilancia = _Vigilancia()
     while True:
         try:
+            # T-18: el catalogo se mira tambien al abrir, para que `/estado` diga
+            # "sin reglas" desde el arranque y no recien con la primera transaccion.
+            vigilar_catalogo(supervisor, nombre, len(await repo.leer_reglas_activas()))
             token = await repo.leer_token(nombre)
             if token is None:
                 registro_log.info("%s: sin token guardado, arranca desde ahora", nombre)

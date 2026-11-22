@@ -88,7 +88,16 @@ async def prueba_la_alerta_es_la_del_caso_documentado() -> None:
     assert alerta.alerta_id == "ALR-001"
     assert alerta.puntaje == 75
     assert alerta.severidad == Severidad.CRITICA
-    assert alerta.reglas_disparadas == ["REG-001", "REG-002", "REG-003"]
+    # H-26: v2, con la copia embebida que ya producia el evaluador y la politica.
+    assert alerta.esquema_version == 2
+    assert alerta.regla_ids == ["REG-001", "REG-002", "REG-003"]
+    assert [(r.codigo, r.version, r.peso) for r in alerta.reglas_aplicadas] == [
+        ("R-01", 1, 35),
+        ("R-03", 1, 25),
+        ("R-05", 1, 15),
+    ]
+    assert all(r.explicacion for r in alerta.reglas_aplicadas)
+    assert (alerta.politica.politica_id, alerta.politica.version) == ("POL-001", 1)
     assert alerta.estado == EstadoAlerta.NUEVA
     assert alerta.fecha_creacion == AHORA
     assert (alerta.cuenta_origen, alerta.cuenta_destino) == ("8712-4455", "6033-9001")
@@ -97,9 +106,7 @@ async def prueba_la_alerta_es_la_del_caso_documentado() -> None:
     creacion = alerta.historial[0]
     assert creacion.accion == EstadoAlerta.NUEVA
     assert creacion.agente_id is None
-    # H-16: la version de cada regla usada queda dentro de la alerta.
-    for regla_id in ("REG-001 v1", "REG-002 v1", "REG-003 v1", "POL-001 v1"):
-        assert regla_id in creacion.nota
+    assert "POL-001 v1" in creacion.nota
 
 
 @pytest.mark.asyncio
@@ -258,3 +265,41 @@ def prueba_el_id_de_la_alerta_sale_de_la_transaccion() -> None:
     assert alerta_id_para("TXN-1234") == "ALR-1234"
     with pytest.raises(ValueError):
         alerta_id_para("ALR-001")
+
+
+# ---------------------------------------------------------------------------
+# T-18: sin reglas activas, /estado degradado
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def prueba_sin_reglas_activas_d1_queda_degradado() -> None:
+    """D1 sigue vivo y latiendo, pero no puede detectar nada: el sistema no esta
+    haciendo su trabajo y el informe lo dice, con el motivo."""
+    from app.deteccion.d1 import MOTIVO_SIN_REGLAS
+    from app.supervision import EstadoSupervision, EstadoTarea
+
+    repo = RepoDeteccionFalso([_evento(1, "TXN-001")], reglas=[])
+    supervisor = Supervisor(tolerancia_segundos=30)
+    supervisor.lanzar(NOMBRE_D1, d1(repo, supervisor, ajustes=AJUSTES, reloj=lambda: AHORA))
+    try:
+        await asyncio.wait_for(repo.agotado.wait(), timeout=5)
+        informe = supervisor.informe()
+    finally:
+        await supervisor.detener()
+
+    fila = informe.tarea(NOMBRE_D1)
+    assert fila.estado == EstadoTarea.DEGRADADA
+    assert fila.advertencia == MOTIVO_SIN_REGLAS
+    assert informe.estado == EstadoSupervision.DEGRADADO
+    assert repo.alertas == {}
+
+
+@pytest.mark.asyncio
+async def prueba_con_reglas_la_advertencia_se_limpia() -> None:
+    from app.supervision import EstadoTarea
+
+    fila = await _correr(RepoDeteccionFalso([_evento(1, "TXN-001")]))
+
+    assert fila.estado == EstadoTarea.CORRIENDO
+    assert fila.advertencia is None

@@ -10,8 +10,9 @@ la que el portal lee por SSE y la que tiene la clave de idempotencia
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Annotated, Literal, Self
 
-from pydantic import Field
+from pydantic import Field, StringConstraints, model_validator
 
 from app.modelos.base import (
     AgenteId,
@@ -61,21 +62,73 @@ class AccionHistorial(ModeloCentinela):
     nota: str = ""
 
 
+# ---------------------------------------------------------------------------
+# Versiones de esquema de la alerta (H-26)
+# ---------------------------------------------------------------------------
+#
+#   v1  reglas_disparadas = ["REG-001", ...]; la version de cada regla y la politica
+#       quedaban solo como texto en historial[0].nota (lo que escribia D1 hasta H-26).
+#   v2  reglas_disparadas = [{regla_id, codigo, version, peso, explicacion}, ...] y
+#       politica = {politica_id, version}: la alerta se explica sola dentro de un ano.
+#
+# D1 escribe v2. Las v1 se convierten con scripts/migraciones/001-alertas-v1-a-v2.js;
+# mientras tanto el sistema LEE LAS DOS (lectura dual, por `esquema_version`).
+
+ESQUEMA_ALERTA_V1 = 1
+ESQUEMA_ALERTA_V2 = 2
+# La version que escribe este codigo. Las otras colecciones siguen en ESQUEMA_VERSION.
+ESQUEMA_ALERTA_VIGENTE = ESQUEMA_ALERTA_V2
+
+PoliticaId = Annotated[
+    str,
+    StringConstraints(pattern=r"^POL-\d{3,}$"),
+    Field(description="Politica de deteccion, POL-001"),
+]
+
+
+class ReglaAplicada(ModeloCentinela):
+    """Copia embebida de una regla que disparo, con la version con que se evaluo (v2).
+
+    `peso` es el aporte al puntaje antes del tope de la politica; `explicacion` es la
+    del evaluador (H-08) con el valor observado contra el umbral. Si la escribio la
+    migracion, la explicacion se reconstruye desde la regla en esa version.
+    """
+
+    regla_id: ReglaId
+    codigo: str = Field(pattern=r"^R-\d{2}$")
+    version: int = Field(ge=1)
+    peso: int = Field(ge=0, le=100)
+    explicacion: str = Field(min_length=1)
+
+
+class PoliticaAplicada(ModeloCentinela):
+    """La politica con que se calculo la severidad (v2)."""
+
+    politica_id: PoliticaId
+    version: int = Field(ge=1)
+
+
 class Alerta(DocumentoBase):
     """Alerta de posible fraude, con el motivo por el que nacio adentro.
 
-    Sobre `reglas_disparadas`: hoy es la lista de identificadores de regla, tal como
-    la fija `scripts/practica1/CONTRATO-IDS.md`. En H-08 evoluciona a copia embebida
-    con version y peso aplicado, subiendo `esquema_version` de 1 a 2; esa es la
-    migracion real que H-26 demuestra el 19 de octubre. Mientras tanto, el detalle
-    del aporte de cada regla se reconstruye leyendo `reglas_deteccion`.
+    Lectura dual (H-26): el mismo modelo lee v1 y v2, y `esquema_version` decide que
+    forma de `reglas_disparadas` es valida. Una mezcla (v2 con lista de cadenas, v1
+    con politica) se rechaza aqui y en el validador `$jsonSchema`. Un solo modelo y no
+    una union discriminada a proposito: la API, el canal SSE y el portal siguen
+    leyendo `Alerta.model_validate(documento)` durante la transicion sin ramificar.
+
+    Para escribir, `esquema_version` vale 2 por omision: es lo que escribe D1.
     """
 
     alerta_id: AlertaId = Field(alias="_id")
+    esquema_version: Literal[1, 2] = ESQUEMA_ALERTA_VIGENTE
     # Clave de idempotencia. El indice unico sobre este campo es lo que garantiza que
     # reiniciar el motor (H-09) no duplique alertas.
     transaccion_id: TransaccionId
-    reglas_disparadas: list[ReglaId] = Field(min_length=1)
+    # v1: identificadores. v2: copia embebida con version, peso y explicacion.
+    reglas_disparadas: list[ReglaAplicada] | list[ReglaId] = Field(min_length=1)
+    # Solo v2: la politica con que se evaluo. En v1 esa informacion vivia en la nota.
+    politica: PoliticaAplicada | None = None
     puntaje: int = Field(ge=0, le=100)
     severidad: Severidad
     estado: EstadoAlerta = ESTADO_INICIAL
@@ -87,7 +140,7 @@ class Alerta(DocumentoBase):
     # Al menos una entrada SIEMPRE: la primera es la creacion, que escribe el motor
     # con `agente_id` nulo porque no la hizo una persona. Una alerta sin historial no
     # podria decir cuando nacio ni quien la toco, que es justo lo que el rastro de
-    # auditoria tiene que responder.
+    # auditoria tiene que responder. H-14 agrega con $push; nunca se reescribe.
     historial: list[AccionHistorial] = Field(min_length=1)
 
     # --- Copia de los campos de despliegue, al momento de crear la alerta ---
@@ -101,18 +154,41 @@ class Alerta(DocumentoBase):
     #    alerta tiene que poder explicarse dentro de un ano, y para eso el monto que
     #    se vio al crearla no puede depender de que la transaccion siga igual.
     #
-    # A D1 no le cuesta una consulta extra: cuando escribe la alerta ya tiene la
-    # transaccion en la mano, porque llego en el evento del change stream.
     # OJO: aca `cuenta_origen` es el NUMERO SINPE (8712-4455), no el identificador
-    # CTA-001 como en `transacciones`. Es deliberado y es lo que declara el validador:
-    # un campo de despliegue existe para mostrarse, y el agente lee el numero de
-    # cuenta, no una llave interna. El mismo nombre de campo significa cosas distintas
-    # en las dos colecciones, asi que esta anotado en docs/06-plataforma.md.
+    # CTA-001 como en `transacciones`. Es deliberado y es lo que declara el validador.
     cuenta_origen: CuentaSinpe
     cuenta_destino: CuentaSinpe
     monto_crc: MontoCRC
     moneda: Moneda = "CRC"
     cliente_nombre: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _forma_segun_version(self) -> Self:
+        embebidas = [r for r in self.reglas_disparadas if isinstance(r, ReglaAplicada)]
+        if self.esquema_version == ESQUEMA_ALERTA_V1:
+            if embebidas or self.politica is not None:
+                raise ValueError(
+                    "esquema_version 1: reglas_disparadas es una lista de REG-xxx y no "
+                    "lleva politica; la copia embebida es esquema_version 2"
+                )
+        elif len(embebidas) != len(self.reglas_disparadas) or self.politica is None:
+            raise ValueError(
+                "esquema_version 2: reglas_disparadas lleva {regla_id, codigo, version, "
+                "peso, explicacion} y la alerta lleva politica {politica_id, version}"
+            )
+        return self
+
+    @property
+    def regla_ids(self) -> list[str]:
+        """Los REG-xxx que dispararon, igual en v1 y en v2."""
+        return [
+            r.regla_id if isinstance(r, ReglaAplicada) else r for r in self.reglas_disparadas
+        ]
+
+    @property
+    def reglas_aplicadas(self) -> list[ReglaAplicada]:
+        """La copia embebida (v2). Vacia en v1: falta correr la migracion 001."""
+        return [r for r in self.reglas_disparadas if isinstance(r, ReglaAplicada)]
 
 
 class EstadoCaso(StrEnum):

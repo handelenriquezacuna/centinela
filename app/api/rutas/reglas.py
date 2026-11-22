@@ -37,10 +37,9 @@ from app.api.esquemas import (
     NuevaRegla,
     ParametroTipo,
     PeticionSimulacion,
-    ReglaConHistoria,
     TipoSoportado,
 )
-from app.deteccion import Evaluacion, PoliticaDeteccion, evaluar
+from app.deteccion import Evaluacion, evaluar
 from app.deteccion.evaluador import EVALUADORES, TIPOS_REGLA
 from app.modelos import ESQUEMA_VERSION
 from app.modelos.transaccional import Regla
@@ -139,7 +138,7 @@ async def listar_reglas(
     documentos = await repo.listar(activa=activa)
     return ListaReglas(
         total=len(documentos),
-        elementos=[ReglaConHistoria.model_validate(d) for d in documentos],
+        elementos=[Regla.model_validate(d) for d in documentos],
     )
 
 
@@ -195,21 +194,20 @@ async def simular(peticion: PeticionSimulacion, repo: RepoReglasDep) -> Evaluaci
 
     politica = peticion.politica
     if politica is None:
-        vigente = await repo.politica_vigente()
-        if vigente is None:
+        politica = await repo.politica_vigente()
+        if politica is None:
             raise ErrorCentinela(
                 CodigoError.CONFLICTO,
                 "No hay politica_deteccion vigente; mandar una en `politica`",
                 status.HTTP_409_CONFLICT,
             )
-        politica = PoliticaDeteccion.model_validate(vigente)
 
     return evaluar(peticion.transaccion, peticion.contexto, reglas, politica)
 
 
 @enrutador.get(
     "/{regla_id}",
-    response_model=ReglaConHistoria,
+    response_model=Regla,
     summary="Una regla, con sus versiones anteriores",
     responses=respuestas_documentadas(
         status.HTTP_404_NOT_FOUND,
@@ -217,17 +215,17 @@ async def simular(peticion: PeticionSimulacion, repo: RepoReglasDep) -> Evaluaci
         status.HTTP_500_INTERNAL_SERVER_ERROR,
     ),
 )
-async def obtener_regla(regla_id: ReglaIdRuta, repo: RepoReglasDep) -> ReglaConHistoria:
+async def obtener_regla(regla_id: ReglaIdRuta, repo: RepoReglasDep) -> Regla:
     """Sin autenticacion hasta H-25."""
     documento = await repo.obtener(regla_id)
     if documento is None:
         raise _no_encontrada(regla_id)
-    return ReglaConHistoria.model_validate(documento)
+    return Regla.model_validate(documento)
 
 
 @enrutador.post(
     "",
-    response_model=ReglaConHistoria,
+    response_model=Regla,
     status_code=status.HTTP_201_CREATED,
     summary="Crea una regla en version 1",
     responses=respuestas_documentadas(
@@ -236,7 +234,7 @@ async def obtener_regla(regla_id: ReglaIdRuta, repo: RepoReglasDep) -> ReglaConH
         status.HTTP_500_INTERNAL_SERVER_ERROR,
     ),
 )
-async def crear_regla(nueva: NuevaRegla, repo: RepoReglasDep) -> ReglaConHistoria:
+async def crear_regla(nueva: NuevaRegla, repo: RepoReglasDep) -> Regla:
     """El servidor asigna el siguiente REG-NNN. Codigo repetido: 409. Sin
     autenticacion hasta H-25."""
     _exigir_tipo_y_parametros(nueva.tipo, nueva.parametros)
@@ -254,12 +252,12 @@ async def crear_regla(nueva: NuevaRegla, repo: RepoReglasDep) -> ReglaConHistori
             status.HTTP_409_CONFLICT,
             [DetalleError(campo="codigo", mensaje="tiene que ser unico")],
         ) from fallo
-    return ReglaConHistoria.model_validate(creada)
+    return Regla.model_validate(creada)
 
 
 @enrutador.patch(
     "/{regla_id}",
-    response_model=ReglaConHistoria,
+    response_model=Regla,
     summary="Edita una regla (umbral, parametros, peso, activa, descripcion) y la versiona",
     responses=respuestas_documentadas(
         status.HTTP_404_NOT_FOUND,
@@ -270,7 +268,7 @@ async def crear_regla(nueva: NuevaRegla, repo: RepoReglasDep) -> ReglaConHistori
 )
 async def editar_regla(
     regla_id: ReglaIdRuta, edicion: EdicionRegla, repo: RepoReglasDep
-) -> ReglaConHistoria:
+) -> Regla:
     """Una sola escritura atomica, filtrada por la version leida.
 
     - `version` sube en uno; la anterior queda en `versiones_anteriores`.
@@ -299,7 +297,7 @@ async def editar_regla(
 
     efectivos = {campo: valor for campo, valor in cambios.items() if actual.get(campo) != valor}
     if not efectivos:
-        return ReglaConHistoria.model_validate(actual)
+        return Regla.model_validate(actual)
 
     if "parametros" in efectivos:
         _exigir_tipo_y_parametros(actual["tipo"], efectivos["parametros"])
@@ -322,4 +320,4 @@ async def editar_regla(
         if vigente is None:
             raise _no_encontrada(regla_id)
         raise _version_cambiada(regla_id, vigente.get("version"))
-    return ReglaConHistoria.model_validate(editada)
+    return Regla.model_validate(editada)
