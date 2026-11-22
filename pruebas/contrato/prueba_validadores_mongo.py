@@ -1,6 +1,8 @@
 """Los modelos contra los validadores REALES de la base del equipo.
 
-Estas pruebas necesitan el replica set y se saltan solas si no esta.
+Estas pruebas necesitan el replica set y se saltan solas si no esta, o si la base
+`antifraude` todavia no esta sembrada. Con `CENTINELA_EXIGIR_MONGO=1` (el CI) las dos
+situaciones son fallas: el workflow corre la semilla antes de este paso.
 
 Como funciona, y por que asi: se leen los validadores `$jsonSchema` de la base de
 trabajo (`antifraude`, que siembran H-01 y H-02), se copian a una base desechable, y
@@ -23,6 +25,7 @@ from pymongo.errors import WriteError
 
 from app.repos.carga_demo import a_entero_64
 from app.repos.esquemas import obtener_validadores, recrear_con_validador
+from pruebas.conftest import saltar_o_fallar
 from pruebas.dobles.datos_demo import DATOS_DEMO
 
 pytestmark = pytest.mark.mongo
@@ -36,9 +39,9 @@ async def _preparar(base_mongo: Any, coleccion: str) -> Any:
     validadores = await obtener_validadores(de_trabajo)
 
     if coleccion not in validadores:
-        pytest.skip(
+        saltar_o_fallar(
             f"la coleccion {coleccion} todavia no tiene validador en {BASE_DE_TRABAJO}; "
-            "los escriben H-01 y H-02"
+            "los escriben H-01 y H-02. Sembrar con: python tareas.py datos-demo"
         )
 
     await recrear_con_validador(base_mongo, coleccion, validadores[coleccion])

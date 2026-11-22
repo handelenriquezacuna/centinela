@@ -10,8 +10,9 @@
 // Idempotente: cada una de las 11 colecciones de dominio se recrea (drop +
 // createCollection) en cada corrida, asi que correrlo dos veces seguidas
 // deja el mismo resultado. No dropea la base completa para no arrastrar
-// `deteccion_estado` (coleccion de operacion que no toca este archivo) ni
-// las vistas de H-24.
+// los documentos de `deteccion_estado` (coleccion de operacion: este
+// archivo solo le aplica el validador, bloque 13, sin borrar el token de
+// reanudacion de D1) ni las vistas de H-24.
 //
 // *** ORDEN OBLIGATORIO: 01 -> 02 -> 03 ***
 // `01-colecciones.js` (este archivo) SIEMPRE antes que
@@ -983,6 +984,122 @@ asegurarValidador("politica_deteccion", {
 // puebla H-07 en scripts/semilla/03-catalogos.js.
 
 // ------------------------------------------------------------
+// 13. DETECCION_ESTADO (coleccion de OPERACION, la segunda de las 2; con
+// esta quedan las 13 de CLAUDE.md). La escribe el disparador D1 (H-09,
+// app/repos/deteccion.py); nadie la escribe a mano.
+// Dos clases de documento, distinguidas por `clase`:
+//   - "reanudacion": un documento por disparador, _id = nombre del
+//     disparador ("d1_deteccion"). Guarda el resumeToken del change stream
+//     de transacciones. D1 lo escribe DESPUES de terminar las escrituras del
+//     evento (la alerta primero): si el proceso muere entre ambas, al
+//     reanudar se reprocesa el evento y el indice unico de
+//     alertas.transaccion_id rechaza el duplicado.
+//   - "descarte": un evento que agoto los reintentos, _id =
+//     "<disparador>:<transaccion_id>". Es la lista de lo que hay que
+//     reprocesar a mano; vive aqui y no en una coleccion 14 porque es estado
+//     del detector, igual que el token.
+// _id natural (nombre del disparador / transaccion) y no ObjectId, igual
+// que perfiles_comportamiento._id = cliente_id: reescribir el mismo
+// documento es idempotente.
+// asegurarValidador() y no recrearColeccion(): re-sembrar no puede borrar
+// el token de reanudacion, o D1 arrancaria "desde ahora" y perderia lo que
+// entro mientras estaba abajo.
+// ------------------------------------------------------------
+asegurarValidador("deteccion_estado", {
+  bsonType: "object",
+  title: "deteccion_estado",
+  oneOf: [
+    {
+      required: ["_id", "clase", "disparador", "token_reanudacion", "actualizado_en", "esquema_version"],
+      additionalProperties: false,
+      properties: {
+        _id: {
+          bsonType: "string",
+          pattern: "^d[0-9]_[a-z_]+$",
+          description: "Nombre del disparador, el mismo que publica GET /estado (ej. d1_deteccion)"
+        },
+        clase: {
+          enum: ["reanudacion"],
+          description: "Documento del token de reanudacion del change stream"
+        },
+        disparador: {
+          bsonType: "string",
+          pattern: "^d[0-9]_[a-z_]+$",
+          description: "Igual a _id; explicito para filtrar por disparador en las dos clases"
+        },
+        token_reanudacion: {
+          bsonType: "object",
+          required: ["_data"],
+          description: "resumeToken tal como lo entrega el servidor; se pasa a resumeAfter sin tocarlo"
+        },
+        ultima_transaccion_id: {
+          bsonType: "string",
+          pattern: "^TXN-[0-9]{3,}$",
+          description: "Ultima transaccion procesada al guardar el token. Ausente si el token se tomo con el cursor en espera, sin evento"
+        },
+        actualizado_en: {
+          bsonType: "date",
+          description: "ISODate UTC de la ultima escritura del token"
+        },
+        esquema_version: {
+          bsonType: "int",
+          minimum: 1,
+          description: "Version del esquema del documento"
+        }
+      }
+    },
+    {
+      required: ["_id", "clase", "disparador", "transaccion_id", "motivo", "intentos", "actualizado_en", "esquema_version"],
+      additionalProperties: false,
+      properties: {
+        _id: {
+          bsonType: "string",
+          pattern: "^d[0-9]_[a-z_]+:TXN-[0-9]{3,}$",
+          description: "Disparador y transaccion descartada, ej. d1_deteccion:TXN-001"
+        },
+        clase: {
+          enum: ["descarte"],
+          description: "Evento que agoto los reintentos y quedo sin procesar"
+        },
+        disparador: {
+          bsonType: "string",
+          pattern: "^d[0-9]_[a-z_]+$",
+          description: "Disparador que no pudo procesar el evento"
+        },
+        transaccion_id: {
+          bsonType: "string",
+          pattern: "^TXN-[0-9]{3,}$",
+          description: "Referencia a transacciones._id del evento descartado"
+        },
+        motivo: {
+          bsonType: "string",
+          minLength: 1,
+          description: "Ultimo error, con su tipo, para reprocesar sabiendo por que fallo"
+        },
+        intentos: {
+          bsonType: "int",
+          minimum: 1,
+          description: "Cuantas veces se intento procesar el evento antes de descartarlo"
+        },
+        actualizado_en: {
+          bsonType: "date",
+          description: "ISODate UTC del descarte"
+        },
+        esquema_version: {
+          bsonType: "int",
+          minimum: 1,
+          description: "Version del esquema del documento"
+        }
+      }
+    }
+  ]
+});
+
+// Sin insertMany a proposito: el token lo escribe D1 al procesar su primer
+// evento. Sembrar uno falso haria que D1 intente reanudar desde un punto del
+// oplog que no existe.
+
+// ------------------------------------------------------------
 // Verificacion general
 // ------------------------------------------------------------
 print("--------------------------------------------------");
@@ -998,6 +1115,8 @@ print("casos: " + db.casos.countDocuments({}));
 print("notificaciones: " + db.notificaciones.countDocuments({}));
 print("indicadores_diarios: " + db.indicadores_diarios.countDocuments({}));
 print("politica_deteccion: " + db.politica_deteccion.countDocuments({}) + " (coleccion de operacion; el documento POL-001 lo puebla H-07 en 03-catalogos.js)");
+print("deteccion_estado: " + db.deteccion_estado.countDocuments({}) + " (coleccion de operacion; la escribe D1, H-09)");
+print("colecciones: " + db.getCollectionInfos({ type: "collection" }).filter(function (c) { return !c.name.startsWith("system."); }).length + " (esperado 13 = 11 dominio + 2 operacion; las vistas de H-24 no cuentan)");
 print("==================================================");
 print(" 01-colecciones.js terminado");
 print("==================================================");

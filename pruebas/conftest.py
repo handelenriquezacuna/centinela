@@ -9,6 +9,10 @@ Dos cosas importantes que estan resueltas aqui y no en cada prueba:
 2. Las pruebas marcadas `mongo` se saltan solas, con un mensaje que dice como
    levantar el clúster, cuando el replica set no responde. Asi la compuerta de
    pruebas sigue siendo util con Docker apagado.
+3. Modo estricto: con `CENTINELA_EXIGIR_MONGO=1` en el entorno, esos saltos se
+   vuelven fallas. Es lo que usa el CI: alli "Mongo no responde" o "la base no esta
+   sembrada" es un error del workflow, no una razon para salir en verde. Sin la
+   variable, en local, todo sigue igual.
 """
 
 from __future__ import annotations
@@ -90,6 +94,32 @@ MENSAJE_SIN_MONGO = (
     "el replica set rsfraude no responde. Levantarlo con: python tareas.py arriba"
 )
 
+# Variable del modo estricto. Vive en pruebas/ y no en app/nucleo/config.py a
+# proposito: no es configuracion de la aplicacion sino de como se corre el suite, y
+# la regla "solo config.py lee el entorno" es sobre app/.
+VARIABLE_EXIGIR_MONGO = "CENTINELA_EXIGIR_MONGO"
+
+
+def exigir_mongo() -> bool:
+    """True si el entorno pide que la falta de Mongo sea una falla y no un salto."""
+    return os.environ.get(VARIABLE_EXIGIR_MONGO, "") == "1"
+
+
+def saltar_o_fallar(motivo: str) -> None:
+    """Salta la prueba en local; la hace fallar en modo estricto.
+
+    Un salto silencioso en CI es la peor salida posible: el job queda verde sin haber
+    probado nada. Por eso, con la variable activa, el mismo motivo se reporta como
+    falla y dice como se apaga el modo estricto.
+    """
+    if exigir_mongo():
+        pytest.fail(
+            f"{motivo}\n(modo estricto: {VARIABLE_EXIGIR_MONGO}=1 convierte este salto "
+            "en falla; sin la variable la prueba se salta)",
+            pytrace=False,
+        )
+    pytest.skip(motivo)
+
 
 # Memoria del sondeo, por URI. Sin esto, con Mongo apagado cada prueba marcada
 # `mongo` paga el tiempo de espera de seleccion de servidor completo antes de saltarse,
@@ -116,11 +146,12 @@ async def _mongo_responde(ajustes_mongo: Ajustes) -> bool:
 
 @pytest_asyncio.fixture
 async def base_mongo(ajustes: Ajustes) -> AsyncIterator[Any]:
-    """Base de datos de pruebas, ya conectada. Salta la prueba si Mongo no esta."""
+    """Base de datos de pruebas, ya conectada. Salta la prueba si Mongo no esta
+    (o falla, en modo estricto)."""
     from app.nucleo.db import ciclo_cliente
 
     if not await _mongo_responde(ajustes):
-        pytest.skip(MENSAJE_SIN_MONGO)
+        saltar_o_fallar(MENSAJE_SIN_MONGO)
 
     async with ciclo_cliente(ajustes) as cliente_mongo:
         yield cliente_mongo[ajustes.mongo.base]
