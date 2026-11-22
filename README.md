@@ -4,8 +4,22 @@
 > ocurren, y actúa sobre las que el motor marca como probable estafa de vishing
 > antes de que el dinero salga del sistema.
 
-**Estado:** andamio de la plataforma en pie. El diseño está cerrado y la API arranca
-con datos de demo; el motor de detección y el portal siguen.
+**Estado (rama `dev`, commit 4b2c678):**
+
+- **Hecho:** plataforma (H-00A, H-00B) con CI estricto, semilla y modo
+  `CENTINELA_EXIGIR_MONGO`; esquema y validadores de las 13 colecciones (H-01, H-02);
+  generador sintético con tope SINPE por entidad (H-03 a H-05); catálogo de reglas
+  (H-07); evaluador (H-08); disparador D1 (H-09); API base y consulta de alertas
+  (H-12, H-13 parcial); API de reglas con versionado y simulación (H-16); portal con
+  panel en vivo por SSE y pantalla de reglas (H-17).
+- **En curso:** alerta v2 con explicación embebida y migración (H-26); resolver
+  alerta (H-14).
+- **Pendiente:** H-06 parcial, H-10, H-11, H-15, H-18 a H-25, H-27.
+
+Los contratos de datos y las reglas de arquitectura están en
+[06 · Plataforma](docs/06-plataforma.md). **Leerlo antes de escribir un documento.**
+
+## Cómo probarlo
 
 ```
 python tareas.py instalar     # entorno con uv (Python 3.13, versiones del lock)
@@ -14,8 +28,16 @@ python tareas.py datos-demo   # siembra y conjunto de demo
 python tareas.py dev          # API en http://127.0.0.1:8000/docs
 ```
 
-Los contratos de datos y las reglas de arquitectura están en
-[06 · Plataforma](docs/06-plataforma.md). **Leerlo antes de escribir un documento.**
+Generador de datos sintéticos, como CLI aparte (con Mongo arriba):
+
+```
+uv run python -m app.generador --clientes 200 --transacciones 5000
+```
+
+Con la API corriendo, el portal está en:
+
+- http://127.0.0.1:8000/panel (panel en vivo)
+- http://127.0.0.1:8000/reglas (pantalla de reglas)
 
 ## El problema en una frase
 
