@@ -656,6 +656,36 @@ dirección de las dependencias es **pruebas → app**, nunca al revés.
 
 ---
 
+## 7b. Generador de datos sintéticos (H-03, H-04, H-05)
+
+CLI aparte, nunca dentro del proceso web: `uv run python -m app.generador --clientes 200
+--transacciones 5000`. Los valores por omisión salen del bloque `generador` de
+`config/centinela.yml` (`AjustesGenerador`, `extra="forbid"`); cada bandera
+(`--clientes --transacciones --ritmo --semilla --proporcion`) los cambia para esa corrida.
+Son parámetros de simulación, no reglas de detección: las reglas siguen en Mongo.
+
+- **Tope por entidad.** En Costa Rica el tope de SINPE Móvil depende del banco (100.000 a
+  300.000 colones). La lista `generador.entidades` (`nombre`, `tope_crc`, mínimo 4) es la
+  fuente: cada cuenta lleva su `entidad` y ninguna transacción, legítima o de fraude,
+  supera el tope de la entidad de su cuenta de origen. Agregar una entidad no toca código (los nombres del YAML son genéricos, "Entidad A" a "Entidad E").
+- **Determinista.** Misma semilla, mismos datos; la historia termina en `fecha_fin` (no usa
+  el reloj). Escribe con `insert_many` por lotes (`tamano_lote`) y, con `ritmo_por_segundo`
+  mayor que 0, reparte la inserción en el tiempo para ver las alertas aparecer en vivo.
+- **Perfiles coherentes.** Se calculan de lo que se generó (promedio, máximo, cantidad) y solo
+  de lo legítimo; el máximo nunca pasa del tope y lo legítimo no supera 5 veces el promedio.
+- **Fraude.** Menos del 2 % (`proporcion_anomalos`, el YAML rechaza 0.02 o más). Tres patrones:
+  `monto_atipico_destino_nuevo` (11 a 13 veces el promedio del cliente, no un monto enorme),
+  `rafaga_fragmentada` (4 a 6 transferencias cerca del tope en minutos) y `cadena_mulas`
+  (victima, 3 o 4 cuentas mula del banco y una salida externa). Cada transacción lleva
+  `simulacion: {fraude, patron, episodio}`: etiqueta SOLO para medir (H-10), que el motor
+  nunca lee.
+- **Mulas reportadas.** `proporcion_mulas_reportadas` (0 a 1, por omisión 0,5) mete esa fracción de las mulas que reciben en una cadena en `listas_riesgo` (`RSK-0001`..., vigente, con `fecha_reporte` un día antes de su primera transacción recibida), para que R-07 tenga contra qué disparar.
+- **Idempotente.** Identificadores de 4 o más dígitos (`CLI-0001`, `TXN-000001`) y la etiqueta
+  `simulacion` permiten borrar la corrida anterior sin tocar los datos de la Práctica 1.
+- **Identificadores.** Los validadores aceptan 3 o más dígitos (`[0-9]{3,}`) igual que los modelos.
+
+---
+
 ## 8. Divergencias abiertas
 
 Anotadas para que nadie las resuelva dos veces, cada una en distinto sentido.

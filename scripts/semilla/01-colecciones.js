@@ -107,7 +107,7 @@ recrearColeccion("clientes", {
   properties: {
     _id: {
       bsonType: "string",
-      pattern: "^CLI-[0-9]{3}$",
+      pattern: "^CLI-[0-9]{3,}$",
       description: "Identificador legible del contrato de IDs, ej. CLI-001"
     },
     nombre: {
@@ -160,7 +160,7 @@ recrearColeccion("cuentas", {
   properties: {
     _id: {
       bsonType: "string",
-      pattern: "^CTA-[0-9]{3}$",
+      pattern: "^CTA-[0-9]{3,}$",
       description: "Identificador legible del contrato de IDs, ej. CTA-001"
     },
     cuenta_sinpe: {
@@ -170,8 +170,13 @@ recrearColeccion("cuentas", {
     },
     cliente_id: {
       bsonType: "string",
-      pattern: "^CLI-[0-9]{3}$",
+      pattern: "^CLI-[0-9]{3,}$",
       description: "Referencia a clientes._id (titular actual)"
+    },
+    entidad: {
+      bsonType: "string",
+      minLength: 1,
+      description: "Entidad financiera de la cuenta. SINPE Movil depende del banco: el tope por transferencia lo fija la entidad. Opcional: las cuentas de la Practica 1 no la traen; las del generador (H-03) si"
     },
     esquema_version: {
       bsonType: "int",
@@ -208,7 +213,7 @@ recrearColeccion("perfiles_comportamiento", {
   properties: {
     _id: {
       bsonType: "string",
-      pattern: "^CLI-[0-9]{3}$",
+      pattern: "^CLI-[0-9]{3,}$",
       description: "Igual al cliente_id: un perfil materializado por cliente"
     },
     promedio_crc: {
@@ -310,7 +315,7 @@ recrearColeccion("reglas_deteccion", {
   properties: {
     _id: {
       bsonType: "string",
-      pattern: "^REG-[0-9]{3}$",
+      pattern: "^REG-[0-9]{3,}$",
       description: "Identificador legible del contrato de IDs, ej. REG-001"
     },
     codigo: {
@@ -399,7 +404,7 @@ recrearColeccion("listas_riesgo", {
   properties: {
     _id: {
       bsonType: "string",
-      pattern: "^RSK-[0-9]{3}$",
+      pattern: "^RSK-[0-9]{3,}$",
       description: "Identificador legible del contrato de IDs, ej. RSK-001"
     },
     cuenta: {
@@ -458,7 +463,7 @@ recrearColeccion("transacciones", {
     },
     cuenta_origen: {
       bsonType: "string",
-      pattern: "^CTA-[0-9]{3}$",
+      pattern: "^CTA-[0-9]{3,}$",
       description: "Referencia a cuentas._id, la cuenta que envia"
     },
     cuenta_destino: {
@@ -482,6 +487,24 @@ recrearColeccion("transacciones", {
     fecha: {
       bsonType: "date",
       description: "ISODate UTC del momento de la transferencia"
+    },
+    simulacion: {
+      bsonType: "object",
+      required: ["fraude"],
+      additionalProperties: false,
+      properties: {
+        fraude: { bsonType: "bool", description: "Verdad de la simulacion: true si la inyecto el generador como fraude" },
+        patron: {
+          enum: ["monto_atipico_destino_nuevo", "rafaga_fragmentada", "cadena_mulas"],
+          description: "Patron de fraude inyectado (H-05); ausente en transacciones legitimas"
+        },
+        episodio: {
+          bsonType: "string",
+          pattern: "^EPI-[0-9]{3,}$",
+          description: "Episodio de fraude al que pertenece la transaccion (agrupa la rafaga o la cadena)"
+        }
+      },
+      description: "Etiqueta oculta de H-05, SOLO para medir (H-10). El motor nunca la lee. Opcional: los documentos que no vienen del generador no la traen"
     },
     esquema_version: {
       bsonType: "int",
@@ -517,7 +540,7 @@ recrearColeccion("agentes", {
   properties: {
     _id: {
       bsonType: "string",
-      pattern: "^AGT-[0-9]{3}$",
+      pattern: "^AGT-[0-9]{3,}$",
       description: "Identificador legible del contrato de IDs, ej. AGT-001"
     },
     nombre: {
@@ -722,14 +745,14 @@ recrearColeccion("casos", {
   properties: {
     _id: {
       bsonType: "string",
-      pattern: "^CAS-[0-9]{3}$",
+      pattern: "^CAS-[0-9]{3,}$",
       description: "Identificador legible del contrato de IDs, ej. CAS-001"
     },
     alertas: {
       bsonType: "array",
       minItems: 1,
       uniqueItems: true,
-      items: { bsonType: "string", pattern: "^ALR-[0-9]{3}$" },
+      items: { bsonType: "string", pattern: "^ALR-[0-9]{3,}$" },
       description: "Referencias a alertas._id agrupadas en este caso"
     },
     estado: {
@@ -765,12 +788,12 @@ recrearColeccion("notificaciones", {
   properties: {
     _id: {
       bsonType: "string",
-      pattern: "^NOT-[0-9]{3}$",
+      pattern: "^NOT-[0-9]{3,}$",
       description: "Identificador legible del contrato de IDs, ej. NOT-001"
     },
     alerta_id: {
       bsonType: "string",
-      pattern: "^ALR-[0-9]{3}$",
+      pattern: "^ALR-[0-9]{3,}$",
       description: "Referencia a alertas._id que origino la notificacion"
     },
     canal: {
@@ -906,7 +929,7 @@ asegurarValidador("politica_deteccion", {
   properties: {
     _id: {
       bsonType: "string",
-      pattern: "^POL-[0-9]{3}$",
+      pattern: "^POL-[0-9]{3,}$",
       description: "Identificador legible, ej. POL-001"
     },
     descripcion: {

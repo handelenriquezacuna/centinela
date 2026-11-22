@@ -17,6 +17,7 @@ El merge entre fuentes es profundo: `config/centinela.local.yml` puede traer sol
 from __future__ import annotations
 
 import os
+from datetime import date
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -170,6 +171,60 @@ class AjustesRegistro(BaseModel):
     nivel: str = "INFO"
 
 
+class EntidadSinpe(BaseModel):
+    """Entidad financiera y el tope de SINPE Movil que aplica a sus cuentas.
+
+    En Costa Rica el tope por transferencia depende del banco (de 100.000 a 300.000
+    colones). Es un dato de la simulacion, no una regla de deteccion.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    nombre: str = Field(min_length=1)
+    tope_crc: int = Field(ge=100_000, le=300_000)
+
+
+class AjustesGenerador(BaseModel):
+    """Parametros del generador de datos sinteticos (`python -m app.generador`).
+
+    Son parametros de simulacion: no son reglas de deteccion (esas viven en Mongo).
+    Cambiar la lista de entidades o sus topes cambia lo que se genera sin tocar codigo.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    semilla: int = 20261207
+    clientes: int = Field(default=200, ge=10)
+    transacciones: int = Field(default=5000, ge=100)
+    # Transacciones por segundo al insertar. 0 = sin limite (lo mas rapido posible).
+    ritmo_por_segundo: int = Field(default=0, ge=0)
+    # Fraccion del volumen total que se inyecta como fraude; estrictamente menor a 2 %.
+    proporcion_anomalos: float = Field(default=0.012, ge=0, lt=0.02)
+    # Fecha (UTC) en que termina la historia generada; fija para que sea reproducible.
+    fecha_fin: date = date(2026, 11, 22)
+    dias_historia: int = Field(default=30, ge=1, le=365)
+    tamano_lote: int = Field(default=1000, ge=1, le=10_000)
+    # Fraccion de las cuentas mula de las cadenas que se reporta en `listas_riesgo`
+    # (vigente, con fecha de reporte anterior a su primera transaccion recibida).
+    proporcion_mulas_reportadas: float = Field(default=0.5, ge=0, le=1)
+    entidades: list[EntidadSinpe] = Field(
+        default_factory=lambda: [
+            EntidadSinpe(nombre="Entidad A", tope_crc=300_000),
+            EntidadSinpe(nombre="Entidad B", tope_crc=200_000),
+            EntidadSinpe(nombre="Entidad C", tope_crc=150_000),
+            EntidadSinpe(nombre="Entidad D", tope_crc=100_000),
+        ],
+        min_length=4,
+    )
+
+    @model_validator(mode="after")
+    def las_entidades_no_se_repiten(self) -> AjustesGenerador:
+        nombres = [entidad.nombre for entidad in self.entidades]
+        if len(set(nombres)) != len(nombres):
+            raise ValueError("generador.entidades no puede repetir nombres")
+        return self
+
+
 class FuenteYaml(PydanticBaseSettingsSource):
     """Lee un YAML. Si el archivo no existe, aporta nada (no falla).
 
@@ -217,6 +272,7 @@ class Ajustes(BaseSettings):
     canal: AjustesCanal = AjustesCanal()
     deteccion: AjustesDeteccion = AjustesDeteccion()
     registro: AjustesRegistro = AjustesRegistro()
+    generador: AjustesGenerador = Field(default_factory=AjustesGenerador)
 
     @model_validator(mode="after")
     def el_cursor_late_antes_de_la_tolerancia(self) -> Ajustes:
