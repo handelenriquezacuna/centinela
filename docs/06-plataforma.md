@@ -809,3 +809,41 @@ pero borra todo.
 **Generador.** `python tareas.py generar [banderas]` corre `uv run python -m app.generador`
 pasando las banderas tal cual. `Cuenta.entidad` y `Transaccion.simulacion` son opcionales
 en los modelos (los escribe el generador; el motor nunca lee `simulacion`).
+
+## Inteligencia: efectividad (H-10) y red de mulas (H-23)
+
+Rutas en `app/api/rutas/inteligencia.py`, bajo `/api/v1`.
+
+**Efectividad.** `GET /api/v1/efectividad` y `uv run python -m app.deteccion.efectividad`
+(tabla en la terminal) devuelven el mismo reporte. Se corre despues de cada ajuste de
+reglas. Cruza `alertas` con la etiqueta oculta `transacciones.simulacion`: es la unica
+lectura de esa etiqueta en todo el sistema (`app/repos/efectividad.py`); el motor no la
+lee. La unidad es la transaccion etiquetada: detectado = fraude con alerta, perdido =
+fraude sin alerta, falso positivo = legitima con alerta. Una alerta cuenta en cualquier
+estado (se mide al motor, no al agente). Las alertas sobre transacciones sin etiqueta (demo,
+Practica 1) se informan aparte como `alertas_sin_etiqueta`. Precision y exhaustividad son
+`null` cuando no hay denominador. Por patron: exhaustividad y episodios con al menos una
+alerta. Calculo puro en `app/deteccion/efectividad.py`.
+
+Referencia (generador 200 clientes / 5.000 transacciones, semilla por omision, catalogo
+de `03-catalogos.js`, D1 procesando): 60 fraudes, 56 detectados, 4 perdidos, 22 falsos
+positivos; precision 71,8 %, exhaustividad 93,3 %. Por patron: `monto_atipico` 19/19,
+`rafaga_fragmentada` 27/28, `cadena_mulas` 10/13 (3 de 3 episodios con alerta).
+
+**Red de mulas.** `GET /api/v1/red-mulas/{cuenta}?desde=&ventana_minutos=60&saltos=6`.
+`cuenta` es un numero SINPE o un `CTA-...` (404 si el `CTA` no existe). Devuelve `nodos`
+(cuenta SINPE, `cuenta_id`, `externa`, `nivel`, `en_lista_riesgo`), `aristas`
+(`transaccion_id`, origen, destino, `monto_crc`, fecha, salto, `minutos_desde_anterior`) y
+`propuestas_lista_riesgo`: las cuentas que recibieron dinero y no estan vigentes en
+`listas_riesgo`. Solo propone; no escribe.
+
+No es un `$graphLookup` unico, y es a proposito: en `transacciones` el destino es un
+numero SINPE y el origen un `CTA-...`, dos espacios de valores distintos, y
+`$graphLookup` no puede saltar por `cuentas` en cada nivel. Ademas la condicion es por
+eslabon (la salida tiene que ser posterior a la llegada y dentro de la ventana), y
+`restrictSearchWithMatch` es fija; sin ella se mezclan episodios que reusan las mismas
+mulas. El recorrido es en anchura, una agregacion por salto (6 como maximo):
+`$match` con `$or` por cuenta de la frontera sobre `idx_transacciones_cuenta_origen_fecha`
+y `$lookup` a `cuentas` sobre `idx_cuentas_sinpe`; la prueba lo verifica con `explain`.
+Para volver a un `$graphLookup` literal haria falta el SINPE de origen dentro de
+`transacciones` (campo nuevo, validador, generador e indice), decision pendiente.
