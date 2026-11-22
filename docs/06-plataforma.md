@@ -460,6 +460,22 @@ escribir. Ya pasó en vivo.
 El catálogo de reglas **no** está en el cargador de Python: definirlo en dos lugares es
 garantizar que se separen. Los pesos de las reglas son de quien las diseña (H-07).
 
+### CI: una prueba de Mongo saltada no cuenta como verde
+
+`.github/workflows/ci.yml` corre en cada PR hacia `dev` o `main` y en cada push a `dev`:
+ruff, `pytest -m "not mongo"` y `pytest -m mongo` contra un replica set de un nodo. Antes
+del paso de Mongo siembra la base `antifraude` con `01 → 02 → 03`, en el mismo orden que
+`datos-demo`, y corre ese paso con `CENTINELA_EXIGIR_MONGO=1`. Con esa variable, las dos
+razones por las que una prueba de Mongo se saltaba (el replica set no responde, o la base
+no tiene validadores) son **fallas**. La primera corrida del CI salió verde con 26 pruebas
+saltadas; eso ya no puede pasar. En local, sin la variable, siguen siendo saltos, y quien
+quiera la misma exigencia corre `CENTINELA_EXIGIR_MONGO=1 uv run pytest -m mongo -rs`.
+`pruebas/unitarias/prueba_modo_estricto_mongo.py` verifica las dos mitades. El job tiene
+permiso de solo lectura, cancela la corrida anterior de la misma rama y fija las acciones
+por SHA. La auditoría de dependencias (`pip-audit`) no es compuerta todavía: hoy reporta
+vulnerabilidades en `certifi`, `dnspython` y `pymongo`, que se cierran subiendo versiones
+en el lock.
+
 ---
 
 ## 6. Contrato HTTP
