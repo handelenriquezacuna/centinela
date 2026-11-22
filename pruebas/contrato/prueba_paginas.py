@@ -20,12 +20,15 @@ from pruebas.dobles.catalogo_reglas import (
 )
 from pruebas.dobles.repos_falsos import RepoAlertasFalso, RepoReglasFalso
 
+# Puntaje coherente con los cortes de POL-001 v2: el panel ordena por puntaje (D-20).
+PUNTAJE_POR_SEVERIDAD = {"CRITICA": 75, "ALTA": 60, "MEDIA": 40}
+
 
 def _alerta(numero: int, severidad: str, minuto: int) -> dict[str, Any]:
     return {
         "_id": f"ALR-{numero:03d}",
         "transaccion_id": f"TXN-{numero:03d}",
-        "puntaje": 50,
+        "puntaje": PUNTAJE_POR_SEVERIDAD[severidad],
         "severidad": severidad,
         "estado": "nueva",
         "fecha_creacion": datetime(2026, 10, 24, 12, minuto, tzinfo=UTC),

@@ -79,6 +79,8 @@ def prueba_el_orden_del_panel_tiene_desempate() -> None:
     """Sin desempate, paginar puede repetir o saltarse un documento."""
     campos = [campo for campo, _ in ORDEN_PANEL]
 
-    assert campos == ["fecha_creacion", "_id"]
-    assert ORDEN_PANEL[0][1] == -1, "lo mas reciente primero"
-    assert ORDEN_PANEL[1][1] == 1
+    # D-20: lo mas riesgoso primero (el puntaje da la severidad), luego lo mas reciente.
+    assert campos == ["puntaje", "fecha_creacion", "_id"]
+    assert ORDEN_PANEL[0][1] == -1, "lo mas riesgoso primero"
+    assert ORDEN_PANEL[1][1] == -1, "lo mas reciente primero"
+    assert ORDEN_PANEL[2][1] == 1, "_id es el desempate"

@@ -36,10 +36,15 @@ from app.modelos import (
     exigir_transicion,
 )
 
-# Orden del panel: lo mas reciente primero, y el identificador como desempate. Sin el
-# desempate, dos alertas con la misma marca de tiempo pueden salir en distinto orden
-# entre paginas y el agente ve un documento dos veces o ninguna.
+# Orden del panel (D-20): lo mas riesgoso primero, luego lo mas reciente, y el
+# identificador como desempate. Se ordena por puntaje y no por severidad porque la
+# severidad es texto (orden alfabetico inutil) y sale del puntaje por cortes crecientes
+# de politica_deteccion: a mas puntaje, igual o mayor severidad. Asi el orden lo hace
+# la base con indice (scripts/semilla/02-indices.js) y no Python sobre la pagina. Sin
+# el desempate por _id, dos alertas iguales pueden salir en distinto orden entre
+# paginas y el agente ve un documento dos veces o ninguna.
 ORDEN_PANEL: list[tuple[str, int]] = [
+    ("puntaje", DESCENDING),
     ("fecha_creacion", DESCENDING),
     ("_id", ASCENDING),
 ]
