@@ -54,6 +54,8 @@ class Cuenta(DocumentoBase):
     cuenta_id: CuentaId = Field(alias="_id")
     cuenta_sinpe: CuentaSinpe
     cliente_id: ClienteId
+    # Entidad financiera de la cuenta; la escribe el generador (fija el tope SINPE).
+    entidad: str | None = Field(default=None, min_length=1)
 
 
 class HorarioHabitual(ModeloCentinela):

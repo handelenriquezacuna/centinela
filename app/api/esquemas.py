@@ -14,9 +14,10 @@ from typing import Any, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.deteccion import ContextoEvaluacion, PoliticaDeteccion
+from app.deteccion.evaluador import CorteSeveridad
 from app.modelos.alertas import Alerta
-from app.modelos.base import AgenteId, ModeloCentinela
-from app.modelos.estados import EstadoAlerta
+from app.modelos.base import AgenteId, MarcaTiempoUTC, ModeloCentinela
+from app.modelos.estados import EstadoAlerta, Severidad
 from app.modelos.transaccional import Regla, Transaccion
 from app.supervision import (
     EstadoSupervision,
@@ -299,3 +300,74 @@ class PeticionSimulacion(BaseModel):
     contexto: ContextoEvaluacion
     reglas: list[Regla] | None = None
     politica: PoliticaDeteccion | None = None
+
+
+# ---------------------------------------------------------------------------
+# Politica de deteccion (T-20, D-16)
+# ---------------------------------------------------------------------------
+
+
+class VersionAnteriorPolitica(ModeloCentinela):
+    """Una version de la politica que ya no rige, tal como estaba antes de editarse."""
+
+    version: int = Field(ge=1)
+    umbral_alerta: int
+    puntaje_maximo: int
+    cortes_severidad: list[CorteSeveridad]
+    vigente_desde: MarcaTiempoUTC | None = None
+    reemplazada_en: MarcaTiempoUTC
+
+
+class PoliticaVigente(ModeloCentinela):
+    """`politica_deteccion` vigente, con su historia. Es lo que lee D1 en cada evento."""
+
+    politica_id: str = Field(alias="_id", examples=["POL-001"])
+    descripcion: str
+    version: int = Field(ge=1)
+    umbral_alerta: int = Field(ge=0)
+    puntaje_maximo: int = Field(ge=1)
+    cortes_severidad: list[CorteSeveridad]
+    notificacion: dict[str, Any] | None = None
+    vigente_desde: MarcaTiempoUTC | None = None
+    versiones_anteriores: list[VersionAnteriorPolitica] = Field(default_factory=list)
+
+
+class CorteEntrada(_Peticion):
+    """Un tramo de severidad propuesto. Limites inclusivos."""
+
+    severidad: Severidad
+    puntaje_minimo: int = Field(ge=0)
+    puntaje_maximo: int = Field(ge=0)
+
+
+class EdicionPolitica(_Peticion):
+    """Edicion parcial de la politica. Los cortes se reemplazan enteros.
+
+    Si se cambia `umbral_alerta` o `puntaje_maximo`, los cortes tienen que seguir
+    cubriendo de uno al otro: se validan siempre contra el resultado final.
+    """
+
+    umbral_alerta: int | None = Field(default=None, ge=0)
+    puntaje_maximo: int | None = Field(default=None, ge=1)
+    cortes_severidad: list[CorteEntrada] | None = Field(default=None, min_length=1)
+    version_esperada: int | None = Field(
+        default=None,
+        ge=1,
+        description="Si viene y la politica ya no esta en esa version, 409 sin escribir",
+    )
+
+    @model_validator(mode="after")
+    def _sin_nulos(self) -> Self:
+        nulos = [campo for campo in self.model_fields_set if getattr(self, campo) is None]
+        if nulos:
+            raise ValueError(f"no se puede borrar un campo de la politica: {', '.join(nulos)}")
+        return self
+
+    def cambios(self) -> dict[str, Any]:
+        """Los campos de la politica que vinieron, listos para guardar."""
+        datos = self.model_dump(mode="json", exclude_unset=True, exclude={"version_esperada"})
+        if "cortes_severidad" in datos:
+            datos["cortes_severidad"] = sorted(
+                datos["cortes_severidad"], key=lambda corte: corte["puntaje_minimo"]
+            )
+        return datos

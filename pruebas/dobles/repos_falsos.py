@@ -196,3 +196,27 @@ class RepoReglasFalso:
         if self._politica is None:
             return None
         return PoliticaDeteccion.model_validate(copy.deepcopy(self._politica))
+
+    async def politica_documento(self) -> dict[str, Any] | None:
+        return copy.deepcopy(self._politica) if self._politica is not None else None
+
+    async def editar_politica(
+        self,
+        actual: dict[str, Any],
+        cambios: dict[str, Any],
+        ahora: datetime,
+    ) -> dict[str, Any] | None:
+        """Mismo versionado que `RepoReglas.editar_politica`, aplicado en Python."""
+        guardada = self._politica
+        if guardada is not None and self.interferir_antes_de_editar:
+            guardada["version"] += 1
+        if guardada is None or guardada.get("version") != actual.get("version"):
+            return None
+        anterior = instantanea(actual, ahora)
+        anterior["vigente"] = False
+        guardada.setdefault("versiones_anteriores", []).append(anterior)
+        guardada.update(copy.deepcopy(cambios))
+        guardada["version"] = (actual.get("version") or 0) + 1
+        guardada["vigente_desde"] = ahora
+        self.escrituras += 1
+        return copy.deepcopy(guardada)

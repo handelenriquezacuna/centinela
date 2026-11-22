@@ -10,6 +10,10 @@ cambiarlos.
 - Desactivar es `PATCH {"activa": false}` y no una ruta aparte: es una edicion mas, pasa
   por el mismo versionado y la misma concurrencia optimista, y reactivar es simetrico.
 - Un `tipo` que el motor no sabe evaluar no entra (422 con la lista de soportados).
+- `GET` y `PATCH /politica` (T-20, D-16): el umbral de alerta, el puntaje maximo y los
+  cortes de severidad tambien se ajustan sin tocar la base. Mismo patron que una regla:
+  version + 1, la anterior en `versiones_anteriores`, `version_esperada` y 409. D1 relee
+  la politica en cada evento, asi que el cambio rige en la siguiente evaluacion.
 - `POST /reglas/simular` evalua sin escribir: probar un umbral antes de aplicarlo.
 
 Sin autenticacion por ahora: quien puede editar reglas (rol supervisor) es H-25.
@@ -31,12 +35,14 @@ from app.api.errores import (
     respuestas_documentadas,
 )
 from app.api.esquemas import (
+    EdicionPolitica,
     EdicionRegla,
     ListaReglas,
     ListaTipos,
     NuevaRegla,
     ParametroTipo,
     PeticionSimulacion,
+    PoliticaVigente,
     TipoSoportado,
 )
 from app.deteccion import Evaluacion, evaluar
@@ -46,7 +52,8 @@ from app.modelos.transaccional import Regla
 from app.repos.carga_demo import SUFIJO_DINERO
 from app.repos.reglas import CodigoDuplicado
 
-enrutador = APIRouter(prefix="/reglas", tags=["reglas"])
+enrutador_reglas = APIRouter(prefix="/reglas", tags=["reglas"])
+enrutador_politica = APIRouter(prefix="/politica", tags=["politica"])
 
 ReglaIdRuta = Annotated[
     str, Path(pattern=r"^REG-\d{3}$", description="Identificador de la regla, REG-001")
@@ -120,7 +127,7 @@ def _version_cambiada(regla_id: str, version: Any) -> ErrorCentinela:
     )
 
 
-@enrutador.get(
+@enrutador_reglas.get(
     "",
     response_model=ListaReglas,
     summary="Lista el catalogo de reglas, con su historia de versiones",
@@ -142,7 +149,7 @@ async def listar_reglas(
     )
 
 
-@enrutador.get(
+@enrutador_reglas.get(
     "/tipos",
     response_model=ListaTipos,
     summary="Tipos de regla que el motor sabe evaluar y que lee cada uno",
@@ -166,7 +173,7 @@ async def listar_tipos() -> ListaTipos:
     )
 
 
-@enrutador.post(
+@enrutador_reglas.post(
     "/simular",
     response_model=Evaluacion,
     summary="Evalua una transaccion con reglas y politica propuestas, sin escribir",
@@ -205,7 +212,7 @@ async def simular(peticion: PeticionSimulacion, repo: RepoReglasDep) -> Evaluaci
     return evaluar(peticion.transaccion, peticion.contexto, reglas, politica)
 
 
-@enrutador.get(
+@enrutador_reglas.get(
     "/{regla_id}",
     response_model=Regla,
     summary="Una regla, con sus versiones anteriores",
@@ -223,7 +230,7 @@ async def obtener_regla(regla_id: ReglaIdRuta, repo: RepoReglasDep) -> Regla:
     return Regla.model_validate(documento)
 
 
-@enrutador.post(
+@enrutador_reglas.post(
     "",
     response_model=Regla,
     status_code=status.HTTP_201_CREATED,
@@ -255,7 +262,7 @@ async def crear_regla(nueva: NuevaRegla, repo: RepoReglasDep) -> Regla:
     return Regla.model_validate(creada)
 
 
-@enrutador.patch(
+@enrutador_reglas.patch(
     "/{regla_id}",
     response_model=Regla,
     summary="Edita una regla (umbral, parametros, peso, activa, descripcion) y la versiona",
@@ -321,3 +328,160 @@ async def editar_regla(
             raise _no_encontrada(regla_id)
         raise _version_cambiada(regla_id, vigente.get("version"))
     return Regla.model_validate(editada)
+
+
+# ---------------------------------------------------------------------------
+# Politica de deteccion (T-20, D-16)
+# ---------------------------------------------------------------------------
+
+
+def _detalles_de_cortes(
+    umbral: int, maximo: int, cortes: list[dict[str, Any]]
+) -> list[DetalleError]:
+    """Problemas de la politica que quedaria: vacia si los cortes son validos.
+
+    Tienen que ser contiguos, sin huecos ni solapes, y cubrir de `umbral_alerta` a
+    `puntaje_maximo` (limites inclusivos). Es lo que la politica sembrada ya cumple y lo
+    que `severidad_de` supone: un hueco deja una alerta sin severidad.
+    """
+    detalles: list[DetalleError] = []
+    if umbral > maximo:
+        detalles.append(
+            DetalleError(
+                campo="umbral_alerta", mensaje="no puede superar a puntaje_maximo"
+            )
+        )
+    ordenados = sorted(cortes, key=lambda corte: corte["puntaje_minimo"])
+    for indice, corte in enumerate(ordenados):
+        campo = f"cortes_severidad.{indice}"
+        if corte["puntaje_minimo"] > corte["puntaje_maximo"]:
+            detalles.append(
+                DetalleError(campo=campo, mensaje="puntaje_minimo supera a puntaje_maximo")
+            )
+        esperado = umbral if indice == 0 else ordenados[indice - 1]["puntaje_maximo"] + 1
+        if corte["puntaje_minimo"] > esperado:
+            detalles.append(
+                DetalleError(
+                    campo=f"{campo}.puntaje_minimo",
+                    mensaje=f"hueco: tendria que empezar en {esperado}",
+                )
+            )
+        elif corte["puntaje_minimo"] < esperado:
+            detalles.append(
+                DetalleError(
+                    campo=f"{campo}.puntaje_minimo",
+                    mensaje=f"solape o inicio bajo el umbral: tendria que empezar en {esperado}",
+                )
+            )
+    if ordenados and ordenados[-1]["puntaje_maximo"] != maximo:
+        detalles.append(
+            DetalleError(
+                campo=f"cortes_severidad.{len(ordenados) - 1}.puntaje_maximo",
+                mensaje=f"el ultimo corte tiene que terminar en puntaje_maximo ({maximo})",
+            )
+        )
+    return detalles
+
+
+def _version_politica_cambiada(version: Any) -> ErrorCentinela:
+    return ErrorCentinela(
+        CodigoError.CONFLICTO,
+        "La politica cambio mientras se editaba; volver a leerla y reintentar",
+        status.HTTP_409_CONFLICT,
+        [DetalleError(campo="version", mensaje=f"version actual: {version}")],
+    )
+
+
+def _sin_politica() -> ErrorCentinela:
+    return ErrorCentinela(
+        CodigoError.NO_ENCONTRADO,
+        "No hay politica_deteccion vigente; sembrar con scripts/semilla/03-catalogos.js",
+        status.HTTP_404_NOT_FOUND,
+    )
+
+
+@enrutador_politica.get(
+    "",
+    response_model=PoliticaVigente,
+    summary="Politica de deteccion vigente, con su historia de versiones",
+    responses=respuestas_documentadas(
+        status.HTTP_404_NOT_FOUND, status.HTTP_500_INTERNAL_SERVER_ERROR
+    ),
+)
+async def obtener_politica(repo: RepoReglasDep) -> PoliticaVigente:
+    """Sin autenticacion hasta H-25."""
+    documento = await repo.politica_documento()
+    if documento is None:
+        raise _sin_politica()
+    return PoliticaVigente.model_validate(documento)
+
+
+@enrutador_politica.patch(
+    "",
+    response_model=PoliticaVigente,
+    summary="Edita umbral, puntaje maximo o cortes de severidad y versiona la politica",
+    responses=respuestas_documentadas(
+        status.HTTP_404_NOT_FOUND,
+        status.HTTP_409_CONFLICT,
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        status.HTTP_500_INTERNAL_SERVER_ERROR,
+    ),
+)
+async def editar_politica(edicion: EdicionPolitica, repo: RepoReglasDep) -> PoliticaVigente:
+    """Una sola escritura atomica, filtrada por la version leida.
+
+    - `version` sube en uno; la anterior queda en `versiones_anteriores`.
+    - Si otro la edito en el medio, o `version_esperada` no coincide: 409, sin escribir.
+    - Los cortes (reemplazo completo) tienen que ser contiguos y cubrir de
+      `umbral_alerta` a `puntaje_maximo`; si no, 422 con el tramo que falla.
+    - Campos que llegan iguales a lo guardado no cuentan; sin cambios efectivos se
+      devuelve la politica tal cual y no se crea version.
+
+    Rige en la siguiente evaluacion de D1. Sin autenticacion hasta H-25.
+    """
+    cambios = edicion.cambios()
+    if not cambios:
+        raise ErrorCentinela(
+            CodigoError.PARAMETROS_INVALIDOS,
+            "La edicion no trae ningun campo para cambiar",
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+
+    actual = await repo.politica_documento()
+    if actual is None:
+        raise _sin_politica()
+    if edicion.version_esperada is not None and edicion.version_esperada != actual.get(
+        "version"
+    ):
+        raise _version_politica_cambiada(actual.get("version"))
+
+    resultante = {**actual, **cambios}
+    detalles = _detalles_de_cortes(
+        resultante["umbral_alerta"], resultante["puntaje_maximo"], resultante["cortes_severidad"]
+    )
+    if detalles:
+        raise ErrorCentinela(
+            CodigoError.PARAMETROS_INVALIDOS,
+            "Los cortes de severidad no cubren de umbral_alerta a puntaje_maximo sin "
+            "huecos ni solapes",
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detalles,
+        )
+
+    efectivos = {campo: valor for campo, valor in cambios.items() if actual.get(campo) != valor}
+    if not efectivos:
+        return PoliticaVigente.model_validate(actual)
+
+    editada = await repo.editar_politica(actual, efectivos, datetime.now(UTC))
+    if editada is None:
+        vigente = await repo.politica_documento()
+        if vigente is None:
+            raise _sin_politica()
+        raise _version_politica_cambiada(vigente.get("version"))
+    return PoliticaVigente.model_validate(editada)
+
+
+# Lo unico que `app/api/rutas/__init__.py` monta: las dos puertas del catalogo.
+enrutador = APIRouter()
+enrutador.include_router(enrutador_reglas)
+enrutador.include_router(enrutador_politica)

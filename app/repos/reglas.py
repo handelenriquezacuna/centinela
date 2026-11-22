@@ -27,11 +27,16 @@ from typing import Any, Protocol, runtime_checkable
 
 from pymongo import ASCENDING, ReturnDocument
 from pymongo.asynchronous.database import AsyncDatabase
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, OperationFailure
 
 from app.deteccion.evaluador import PoliticaDeteccion
 from app.modelos import COLECCION_POLITICA
 from app.repos.carga_demo import a_entero_64
+
+# Lo que la capa HTTP necesita saber de un fallo de Mongo sin importar pymongo (solo
+# `app/repos/` y `app/nucleo/db.py` pueden; ver pruebas/arquitectura/prueba_capas.py).
+FalloDeOperacion = OperationFailure
+CODIGO_VALIDACION_DOCUMENTO = 121  # DocumentValidationFailure
 
 COLECCION_REGLAS = "reglas_deteccion"
 PREFIJO_REGLA = "REG-"
@@ -96,6 +101,15 @@ class ProtocoloRepoReglas(Protocol):
 
     async def politica_vigente(self) -> PoliticaDeteccion | None: ...
 
+    async def politica_documento(self) -> dict[str, Any] | None: ...
+
+    async def editar_politica(
+        self,
+        actual: dict[str, Any],
+        cambios: dict[str, Any],
+        ahora: datetime,
+    ) -> dict[str, Any] | None: ...
+
 
 class RepoReglas:
     """Acceso a `reglas_deteccion`; la politica vigente sale de `leer_politica_vigente`."""
@@ -156,3 +170,32 @@ class RepoReglas:
 
     async def politica_vigente(self) -> PoliticaDeteccion | None:
         return await leer_politica_vigente(self._base)
+
+    async def politica_documento(self) -> dict[str, Any] | None:
+        """El documento vigente completo, con su historia (GET /politica, T-20)."""
+        return await self._base[COLECCION_POLITICA].find_one(FILTRO_POLITICA_VIGENTE)
+
+    async def editar_politica(
+        self,
+        actual: dict[str, Any],
+        cambios: dict[str, Any],
+        ahora: datetime,
+    ) -> dict[str, Any] | None:
+        """Version siguiente de la politica, con el mismo patron que `editar` (D-16).
+
+        Una sola escritura filtrada por la version leida: `None` si otro la cambio en el
+        medio. D1 relee la politica en cada evento, asi que rige en la siguiente
+        evaluacion sin reiniciar nada. `vigente_desde` se renueva: la version nueva
+        empieza ahora, y la anterior queda con su `vigente_desde` y su `reemplazada_en`.
+        """
+        version_leida = actual.get("version")
+        anterior = instantanea(actual, ahora)
+        anterior["vigente"] = False
+        return await self._base[COLECCION_POLITICA].find_one_and_update(
+            {**FILTRO_POLITICA_VIGENTE, "_id": actual["_id"], "version": version_leida},
+            {
+                "$set": {**cambios, "version": (version_leida or 0) + 1, "vigente_desde": ahora},
+                "$push": {"versiones_anteriores": anterior},
+            },
+            return_document=ReturnDocument.AFTER,
+        )

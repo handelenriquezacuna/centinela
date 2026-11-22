@@ -10,6 +10,7 @@ Ver docs/06-plataforma.md.
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Any
 
 from pydantic import Field
 
@@ -57,6 +58,9 @@ class Transaccion(DocumentoBase):
     moneda: Moneda = "CRC"
     canal: Canal = Canal.SINPE_MOVIL
     fecha: MarcaTiempoUTC
+    # Etiqueta oculta del generador ({fraude, patron, episodio}). Solo sirve para medir
+    # el motor: ninguna regla ni D1 la leen, y no existe en datos reales.
+    simulacion: dict[str, Any] | None = None
 
 
 class VersionAnteriorRegla(ModeloCentinela):

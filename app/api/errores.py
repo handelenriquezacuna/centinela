@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.modelos.estados import TransicionInvalida
+from app.repos.reglas import CODIGO_VALIDACION_DOCUMENTO, FalloDeOperacion
 
 
 class CodigoError(StrEnum):
@@ -167,6 +168,28 @@ async def manejar_transicion_invalida(
     )
 
 
+async def manejar_fallo_de_mongo(
+    peticion: Request, fallo: FalloDeOperacion
+) -> JSONResponse:
+    """Un documento que el validador `$jsonSchema` de la base rechazo (codigo 121).
+
+    Casi siempre significa que la base tiene validadores viejos respecto del codigo
+    (alguien actualizo la rama y no los refresco), no que el cliente mando algo mal. Por
+    eso no es un 500 sin explicacion: se dice que paso y cual es el arreglo, que no
+    borra datos. Cualquier otro fallo de Mongo sigue siendo el 500 generico.
+    """
+    if fallo.code != CODIGO_VALIDACION_DOCUMENTO:
+        return await manejar_inesperado(peticion, fallo)
+    return _respuesta(
+        status.HTTP_409_CONFLICT,
+        CodigoError.CONFLICTO,
+        "La base rechazo el documento: su validador no coincide con el esquema del "
+        "codigo. Actualizar los validadores sin borrar datos con: "
+        "python tareas.py validadores",
+        [DetalleError(campo=None, mensaje="DocumentValidationFailure (codigo 121)")],
+    )
+
+
 async def manejar_http(
     peticion: Request, fallo: StarletteHTTPException
 ) -> JSONResponse:
@@ -192,6 +215,7 @@ def registrar_manejadores(aplicacion: FastAPI) -> None:
     aplicacion.add_exception_handler(RequestValidationError, manejar_validacion)
     aplicacion.add_exception_handler(ErrorCentinela, manejar_error_centinela)
     aplicacion.add_exception_handler(TransicionInvalida, manejar_transicion_invalida)
+    aplicacion.add_exception_handler(FalloDeOperacion, manejar_fallo_de_mongo)
     aplicacion.add_exception_handler(StarletteHTTPException, manejar_http)
     aplicacion.add_exception_handler(Exception, manejar_inesperado)
 

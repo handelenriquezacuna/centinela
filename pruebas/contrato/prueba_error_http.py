@@ -161,3 +161,44 @@ async def prueba_un_error_de_dominio_respeta_su_estado_y_su_codigo() -> None:
     error = afirmar_forma_de_error(respuesta.json())
     assert error["codigo"] == CodigoError.NO_ENCONTRADO
     assert error["mensaje"] == "La alerta ALR-999 no existe"
+
+
+@pytest.mark.asyncio
+async def prueba_un_fallo_de_validacion_de_mongo_no_es_un_500() -> None:
+    """T-24: el codigo 121 (DocumentValidationFailure) se explica y sugiere el arreglo.
+
+    Es el sintoma de una base con validadores viejos. Cualquier otro fallo de Mongo
+    sigue siendo el 500 generico y no filtra su detalle.
+    """
+    from asgi_lifespan import LifespanManager
+    from httpx import ASGITransport
+
+    from app.main import crear_aplicacion
+    from app.repos.reglas import FalloDeOperacion
+
+    aplicacion: FastAPI = crear_aplicacion()
+
+    @aplicacion.get("/rechazada")
+    async def rechazada() -> None:
+        raise FalloDeOperacion("Document failed validation", 121, {"errmsg": "secreto"})
+
+    @aplicacion.get("/otro-fallo")
+    async def otro_fallo() -> None:
+        raise FalloDeOperacion("secreto del servidor", 13, {})
+
+    async with LifespanManager(aplicacion) as gestionada, AsyncClient(
+        transport=ASGITransport(app=gestionada.app, raise_app_exceptions=False),
+        base_url="http://pruebas",
+    ) as cliente_http:
+        validacion = await cliente_http.get("/rechazada")
+        otro = await cliente_http.get("/otro-fallo")
+
+    assert validacion.status_code == status.HTTP_409_CONFLICT
+    error = afirmar_forma_de_error(validacion.json())
+    assert error["codigo"] == CodigoError.CONFLICTO
+    assert "python tareas.py validadores" in error["mensaje"]
+    assert "secreto" not in validacion.text
+
+    assert otro.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    assert afirmar_forma_de_error(otro.json())["codigo"] == CodigoError.ERROR_INTERNO
+    assert "secreto" not in otro.text

@@ -35,6 +35,7 @@ def prueba_estan_publicadas_las_rutas_decididas() -> None:
         "/api/v1/reglas/tipos",
         "/api/v1/reglas/simular",
         "/api/v1/reglas/{regla_id}",
+        "/api/v1/politica",
     }
 
 

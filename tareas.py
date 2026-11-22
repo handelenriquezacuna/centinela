@@ -15,6 +15,8 @@ Uso:
     python tareas.py dev             corre la API en el host, con recarga
     python tareas.py datos-demo      carga el conjunto de demo
     python tareas.py migrar          corre las migraciones de esquema (H-26)
+    python tareas.py validadores     actualiza los validadores sin borrar datos (T-24)
+    python tareas.py generar [...]   corre el generador de datos (T-28), con sus banderas
     python tareas.py pruebas         corre las pruebas
     python tareas.py verificar       instala, prueba y reporta
 
@@ -24,6 +26,7 @@ Con `--dry-run` cualquier tarea imprime lo que haria sin hacerlo.
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import subprocess
 import sys
@@ -367,6 +370,35 @@ def tarea_migrar(args: argparse.Namespace) -> None:
         correr(mongosh("--file", str(ruta)), dry_run=args.dry_run)
 
 
+def tarea_validadores(args: argparse.Namespace) -> None:
+    """Actualiza los validadores de la base sin borrar datos (T-24).
+
+    Re-sembrar (`datos-demo`) es la otra forma de refrescar un validador viejo, y borra
+    todo. Este script carga 01-colecciones.js contra una base temporal, copia los
+    validadores resultantes a `antifraude` con collMod y descarta la temporal. Corre
+    desde el host con la URI completa y la ruta absoluta del script, igual que la siembra.
+    """
+    directorio = RAIZ / "scripts" / "semilla"
+    correr(
+        mongosh(
+            "--eval",
+            f"var RUTA_COLECCIONES={json.dumps(str(directorio / '01-colecciones.js'))}",
+            "--file",
+            str(directorio / "actualizar-validadores.js"),
+        ),
+        dry_run=args.dry_run,
+    )
+
+
+def tarea_generar(args: argparse.Namespace) -> None:
+    """Corre el generador de datos (T-28); las banderas pasan tal cual.
+
+    Ejemplo: python tareas.py generar --clientes 50 --transacciones 5000 --semilla 7
+    (todas las banderas con `python tareas.py generar --help`).
+    """
+    correr(uv("run", "python", "-m", "app.generador", *args.argumentos), dry_run=args.dry_run)
+
+
 def tarea_pruebas(args: argparse.Namespace) -> None:
     """Corre las pruebas. Las que necesitan Mongo se saltan solas si no esta."""
     orden = uv("run", "pytest")
@@ -397,6 +429,8 @@ TAREAS = {
     "dev": tarea_dev,
     "datos-demo": tarea_datos_demo,
     "migrar": tarea_migrar,
+    "validadores": tarea_validadores,
+    "generar": tarea_generar,
     "pruebas": tarea_pruebas,
     "verificar": tarea_verificar,
 }
@@ -456,7 +490,17 @@ def construir_analizador() -> argparse.ArgumentParser:
 
 def main(argumentos: list[str] | None = None) -> int:
     analizador = construir_analizador()
+    argumentos = sys.argv[1:] if argumentos is None else list(argumentos)
+
+    # Todo lo que sigue a `generar` es del generador (incluidas sus banderas y --help):
+    # argparse no sabe repartir banderas desconocidas a un subcomando, asi que se corta aca.
+    pasadas: list[str] = []
+    if "generar" in argumentos:
+        corte = argumentos.index("generar") + 1
+        argumentos, pasadas = argumentos[:corte], argumentos[corte:]
+
     args = analizador.parse_args(argumentos)
+    args.argumentos = pasadas
 
     # Valores por omision para las tareas que no declaran estas banderas.
     for bandera, valor in (

@@ -479,3 +479,27 @@ def prueba_una_zona_distinta_de_la_de_costa_rica_tambien_se_normaliza() -> None:
     guardada = transaccion(fecha=datetime(2026, 9, 25, 13, 47, tzinfo=tokio)).fecha
 
     assert guardada == datetime(2026, 9, 25, 4, 47, tzinfo=UTC)
+
+
+def prueba_cuenta_y_transaccion_aceptan_los_campos_opcionales_del_generador() -> None:
+    """T-28: `entidad` (cuenta) y `simulacion` (transaccion) son opcionales.
+
+    Salen del documento solo si estan: con `exclude_none` el validador no ve un nulo.
+    La etiqueta de simulacion es lo que el motor nunca lee.
+    """
+    from app.modelos import Cuenta
+
+    sin = Cuenta(_id="CTA-001", cuenta_sinpe="8712-4455", cliente_id="CLI-001", esquema_version=1)
+    con = Cuenta(
+        _id="CTA-001",
+        cuenta_sinpe="8712-4455",
+        cliente_id="CLI-001",
+        entidad="Banco Nacional",
+        esquema_version=1,
+    )
+    assert "entidad" not in sin.a_documento()
+    assert con.a_documento()["entidad"] == "Banco Nacional"
+
+    etiquetada = transaccion(simulacion={"fraude": True, "patron": "rafaga", "episodio": 1})
+    assert etiquetada.a_documento()["simulacion"]["fraude"] is True
+    assert "simulacion" not in transaccion().a_documento()
