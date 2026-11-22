@@ -22,7 +22,7 @@ def prueba_el_esquema_se_genera() -> None:
     assert ESQUEMA["info"]["title"] == "Centinela"
 
 
-def prueba_estan_publicadas_las_cuatro_rutas() -> None:
+def prueba_estan_publicadas_las_rutas_decididas() -> None:
     """El inventario completo. Que sea una igualdad y no un `>=` es a proposito:
     publicar una ruta que nadie decidio es tan malo como no publicar una decidida."""
     assert set(ESQUEMA["paths"]) == {
@@ -30,7 +30,42 @@ def prueba_estan_publicadas_las_cuatro_rutas() -> None:
         "/estado",
         "/api/v1/alertas",
         "/api/v1/alertas/flujo",
+        "/api/v1/reglas",
+        "/api/v1/reglas/tipos",
+        "/api/v1/reglas/simular",
+        "/api/v1/reglas/{regla_id}",
     }
+
+
+def prueba_las_rutas_de_reglas_publican_sus_metodos_y_errores() -> None:
+    """H-16: metodos decididos y, en cada uno, los errores con `RespuestaError`."""
+    esperado = {
+        "/api/v1/reglas": {"get": set(), "post": {"409", "422"}},
+        "/api/v1/reglas/tipos": {"get": set()},
+        "/api/v1/reglas/simular": {"post": {"409", "422"}},
+        "/api/v1/reglas/{regla_id}": {"get": {"404", "422"}, "patch": {"404", "409", "422"}},
+    }
+    for ruta, metodos in esperado.items():
+        assert set(ESQUEMA["paths"][ruta]) == set(metodos), ruta
+        for metodo, errores in metodos.items():
+            respuestas = ESQUEMA["paths"][ruta][metodo]["responses"]
+            for codigo in errores | {"500"}:
+                referencia = respuestas[codigo]["content"]["application/json"]["schema"]["$ref"]
+                assert referencia.endswith("/RespuestaError"), (ruta, metodo, codigo)
+
+
+def prueba_la_edicion_de_regla_publica_solo_los_campos_editables() -> None:
+    edicion = ESQUEMA["components"]["schemas"]["EdicionRegla"]
+
+    assert set(edicion["properties"]) == {
+        "descripcion",
+        "umbral",
+        "parametros",
+        "peso",
+        "activa",
+        "version_esperada",
+    }
+    assert edicion["additionalProperties"] is False
 
 
 def prueba_salud_y_estado_son_rutas_distintas() -> None:

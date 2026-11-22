@@ -589,6 +589,51 @@ registro durable aparte, que ninguna historia ni ningún rubro pide.
 escalar a decenas pediría un flujo compartido con reparto entre conexiones. Está
 documentado, no construido.
 
+### Reglas: `/api/v1/reglas` (H-16)
+
+Umbrales, pesos y parámetros se cambian por la API, sin tocar código ni la base a mano.
+Sin autenticación todavía: el rol de supervisor es H-25.
+
+| Ruta | Hace | Errores |
+|---|---|---|
+| `GET /api/v1/reglas[?activa=]` | Catálogo ordenado por `codigo`, cada regla con `versiones_anteriores` | 422 |
+| `GET /api/v1/reglas/{regla_id}` | Una regla con su historia | 404, 422 |
+| `GET /api/v1/reglas/tipos` | Tipos que el motor sabe evaluar, qué significa su `umbral` y qué `parametros` lee | |
+| `POST /api/v1/reglas` | Alta en `version: 1`; el servidor asigna el siguiente `REG-NNN` | 409 código repetido, 422 |
+| `PATCH /api/v1/reglas/{regla_id}` | Edita `descripcion`, `umbral`, `parametros`, `peso`, `activa` | 404, 409, 422 |
+| `POST /api/v1/reglas/simular` | Evalúa una transacción sin escribir nada | 409 sin política, 422 |
+
+**Versionado.** Cada edición sube `version` en uno y empuja la versión anterior completa,
+con `reemplazada_en`, a `versiones_anteriores` del mismo documento. No hay colección
+nueva (el contrato es de 13): las reglas se editan poco y se leen con su historia. Una
+alerta guarda `regla_id` y `version`, así que se sigue explicando aunque la regla cambie.
+
+**Concurrencia optimista.** La edición es un solo `find_one_and_update` filtrado por la
+versión leída. Si otro la editó en el medio no se escribe nada y sale 409. El cliente
+puede mandar `version_esperada` para que el 409 salga aunque la carrera haya sido antes
+de su lectura (dos supervisores con la misma pantalla abierta).
+
+**Desactivar es `PATCH {"activa": false}`**, no una ruta aparte: es una edición más, con
+el mismo versionado y la misma concurrencia, y reactivar es simétrico.
+
+**Lo que no entra.** Un `tipo` fuera de `app.deteccion.evaluador.EVALUADORES` (422, el
+mensaje lista los soportados); `parametros` que el tipo no lee o le faltan (un
+`ventana_minuto` mal escrito haría que la regla deje de evaluarse en silencio); dinero
+en `parametros` que no sea entero; `tipo` o `codigo` en un `PATCH` (campo desconocido,
+422). Campos iguales a lo guardado no crean versión.
+
+**Simular.** El cuerpo trae `transaccion` y `contexto` (`ContextoEvaluacion`, lo que H-09
+precalcula), y opcionalmente `reglas` y `politica`. Las reglas propuestas se superponen
+al catálogo de la base por `_id`, así que para probar un umbral se manda solo esa regla.
+La respuesta es la `Evaluacion` completa: puntaje, severidad, disparadas con su
+explicación y no evaluadas con su motivo. Con el catálogo sembrado, TXN-001 da 75
+CRITICA; con R-01 en umbral 20 da 40 MEDIA.
+
+```bash
+curl -X PATCH localhost:8000/api/v1/reglas/REG-001 \
+  -H 'content-type: application/json' -d '{"umbral": 20, "version_esperada": 1}'
+```
+
 ---
 
 ## 7. Datos de demo

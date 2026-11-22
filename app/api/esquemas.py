@@ -9,10 +9,14 @@ que no se guarda), no habra que romper nada para separarlos.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.deteccion import ContextoEvaluacion, PoliticaDeteccion
 from app.modelos.alertas import Alerta
+from app.modelos.base import MarcaTiempoUTC, ModeloCentinela
+from app.modelos.transaccional import Regla, Transaccion
 from app.supervision import (
     EstadoSupervision,
     EstadoTarea,
@@ -153,3 +157,135 @@ class EstadoFuncional(BaseModel):
             ),
             historia=fila.historia,
         )
+
+
+# ---------------------------------------------------------------------------
+# Reglas (H-16)
+# ---------------------------------------------------------------------------
+#
+# `Regla` (app/modelos) describe el documento tal como lo lee el motor e ignora
+# `versiones_anteriores`. La API la publica completa, con su historia, sin tocar el
+# modelo del dominio: por eso `ReglaConHistoria` extiende `Regla` aca.
+
+ParametrosRegla = dict[str, int | float]
+
+
+class VersionAnteriorRegla(ModeloCentinela):
+    """Una version que ya no rige, tal como estaba justo antes de editarse.
+
+    Con esto una alerta vieja se explica con la regla con que se evaluo: la alerta
+    guarda `regla_id` y `version`, y la version se busca aca si ya no es la vigente.
+    """
+
+    codigo: str
+    descripcion: str
+    tipo: str
+    umbral: float | None = None
+    parametros: ParametrosRegla = Field(default_factory=dict)
+    peso: int
+    activa: bool
+    version: int = Field(ge=1)
+    esquema_version: int = Field(ge=1)
+    reemplazada_en: MarcaTiempoUTC = Field(description="Cuando dejo de regir, en UTC")
+
+
+class ReglaConHistoria(Regla):
+    versiones_anteriores: list[VersionAnteriorRegla] = Field(
+        default_factory=list,
+        description="Versiones anteriores, de la mas vieja a la mas reciente",
+    )
+
+
+class ListaReglas(BaseModel):
+    """El catalogo completo. Son pocas reglas: no se pagina."""
+
+    total: int = Field(ge=0)
+    elementos: list[ReglaConHistoria]
+
+
+class _Peticion(ModeloCentinela):
+    """Cuerpo de una peticion: un campo desconocido es un error, no se ignora.
+
+    Un `tipo` o un `codigo` en una edicion no se puede aplicar; tragarlo en silencio
+    haria creer al supervisor que lo cambio.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class NuevaRegla(_Peticion):
+    """Alta de una regla. El `_id` (REG-NNN) y `version: 1` los pone el servidor."""
+
+    codigo: str = Field(pattern=r"^R-\d{2}$", examples=["R-13"])
+    descripcion: str = Field(min_length=1)
+    tipo: str = Field(description="Uno de GET /api/v1/reglas/tipos", examples=["monto"])
+    umbral: float = Field(ge=0, description="Su unidad depende del tipo")
+    parametros: ParametrosRegla = Field(default_factory=dict)
+    peso: int = Field(ge=0, le=100)
+    activa: bool = True
+
+
+class EdicionRegla(_Peticion):
+    """Edicion parcial. Lo que no viene no cambia; `parametros` se reemplaza entero.
+
+    Desactivar es `{"activa": false}`: una edicion mas, y queda versionada igual.
+    """
+
+    descripcion: str | None = Field(default=None, min_length=1)
+    umbral: float | None = Field(default=None, ge=0)
+    parametros: ParametrosRegla | None = None
+    peso: int | None = Field(default=None, ge=0, le=100)
+    activa: bool | None = None
+    version_esperada: int | None = Field(
+        default=None,
+        ge=1,
+        description="Si viene y la regla ya no esta en esa version, 409 sin escribir",
+    )
+
+    @model_validator(mode="after")
+    def _sin_nulos(self) -> Self:
+        nulos = [campo for campo in self.model_fields_set if getattr(self, campo) is None]
+        if nulos:
+            raise ValueError(f"no se puede borrar un campo de la regla: {', '.join(nulos)}")
+        return self
+
+    def cambios(self) -> dict[str, Any]:
+        """Los campos de la regla que vinieron en la peticion."""
+        return self.model_dump(exclude_unset=True, exclude={"version_esperada"})
+
+
+class ParametroTipo(BaseModel):
+    nombre: str = Field(examples=["ventana_minutos"])
+    descripcion: str
+
+
+class TipoSoportado(BaseModel):
+    """Un tipo que el motor sabe despachar, con lo que lee de la regla."""
+
+    tipo: str = Field(examples=["velocidad"])
+    umbral: str = Field(description="Que significa el umbral para este tipo")
+    parametros: list[ParametroTipo]
+    evaluable: bool = Field(
+        description="Falso si el motor todavia no lo evalua en linea (red_mulas, H-23)"
+    )
+
+
+class ListaTipos(BaseModel):
+    elementos: list[TipoSoportado]
+
+
+class PeticionSimulacion(BaseModel):
+    """Evaluar una transaccion sin escribir nada.
+
+    `reglas` se superpone al catalogo de la base por `_id`: una regla que viene
+    reemplaza a la guardada con ese `_id`, una con `_id` nuevo se agrega, y las demas
+    quedan como estan. Asi se prueba un umbral mandando solo la regla que cambia.
+    `politica`, si viene, reemplaza a la vigente.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    transaccion: Transaccion
+    contexto: ContextoEvaluacion
+    reglas: list[Regla] | None = None
+    politica: PoliticaDeteccion | None = None

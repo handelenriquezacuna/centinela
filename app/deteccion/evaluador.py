@@ -335,6 +335,58 @@ EVALUADORES: Mapping[str, _Evaluador] = {
 }
 
 
+@dataclass(frozen=True)
+class TipoRegla:
+    """Lo que lee cada tipo de regla: que significa su `umbral` y que `parametros` pide.
+
+    Es una declaracion, no logica: el evaluador no la consulta. La usa la gestion de
+    reglas (H-16) para rechazar una regla que el motor no sabria evaluar, y
+    `pruebas/contrato/prueba_reglas_api.py` comprueba que coincide con lo que cada
+    funcion de arriba lee de verdad.
+
+    `evaluable` es falso cuando el motor todavia no evalua el tipo en linea; sus
+    parametros se declaran igual para que las reglas del catalogo se puedan editar.
+    """
+
+    umbral: str
+    parametros: Mapping[str, str]
+    evaluable: bool = True
+
+
+TIPOS_REGLA: Mapping[str, TipoRegla] = {
+    "monto": TipoRegla(umbral="veces el promedio_crc del perfil del cliente", parametros={}),
+    "destino": TipoRegla(
+        umbral="maximo de transferencias previas al destino para que cuente como nuevo",
+        parametros={"dias_historial": "dias de historial que se miran"},
+    ),
+    "horario": TipoRegla(
+        umbral="minutos de holgura fuera del horario habitual del cliente", parametros={}
+    ),
+    "lista_riesgo": TipoRegla(
+        umbral="coincidencias vigentes minimas en listas_riesgo", parametros={}
+    ),
+    "velocidad": TipoRegla(
+        umbral="transferencias minimas del mismo origen dentro de la ventana",
+        parametros={
+            "ventana_minutos": "ventana en la que se cuentan las transferencias",
+            "monto_acumulado_crc": "piso de colones acumulados en la ventana",
+        },
+    ),
+    "red_mulas": TipoRegla(
+        umbral="proporcion minima de lo recibido que el destino reenvia",
+        parametros={
+            "ventana_minutos": "minutos en los que tiene que ocurrir el reenvio",
+            "saltos_minimos": "saltos minimos para llamarlo cadena",
+        },
+        evaluable=False,
+    ),
+}
+
+assert set(TIPOS_REGLA) == set(EVALUADORES), (
+    "TIPOS_REGLA y EVALUADORES tienen que declarar los mismos tipos"
+)
+
+
 # ---------------------------------------------------------------------------
 # Puntaje y severidad
 # ---------------------------------------------------------------------------

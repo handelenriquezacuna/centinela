@@ -11,11 +11,13 @@ compara los dos caminos sobre los mismos datos y el desacuerdo sale a la luz.
 
 from __future__ import annotations
 
+import copy
 from datetime import datetime
 from typing import Any
 
 from app.modelos import EstadoAlerta, Severidad
 from app.modelos.base import asumir_utc
+from app.repos.reglas import CodigoDuplicado, instantanea, siguiente_regla_id
 
 
 class RepoAlertasFalso:
@@ -83,3 +85,64 @@ class RepoAlertasFalso:
         if hasta is not None and fecha > asumir_utc(hasta):  # noqa: SIM103 - guardas uniformes
             return False
         return True
+
+
+class RepoReglasFalso:
+    """`reglas_deteccion` en memoria, con la misma regla de versionado que el real.
+
+    La instantanea y el siguiente REG-NNN salen de las funciones puras de
+    `app.repos.reglas`, asi que el doble no reimplementa el versionado: solo aplica en
+    Python el `$set` y el `$push` que el repositorio real le pide a Mongo.
+
+    `interferir_antes_de_editar` simula a otro supervisor que edita en el medio:
+    sube la version guardada justo antes de que llegue la escritura.
+    """
+
+    def __init__(
+        self,
+        documentos: list[dict[str, Any]],
+        politica: dict[str, Any] | None = None,
+    ) -> None:
+        self._documentos = {documento["_id"]: copy.deepcopy(documento) for documento in documentos}
+        self._politica = copy.deepcopy(politica)
+        self.interferir_antes_de_editar = False
+        self.escrituras = 0
+
+    async def listar(self, *, activa: bool | None = None) -> list[dict[str, Any]]:
+        return [
+            copy.deepcopy(documento)
+            for documento in sorted(self._documentos.values(), key=lambda d: d["codigo"])
+            if activa is None or documento["activa"] == activa
+        ]
+
+    async def obtener(self, regla_id: str) -> dict[str, Any] | None:
+        documento = self._documentos.get(regla_id)
+        return copy.deepcopy(documento) if documento is not None else None
+
+    async def crear(self, documento: dict[str, Any]) -> dict[str, Any]:
+        if any(d["codigo"] == documento["codigo"] for d in self._documentos.values()):
+            raise CodigoDuplicado(documento["codigo"])
+        nuevo = {"_id": siguiente_regla_id(list(self._documentos)), **documento}
+        self._documentos[nuevo["_id"]] = copy.deepcopy(nuevo)
+        self.escrituras += 1
+        return nuevo
+
+    async def editar(
+        self,
+        actual: dict[str, Any],
+        cambios: dict[str, Any],
+        ahora: datetime,
+    ) -> dict[str, Any] | None:
+        guardado = self._documentos.get(actual["_id"])
+        if guardado is not None and self.interferir_antes_de_editar:
+            guardado["version"] += 1
+        if guardado is None or guardado.get("version") != actual.get("version"):
+            return None
+        guardado.setdefault("versiones_anteriores", []).append(instantanea(actual, ahora))
+        guardado.update(copy.deepcopy(cambios))
+        guardado["version"] = (actual.get("version") or 0) + 1
+        self.escrituras += 1
+        return copy.deepcopy(guardado)
+
+    async def politica_vigente(self) -> dict[str, Any] | None:
+        return copy.deepcopy(self._politica)
