@@ -4,17 +4,20 @@
 > ocurren, y actúa sobre las que el motor marca como probable estafa de vishing
 > antes de que el dinero salga del sistema.
 
-**Estado (rama `dev`, commit 4b2c678):**
+**Estado de la rama `dev`.** El detalle vivo de cada historia está en los
+[issues](https://github.com/handelenriquezacuna/centinela/issues): una por historia
+pendiente, que se cierra sola al fusionar su PR.
 
 - **Hecho:** plataforma (H-00A, H-00B) con CI estricto, semilla y modo
   `CENTINELA_EXIGIR_MONGO`; esquema y validadores de las 13 colecciones (H-01, H-02);
   generador sintético con tope SINPE por entidad (H-03 a H-05); catálogo de reglas
-  (H-07); evaluador (H-08); disparador D1 (H-09); API base y consulta de alertas
-  (H-12, H-13 parcial); API de reglas con versionado y simulación (H-16); portal con
-  panel en vivo por SSE y pantalla de reglas (H-17).
-- **En curso:** alerta v2 con explicación embebida y migración (H-26); resolver
-  alerta (H-14).
-- **Pendiente:** H-06 parcial, H-10, H-11, H-15, H-18 a H-25, H-27.
+  (H-07); evaluador (H-08); disparador D1 (H-09); medición de efectividad (H-10);
+  API base y consulta de alertas (H-12, H-13 parcial); resolver una alerta (H-14);
+  API de reglas y de política con versionado y simulación (H-16); portal con panel en
+  vivo por SSE, pantalla de reglas y detalle de alerta (H-17, H-18); red de cuentas
+  mula con `$graphLookup` (H-23, falta el grafo en el portal); alerta v2 con
+  explicación embebida y migraciones reejecutables (H-26).
+- **Pendiente:** H-06 parcial, H-11, H-15, H-19 a H-22, H-24, H-25, H-27.
 
 Los contratos de datos y las reglas de arquitectura están en
 [06 · Plataforma](docs/06-plataforma.md). **Leerlo antes de escribir un documento.**
