@@ -9,9 +9,9 @@ El lifespan hace tres cosas y en este orden:
 1. Crea el unico cliente de Mongo del proceso. NO hace ping: `AsyncMongoClient`
    conecta de forma perezosa, asi que la API arranca aunque el replica set todavia
    este eligiendo primario, y es `/salud` quien informa si la base responde.
-2. Crea el supervisor y lanza las tareas de fondo. Hoy es una, el latido; cuando
-   existan, D1 (H-09), D2 (H-11) y D3 (H-22) se lanzan aqui mismo con una linea cada
-   uno y `/estado` los vigila sin cambios.
+2. Crea el supervisor y lanza las tareas de fondo: el latido y D1 (H-09). D2 (H-11)
+   y D3 (H-22) se lanzan aqui mismo con una linea cada uno y `/estado` los vigila
+   sin cambios.
 3. Al salir, detiene las tareas ANTES de cerrar el cliente. El orden importa: si el
    cliente se cerrara primero, las tareas que estan en medio de una consulta
    reventarian al apagar y el registro se llenaria de errores que no significan nada.
@@ -33,8 +33,10 @@ from app.api.errores import registrar_manejadores
 from app.api.rutas import enrutador_v1
 from app.api.rutas import estado as rutas_estado
 from app.api.rutas import salud as rutas_salud
+from app.deteccion.d1 import NOMBRE_D1, d1
 from app.nucleo.config import Ajustes, obtener_ajustes
 from app.nucleo.db import crear_cliente, obtener_base
+from app.repos.deteccion import RepoDeteccion
 from app.repos.salud import exigir_conexion
 from app.supervision import NOMBRE_LATIDO, Supervisor, latido
 
@@ -84,11 +86,10 @@ async def ciclo_vida(aplicacion: FastAPI) -> AsyncIterator[None]:
     )
     aplicacion.state.supervisor = supervisor
 
-    # El latido es la unica tarea de fondo de H-00B, y es real: comprueba que la base
-    # responde sin que nadie pregunte. Aca es donde se van a lanzar los disparadores
-    # cuando existan, con una linea cada uno:
+    # El latido es la tarea de fondo de H-00B, y es real: comprueba que la base
+    # responde sin que nadie pregunte. Aca se lanzan tambien los disparadores, con una
+    # linea cada uno:
     #
-    #   supervisor.lanzar("d1_deteccion", d1(base, supervisor))   # H-09
     #   supervisor.lanzar("d2_notificacion", d2(base, supervisor))  # H-11
     #
     # `partial` y no una lambda: la comprobacion se pasa como funcion sin argumentos
@@ -102,6 +103,8 @@ async def ciclo_vida(aplicacion: FastAPI) -> AsyncIterator[None]:
             intervalo_segundos=ajustes.supervision.intervalo_latido_segundos,
         ),
     )
+    # H-09: transaccion -> alerta. Recibe el repositorio, no la base (ver app/deteccion/d1.py).
+    supervisor.lanzar(NOMBRE_D1, d1(RepoDeteccion(base), supervisor, ajustes=ajustes.deteccion))
 
     registro.info(
         "Centinela %s arriba | entorno=%s base=%s",

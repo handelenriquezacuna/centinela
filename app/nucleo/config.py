@@ -133,6 +133,37 @@ class AjustesCanal(BaseModel):
     reintento_ms: int = Field(default=3000, ge=100)
 
 
+class AjustesDeteccion(BaseModel):
+    """Tiempos del disparador D1 (H-09). Tecnicos: ninguno decide si algo es fraude.
+
+    - `espera_cursor_ms`: cuanto espera el servidor una transaccion nueva antes de
+      devolver la vuelta vacia. Cada vuelta, con o sin evento, es un latido de D1 en
+      `/estado`; por eso tiene que ser bastante menor que la tolerancia de retraso, o
+      un D1 sano sin trafico apareceria como `retrasada`.
+    - `reintentos`: cuantas veces se reintenta un evento que fallo antes de dejarlo
+      en el descarte (`deteccion_estado`, clase `descarte`).
+    - `espera_inicial_segundos` / `espera_maxima_segundos`: la espera progresiva entre
+      reintentos, y entre reaperturas del change stream si se cae. Se duplica en cada
+      intento hasta el tope.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    espera_cursor_ms: int = Field(default=1000, ge=10)
+    reintentos: int = Field(default=3, ge=0)
+    espera_inicial_segundos: float = Field(default=0.5, gt=0)
+    espera_maxima_segundos: float = Field(default=10.0, gt=0)
+
+    @model_validator(mode="after")
+    def el_tope_supera_la_espera_inicial(self) -> AjustesDeteccion:
+        if self.espera_maxima_segundos < self.espera_inicial_segundos:
+            raise ValueError(
+                "deteccion.espera_maxima_segundos no puede ser menor que "
+                "deteccion.espera_inicial_segundos"
+            )
+        return self
+
+
 class AjustesRegistro(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -184,7 +215,20 @@ class Ajustes(BaseSettings):
     mongo: AjustesMongo
     supervision: AjustesSupervision = AjustesSupervision()
     canal: AjustesCanal = AjustesCanal()
+    deteccion: AjustesDeteccion = AjustesDeteccion()
     registro: AjustesRegistro = AjustesRegistro()
+
+    @model_validator(mode="after")
+    def el_cursor_late_antes_de_la_tolerancia(self) -> Ajustes:
+        """D1 late una vez por vuelta del cursor; si la vuelta dura mas que la
+        tolerancia, `/estado` declararia retrasado a un D1 sano y sin trafico."""
+        espera = self.deteccion.espera_cursor_ms / 1000
+        if espera >= self.supervision.tolerancia_retraso_segundos:
+            raise ValueError(
+                "deteccion.espera_cursor_ms tiene que ser menor que "
+                "supervision.tolerancia_retraso_segundos"
+            )
+        return self
 
     @classmethod
     def settings_customise_sources(
