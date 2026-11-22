@@ -693,3 +693,20 @@ disparadores de procesos y los procedimientos almacenados. Los scripts de siembr
 sirven para eso — crean estructura, no reaccionan a cambios ni son rutinas invocables.
 La evidencia sale de H-09 y H-11 para el primero, y de `scripts/procedimientos/` para el
 segundo.
+
+## Portal conectado (H-17 y T-16)
+
+Paginas HTML en `app/api/rutas/paginas.py`, fuera de `/api/v1`, con Jinja y HTMX
+vendorizados (`app/estaticos/PROCEDENCIA.md`). Arrancar con `uvicorn app.main:app` y abrir
+`http://localhost:8000/panel`.
+
+| Ruta | Que hace |
+|---|---|
+| `/panel` | Cola ordenada por severidad y fecha; se mantiene por SSE (`/api/v1/alertas/flujo`). `resincronizar` y una reconexion piden de nuevo `/panel/cola` |
+| `/reglas` | Catalogo, edicion con `version_esperada` (409 visible), versiones anteriores, tipos soportados y politica vigente en solo lectura |
+| `/detalle`, `/busqueda`, `/tablero` | Maqueta estatica dentro de la plantilla base, marcada "en construccion" |
+
+La fila del panel es la misma plantilla (`sse/fila_alerta.html`) para la carga inicial y
+para cada evento SSE. El formulario de reglas reutiliza el handler de `PATCH
+/api/v1/reglas/{id}`. Sin autenticacion hasta H-25: la cabecera lo avisa ("modo local").
+

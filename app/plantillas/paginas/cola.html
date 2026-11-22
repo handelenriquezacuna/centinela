@@ -1,0 +1,4 @@
+{# Cola del panel: las mismas filas que viajan por SSE (sse/fila_alerta.html), una por alerta. #}
+{% for alerta in alertas %}
+{% with operacion = "insert" %}{% include "sse/fila_alerta.html" %}{% endwith %}
+{% endfor %}

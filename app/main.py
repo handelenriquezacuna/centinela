@@ -32,6 +32,7 @@ from app import VERSION
 from app.api.errores import registrar_manejadores
 from app.api.rutas import enrutador_v1
 from app.api.rutas import estado as rutas_estado
+from app.api.rutas import paginas as rutas_paginas
 from app.api.rutas import salud as rutas_salud
 from app.deteccion.d1 import NOMBRE_D1, d1
 from app.nucleo.config import Ajustes, obtener_ajustes
@@ -137,6 +138,7 @@ def crear_aplicacion() -> FastAPI:
     aplicacion.include_router(rutas_salud.enrutador)
     aplicacion.include_router(rutas_estado.enrutador)
     aplicacion.include_router(enrutador_v1)
+    aplicacion.include_router(rutas_paginas.enrutador)
 
     # Los estaticos se sirven desde el propio proceso: es un monolito y no hay un
     # servidor web delante. `check_dir=False` no se usa a proposito -si la carpeta
