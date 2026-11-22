@@ -90,7 +90,7 @@ async def prueba_editar_reg_001_sube_a_version_2_y_guarda_la_1(
     assert guardada["umbral"] == 20
     [anterior] = guardada["versiones_anteriores"]
     assert anterior["version"] == 1
-    assert anterior["umbral"] == 10
+    assert anterior["umbral"] == 8
     assert anterior["peso"] == 35
     assert anterior["reemplazada_en"].tzinfo is not None
 
@@ -210,5 +210,5 @@ async def prueba_simular_txn_001_da_75_critica_y_el_umbral_lo_baja(
     assert propuesta["puntaje"] == 40
     assert propuesta["severidad"] == "MEDIA"
     guardada = await base_con_reglas[COLECCION_REGLAS].find_one({"_id": "REG-001"})
-    assert guardada["umbral"] == 10
+    assert guardada["umbral"] == 8
     assert guardada["version"] == 1

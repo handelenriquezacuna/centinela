@@ -4,6 +4,11 @@ Copia de `scripts/semilla/03-catalogos.js` (H-07), con las descripciones reales.
 copia a proposito, igual que la de `pruebas/unitarias/prueba_evaluador.py`: el caso
 documentado (R-01 + R-03 + R-05 = 75, CRITICA) depende de estos numeros. Contra la
 semilla de verdad lo verifica `pruebas/contrato/prueba_reglas_mongo.py`.
+
+La calibracion T-33 (docs/08-calibracion.md) cambio en la semilla tres numeros que esta
+copia NO sigue: R-01 umbral 10 -> 8, R-05 holgura 0 -> 120 y umbral_alerta 40 -> 35 (MEDIA
+35-54). Se dejan en la linea base de H-07 a proposito: el caso documentado (R-01 + R-03 +
+R-05 = 75, CRITICA) no depende de ellos, y estas pruebas no miden la calibracion.
 """
 
 from __future__ import annotations
