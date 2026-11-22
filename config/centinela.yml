@@ -59,5 +59,17 @@ canal:
   # Espera del navegador antes de reconectar; viaja como `retry` en la apertura.
   reintento_ms: 3000
 
+# Disparador D1 (H-09): change stream de transacciones -> alerta. Tiempos tecnicos.
+deteccion:
+  # Espera del cursor por una transaccion nueva antes de devolver una vuelta vacia.
+  # Cada vuelta es un latido de D1 en /estado: tiene que ser bastante menor que
+  # supervision.tolerancia_retraso_segundos (lo exige la configuracion al arrancar).
+  espera_cursor_ms: 1000
+  # Reintentos de un evento que fallo, con espera progresiva (se duplica hasta el
+  # tope). Agotados, el evento queda en deteccion_estado como descarte.
+  reintentos: 3
+  espera_inicial_segundos: 0.5
+  espera_maxima_segundos: 10
+
 registro:
   nivel: INFO

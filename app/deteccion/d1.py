@@ -1,0 +1,383 @@
+"""H-09 · Disparador D1: transaccion -> alerta.
+
+Escucha `transacciones` por change stream (solo inserts) y, por cada transaccion:
+
+    contexto (repo) -> evaluar (H-08, puro) -> alerta si supera el umbral -> token
+
+El contrato, y por que cada pieza:
+
+- **Primero la alerta, despues el token.** El token se guarda solo cuando las
+  escrituras del evento terminaron. Si el proceso muere entre las dos, al reanudar se
+  reprocesa el evento: el change stream entrega *al menos una vez*.
+- **La no duplicacion la impone la base, no este codigo.** El reproceso choca con el
+  indice unico de `alertas.transaccion_id` y se cuenta como "ya procesada". Una
+  transaccion produce una sola alerta; si disparan tres reglas, van las tres dentro.
+- **Reanudacion con el mismo pipeline y opciones** (`resumeAfter`). Las constantes
+  viven en `app/repos/deteccion.py` y las dos aperturas las comparten.
+- **Token inservible** (`ChangeStreamHistoryLost`, un token corrupto, o un
+  `invalidate` porque alguien borro `transacciones`, como hace re-sembrar con
+  `01-colecciones.js`): se registra como `resincronizar` y D1 arranca desde ahora. Lo que entro entre el token y ahora
+  NO se evalua; queda en el registro y en `/estado` como ultimo error, para que nadie
+  lo descubra tarde.
+- **Reintentos con espera progresiva** (`deteccion` en el YAML). Un evento que agota
+  los reintentos queda en el descarte (`deteccion_estado`, clase `descarte`) y D1
+  sigue: un evento envenenado no puede detener la deteccion de todos los demas. Si ni
+  el descarte se puede escribir (la base no esta), el error sube, el token no avanza y
+  D1 reabre desde el ultimo token guardado con la misma espera progresiva.
+- **Latido por vuelta**, con o sin evento. `/estado` mide el retraso desde el ultimo
+  latido: un D1 sano sin trafico late cada `espera_cursor_ms`; uno atascado deja de
+  latir y pasa a `retrasada`.
+
+Este modulo no consulta Mongo (todo pasa por `ProtocoloRepoDeteccion`) y no importa
+`app/api/`: el motor no sabe que existe una pantalla.
+
+Un solo D1 por base: dos procesos escuchando el mismo change stream evaluan dos veces
+cada transaccion (el indice unico evita la alerta doble, pero no el trabajo doble ni
+la carrera por el token). Por eso el monolito corre con un solo worker.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from collections.abc import Callable, Mapping
+from contextlib import aclosing
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Any
+
+from pydantic import ValidationError
+
+from app.deteccion.evaluador import Evaluacion, evaluar
+from app.modelos import ESTADO_INICIAL, AccionHistorial, Alerta, Transaccion
+from app.nucleo.config import AjustesDeteccion
+from app.repos.deteccion import DatosOrigen, ProtocoloRepoDeteccion
+from app.repos.flujo_alertas import TokenDeReanudacionInvalido
+from app.supervision import Supervisor
+
+registro_log = logging.getLogger("centinela.deteccion")
+
+# Clave de `DISPARADORES_PREVISTOS`: asi `/estado` reconoce a D1 como el disparador
+# prometido por H-09, y es tambien el `_id` del token en `deteccion_estado`.
+NOMBRE_D1 = "d1_deteccion"
+
+PREFIJO_TRANSACCION = "TXN-"
+PREFIJO_ALERTA = "ALR-"
+
+Reloj = Callable[[], datetime]
+
+
+def _ahora() -> datetime:
+    return datetime.now(UTC)
+
+
+class Resultado(StrEnum):
+    """Que paso con una transaccion. Es lo que D1 registra por evento."""
+
+    ALERTA_CREADA = "alerta_creada"
+    YA_PROCESADA = "ya_procesada"
+    SIN_ALERTA = "sin_alerta"
+
+
+# ---------------------------------------------------------------------------
+# Partes puras
+# ---------------------------------------------------------------------------
+
+
+def alerta_id_para(transaccion_id: str) -> str:
+    """`TXN-001` -> `ALR-001`. El identificador de la alerta sale de la transaccion.
+
+    Derivado y no secuencial a proposito: es idempotente (reprocesar la misma
+    transaccion produce el mismo `_id`, que tambien choca), no necesita un contador
+    con su escritura extra y su carrera, y coincide con `CONTRATO-IDS.md`, donde
+    ALR-001 es la alerta de TXN-001.
+    """
+    if not transaccion_id.startswith(PREFIJO_TRANSACCION):
+        raise ValueError(f"identificador de transaccion inesperado: {transaccion_id}")
+    return PREFIJO_ALERTA + transaccion_id.removeprefix(PREFIJO_TRANSACCION)
+
+
+def nota_de_creacion(evaluacion: Evaluacion) -> str:
+    """Primera entrada del historial: con que politica y que version de cada regla.
+
+    `reglas_disparadas` es v1 (solo identificadores) hasta H-26. Mientras tanto la
+    version de cada regla usada queda escrita aqui, dentro de la alerta (H-16): si la
+    regla cambia manana, esta alerta sigue diciendo con cual se evaluo.
+    """
+    reglas = ", ".join(
+        f"{disparada.codigo} {disparada.regla_id} v{disparada.version} (+{disparada.peso})"
+        for disparada in evaluacion.reglas_disparadas
+    )
+    return (
+        f"Creada por D1 con {evaluacion.politica_id} v{evaluacion.politica_version}; "
+        f"reglas: {reglas}"
+    )
+
+
+def construir_alerta(
+    transaccion: Transaccion,
+    evaluacion: Evaluacion,
+    origen: DatosOrigen,
+    ahora: datetime,
+) -> Alerta | None:
+    """La alerta v1 que corresponde a la evaluacion, o `None` si no supera el umbral."""
+    if not evaluacion.genera_alerta:
+        return None
+    if evaluacion.severidad is None:
+        # La politica dice que hay alerta pero ningun corte contiene el puntaje: es una
+        # politica mal formada, no una transaccion sana. Se reporta, no se adivina.
+        raise ValueError(
+            f"puntaje {evaluacion.puntaje} genera alerta pero no cae en ningun corte de "
+            f"{evaluacion.politica_id} v{evaluacion.politica_version}"
+        )
+    return Alerta(
+        _id=alerta_id_para(transaccion.transaccion_id),
+        transaccion_id=transaccion.transaccion_id,
+        reglas_disparadas=evaluacion.regla_ids,
+        puntaje=evaluacion.puntaje,
+        severidad=evaluacion.severidad,
+        estado=ESTADO_INICIAL,
+        fecha_creacion=ahora,
+        historial=[
+            AccionHistorial(
+                accion=ESTADO_INICIAL,
+                agente_id=None,
+                fecha=ahora,
+                nota=nota_de_creacion(evaluacion),
+            )
+        ],
+        cuenta_origen=origen.cuenta_sinpe,
+        cuenta_destino=transaccion.cuenta_destino,
+        monto_crc=transaccion.monto_crc,
+        moneda=transaccion.moneda,
+        cliente_nombre=origen.cliente_nombre,
+    )
+
+
+def espera_progresiva(intento: int, ajustes: AjustesDeteccion) -> float:
+    """Segundos a esperar antes del intento siguiente: se duplica hasta el tope."""
+    return min(
+        ajustes.espera_inicial_segundos * (2**intento), ajustes.espera_maxima_segundos
+    )
+
+
+# ---------------------------------------------------------------------------
+# Un evento
+# ---------------------------------------------------------------------------
+
+
+async def procesar_transaccion(
+    repo: ProtocoloRepoDeteccion, documento: Mapping[str, Any], *, ahora: datetime
+) -> Resultado:
+    """Contexto -> evaluar -> alerta. No toca el token: eso es de quien llama."""
+    transaccion = Transaccion.model_validate(documento)
+    reglas = await repo.leer_reglas_activas()
+    if not reglas:
+        # Pasa, por ejemplo, si se re-siembra 01-colecciones.js sin correr despues
+        # 03-catalogos.js. Sin reglas ninguna transaccion alcanza el umbral, y eso no
+        # puede pasar en silencio.
+        registro_log.warning(
+            "%s evaluada sin reglas activas: no puede generar alerta",
+            transaccion.transaccion_id,
+        )
+    politica = await repo.leer_politica_vigente()
+    origen = await repo.leer_origen(transaccion)
+    contexto = await repo.armar_contexto(transaccion, origen, reglas)
+
+    evaluacion = evaluar(transaccion, contexto, reglas, politica)
+    for no_evaluada in evaluacion.reglas_no_evaluadas:
+        registro_log.debug(
+            "%s: %s no evaluada (%s)",
+            transaccion.transaccion_id,
+            no_evaluada.codigo,
+            no_evaluada.motivo,
+        )
+
+    alerta = construir_alerta(transaccion, evaluacion, origen, ahora)
+    if alerta is None:
+        return Resultado.SIN_ALERTA
+    if await repo.insertar_alerta(alerta):
+        registro_log.info(
+            "alerta %s para %s: puntaje %d %s",
+            alerta.alerta_id,
+            transaccion.transaccion_id,
+            alerta.puntaje,
+            alerta.severidad,
+        )
+        return Resultado.ALERTA_CREADA
+    registro_log.info(
+        "%s ya tenia alerta: evento reprocesado, el indice unico rechazo el duplicado",
+        transaccion.transaccion_id,
+    )
+    return Resultado.YA_PROCESADA
+
+
+async def _procesar_con_reintentos(
+    repo: ProtocoloRepoDeteccion,
+    supervisor: Supervisor,
+    documento: Mapping[str, Any],
+    *,
+    ajustes: AjustesDeteccion,
+    nombre: str,
+    reloj: Reloj,
+) -> Resultado | None:
+    """Procesa con espera progresiva; agotados los intentos, descarta y devuelve None.
+
+    Un error de validacion (la transaccion o un documento de contexto no cumplen el
+    modelo) no se arregla reintentando: va directo al descarte.
+    """
+    intentos = 0
+    while True:
+        intentos += 1
+        try:
+            return await procesar_transaccion(repo, documento, ahora=reloj())
+        except asyncio.CancelledError:
+            raise
+        except ValidationError as fallo:
+            ultimo: Exception = fallo
+            break
+        except Exception as fallo:  # noqa: BLE001 - se reintenta y, si no, se descarta
+            ultimo = fallo
+            if intentos > ajustes.reintentos:
+                break
+            registro_log.warning(
+                "%s: intento %d fallo (%s); reintento", documento.get("_id"), intentos, fallo
+            )
+            await asyncio.sleep(espera_progresiva(intentos - 1, ajustes))
+
+    motivo = f"{type(ultimo).__name__}: {ultimo}"
+    # Si esta escritura falla, el error sube: el token no avanza y el evento se
+    # reprocesa al reabrir. Nada se pierde en silencio.
+    await repo.descartar(
+        nombre,
+        transaccion_id=str(documento.get("_id")),
+        motivo=motivo,
+        intentos=intentos,
+    )
+    supervisor.anotar_error(nombre, ultimo)
+    registro_log.error(
+        "%s descartada tras %d intentos: %s", documento.get("_id"), intentos, motivo
+    )
+    return None
+
+
+# ---------------------------------------------------------------------------
+# El bucle
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _Vigilancia:
+    """Fallos seguidos de apertura: la base de la espera progresiva al reabrir."""
+
+    fallos_seguidos: int = 0
+
+
+async def _consumir(
+    repo: ProtocoloRepoDeteccion,
+    supervisor: Supervisor,
+    desde_token: Mapping[str, Any] | None,
+    *,
+    ajustes: AjustesDeteccion,
+    nombre: str,
+    reloj: Reloj,
+    vigilancia: _Vigilancia,
+) -> None:
+    """Una apertura del change stream, consumida hasta que se cierre o falle."""
+    hay_token_guardado = desde_token is not None
+    flujo = repo.observar_transacciones(
+        desde_token=desde_token, espera_ms=ajustes.espera_cursor_ms
+    )
+    async with aclosing(flujo) as vueltas:
+        async for vuelta in vueltas:
+            if vuelta.documento is not None:
+                resultado = await _procesar_con_reintentos(
+                    repo,
+                    supervisor,
+                    vuelta.documento,
+                    ajustes=ajustes,
+                    nombre=nombre,
+                    reloj=reloj,
+                )
+                # El orden del contrato: la alerta (o el descarte) ya esta escrita.
+                # Recien ahora avanza el token.
+                transaccion_id = str(vuelta.documento.get("_id"))
+                await repo.guardar_token(nombre, vuelta.token, transaccion_id=transaccion_id)
+                hay_token_guardado = True
+                registro_log.debug("%s: %s", transaccion_id, resultado or "descartada")
+            elif not hay_token_guardado and vuelta.token is not None:
+                # Arranque sin token: se guarda el de la primera vuelta vacia, para que
+                # una caida antes de la primera transaccion no reinicie "desde ahora" y
+                # pierda lo que entre mientras D1 esta abajo. Es seguro: una vuelta
+                # vacia no tiene escrituras pendientes.
+                await repo.guardar_token(nombre, vuelta.token, transaccion_id=None)
+                hay_token_guardado = True
+            vigilancia.fallos_seguidos = 0
+            supervisor.latir(nombre)
+
+
+async def d1(
+    repo: ProtocoloRepoDeteccion,
+    supervisor: Supervisor,
+    *,
+    ajustes: AjustesDeteccion,
+    nombre: str = NOMBRE_D1,
+    reloj: Reloj = _ahora,
+) -> None:
+    """Bucle infinito de D1. Lo lanza el lifespan: `supervisor.lanzar(NOMBRE_D1, d1(...))`.
+
+    Recibe el repositorio y no la base: D1 no conoce el driver, y las pruebas le pasan
+    un doble. `asyncio.CancelledError` se deja pasar siempre; atraparla convierte el
+    apagado del lifespan en una tarea que no muere.
+    """
+    vigilancia = _Vigilancia()
+    while True:
+        try:
+            token = await repo.leer_token(nombre)
+            if token is None:
+                registro_log.info("%s: sin token guardado, arranca desde ahora", nombre)
+            try:
+                await _consumir(
+                    repo,
+                    supervisor,
+                    token,
+                    ajustes=ajustes,
+                    nombre=nombre,
+                    reloj=reloj,
+                    vigilancia=vigilancia,
+                )
+            except TokenDeReanudacionInvalido as fallo:
+                registro_log.warning(
+                    "%s: resincronizar. %s. Arranca desde ahora: las transacciones "
+                    "insertadas entre el token y este momento NO se evaluan",
+                    nombre,
+                    fallo,
+                )
+                supervisor.anotar_error(nombre, fallo)
+                await _consumir(
+                    repo,
+                    supervisor,
+                    None,
+                    ajustes=ajustes,
+                    nombre=nombre,
+                    reloj=reloj,
+                    vigilancia=vigilancia,
+                )
+            # El cursor murio sin error. Se reabre desde el ultimo token, con la espera
+            # minima para que un cursor que muere en cada apertura no gire en vacio.
+            registro_log.warning("%s: el change stream se cerro; se reabre", nombre)
+            await asyncio.sleep(ajustes.espera_inicial_segundos)
+        except asyncio.CancelledError:
+            raise
+        except Exception as fallo:  # noqa: BLE001 - D1 nunca tumba el proceso
+            espera = espera_progresiva(vigilancia.fallos_seguidos, ajustes)
+            vigilancia.fallos_seguidos += 1
+            supervisor.anotar_error(nombre, fallo)
+            registro_log.error(
+                "%s: el change stream fallo (%s); se reabre desde el ultimo token en %.1f s",
+                nombre,
+                fallo,
+                espera,
+            )
+            await asyncio.sleep(espera)
