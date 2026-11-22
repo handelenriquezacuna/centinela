@@ -472,6 +472,11 @@ recrearColeccion("transacciones", {
       pattern: "^[0-9]{4}-[0-9]{4}$",
       description: "Numero SINPE destino; puede ser una cuenta mula sin documento propio"
     },
+    sinpe_origen: {
+      bsonType: "string",
+      pattern: "^[0-9]{4}-[0-9]{4}$",
+      description: "Numero SINPE de la cuenta de origen (copia de cuentas.cuenta_sinpe), mismo espacio que cuenta_destino: es lo que deja a $graphLookup unir un eslabon con el siguiente (H-23). Opcional: los documentos anteriores lo reciben con la migracion 002"
+    },
     monto_crc: {
       bsonType: "long",
       minimum: 1,
@@ -521,10 +526,10 @@ recrearColeccion("transacciones", {
 // note el contraste; sus montos y destinos no estan dados en ninguna
 // fuente, son dato de relleno.
 db.transacciones.insertMany([
-  { _id: "TXN-001", cuenta_origen: "CTA-001", cuenta_destino: "6033-9001", monto_crc: NumberLong("280000"), moneda: "CRC", canal: "sinpe_movil", fecha: new Date("2026-09-24T22:47:00-06:00"), esquema_version: 1 },
-  { _id: "TXN-002", cuenta_origen: "CTA-002", cuenta_destino: "2233-4455", monto_crc: NumberLong("15000"), moneda: "CRC", canal: "sinpe_movil", fecha: new Date("2026-09-24T10:15:00-06:00"), esquema_version: 1 },
-  { _id: "TXN-003", cuenta_origen: "CTA-003", cuenta_destino: "3344-5566", monto_crc: NumberLong("22000"), moneda: "CRC", canal: "sinpe_movil", fecha: new Date("2026-09-24T11:40:00-06:00"), esquema_version: 1 },
-  { _id: "TXN-004", cuenta_origen: "CTA-004", cuenta_destino: "4455-6677", monto_crc: NumberLong("8000"), moneda: "CRC", canal: "sinpe_movil", fecha: new Date("2026-09-24T14:05:00-06:00"), esquema_version: 1 }
+  { _id: "TXN-001", cuenta_origen: "CTA-001", sinpe_origen: "8712-4455", cuenta_destino: "6033-9001", monto_crc: NumberLong("280000"), moneda: "CRC", canal: "sinpe_movil", fecha: new Date("2026-09-24T22:47:00-06:00"), esquema_version: 1 },
+  { _id: "TXN-002", cuenta_origen: "CTA-002", sinpe_origen: "6210-3387", cuenta_destino: "2233-4455", monto_crc: NumberLong("15000"), moneda: "CRC", canal: "sinpe_movil", fecha: new Date("2026-09-24T10:15:00-06:00"), esquema_version: 1 },
+  { _id: "TXN-003", cuenta_origen: "CTA-003", sinpe_origen: "5544-9021", cuenta_destino: "3344-5566", monto_crc: NumberLong("22000"), moneda: "CRC", canal: "sinpe_movil", fecha: new Date("2026-09-24T11:40:00-06:00"), esquema_version: 1 },
+  { _id: "TXN-004", cuenta_origen: "CTA-004", sinpe_origen: "3390-6612", cuenta_destino: "4455-6677", monto_crc: NumberLong("8000"), moneda: "CRC", canal: "sinpe_movil", fecha: new Date("2026-09-24T14:05:00-06:00"), esquema_version: 1 }
 ]);
 
 // ------------------------------------------------------------

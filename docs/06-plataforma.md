@@ -837,13 +837,23 @@ positivos; precision 71,8 %, exhaustividad 93,3 %. Por patron: `monto_atipico` 1
 `propuestas_lista_riesgo`: las cuentas que recibieron dinero y no estan vigentes en
 `listas_riesgo`. Solo propone; no escribe.
 
-No es un `$graphLookup` unico, y es a proposito: en `transacciones` el destino es un
-numero SINPE y el origen un `CTA-...`, dos espacios de valores distintos, y
-`$graphLookup` no puede saltar por `cuentas` en cada nivel. Ademas la condicion es por
-eslabon (la salida tiene que ser posterior a la llegada y dentro de la ventana), y
-`restrictSearchWithMatch` es fija; sin ella se mezclan episodios que reusan las mismas
-mulas. El recorrido es en anchura, una agregacion por salto (6 como maximo):
-`$match` con `$or` por cuenta de la frontera sobre `idx_transacciones_cuenta_origen_fecha`
-y `$lookup` a `cuentas` sobre `idx_cuentas_sinpe`; la prueba lo verifica con `explain`.
-Para volver a un `$graphLookup` literal haria falta el SINPE de origen dentro de
-`transacciones` (campo nuevo, validador, generador e indice), decision pendiente.
+Es un `$graphLookup` sobre `transacciones` (Unidad 10 del curso). Para eso cada
+transaccion lleva `sinpe_origen`, el SINPE de su cuenta de origen: el mismo espacio de
+valores que `cuenta_destino`. Lo escribe el generador siempre; el validador lo declara
+opcional y lo viejo lo recibe con `scripts/migraciones/002-transacciones-sinpe-origen.js`
+(`python tareas.py migrar` corre 001 y 002 en orden; reejecutable, la segunda corrida
+rellena cero). La agregacion parte de `cuentas` (`$match` por `idx_cuentas_sinpe`) y
+hace `$graphLookup` con `connectFromField: cuenta_destino`, `connectToField:
+sinpe_origen`, `maxDepth: 5` (6 saltos), `depthField` y `restrictSearchWithMatch` con la
+fecha acotada a `[desde, desde + 6 * ventana]`. Cada nivel va por el indice nuevo
+`idx_transacciones_sinpe_origen_fecha` (`{sinpe_origen: 1, fecha: 1}`, en
+`02-indices.js`). El `explain` de `$graphLookup` no nombra el indice de sus busquedas
+internas; la prueba lo comprueba con el contador de `$indexStats` (sube el del indice
+nuevo, no el de `cuenta_origen`).
+
+`restrictSearchWithMatch` es una condicion fija para todos los niveles, y la de una
+cadena es por eslabon: la salida tiene que ser posterior a la llegada y caer dentro de
+`ventana_minutos`. Las mismas mulas se reusan en varios episodios, asi que ese filtro se
+aplica despues, en Python (`filtrar_por_eslabon`, puro), sobre lo que devolvio el
+`$graphLookup`. Una prueba unitaria falla si el repositorio deja de mandar el
+`$graphLookup`.

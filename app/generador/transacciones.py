@@ -13,6 +13,7 @@ inserte en el orden en que ocurrio y el detector vea la historia como la veria e
 from __future__ import annotations
 
 import random
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -138,11 +139,18 @@ def generar_legitimas(
     return resultado
 
 
-def ordenar_y_numerar(borradores: list[TxnBorrador]) -> list[dict]:
+def ordenar_y_numerar(
+    borradores: list[TxnBorrador], sinpe_de: Mapping[str, str]
+) -> list[dict]:
     """Documentos de `transacciones`, en orden cronologico y con su TXN-xxxxxx.
 
     El orden total (fecha y luego los demas campos) hace que el resultado no dependa de
     como se construyo la lista: misma semilla, mismos identificadores.
+
+    `sinpe_de` es `cuenta_id -> cuenta_sinpe`: cada transaccion lleva el SINPE de su
+    origen (`sinpe_origen`), el mismo espacio que `cuenta_destino`, para que la red de
+    mulas (H-23) se recorra con un `$graphLookup`. Una cuenta de origen sin SINPE es un
+    error del generador y revienta aqui (KeyError), no en la base.
     """
     ordenados = sorted(
         borradores,
@@ -159,6 +167,7 @@ def ordenar_y_numerar(borradores: list[TxnBorrador]) -> list[dict]:
             {
                 "_id": f"TXN-{numero:0{ancho}d}",
                 "cuenta_origen": txn.cuenta_origen,
+                "sinpe_origen": sinpe_de[txn.cuenta_origen],
                 "cuenta_destino": txn.cuenta_destino,
                 "monto_crc": txn.monto_crc,
                 "moneda": "CRC",

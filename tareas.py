@@ -357,7 +357,8 @@ def tarea_datos_demo(args: argparse.Namespace) -> None:
 def tarea_migrar(args: argparse.Namespace) -> None:
     """Corre las migraciones de esquema de scripts/migraciones, en orden.
 
-    Hoy es una: `001-alertas-v1-a-v2.js` (H-26). Cada script imprime cuantos documentos
+    Por nombre, en orden: `001-alertas-v1-a-v2.js` (H-26) y
+    `002-transacciones-sinpe-origen.js` (H-23). Cada script imprime cuantos documentos
     migro y cuantos ya estaban migrados; una segunda corrida migra cero. Se corre desde
     el host con la URI completa, igual que la siembra, por las mismas razones (ver
     `mongosh`).
