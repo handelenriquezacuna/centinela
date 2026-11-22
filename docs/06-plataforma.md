@@ -40,15 +40,15 @@ Práctica 1 para que cada quien encuentre los suyos donde tiene su script:
 Esto es lo que más fácil se rompe, y romperlo no da error hasta mucho después.
 
 El modelo Pydantic garantiza que `monto_crc` es un entero (`strict=True`, así que
-`750000.0` es un error de validación y no una conversión silenciosa). **Lo que el
+`280000.0` es un error de validación y no una conversión silenciosa). **Lo que el
 modelo no puede garantizar es el tipo BSON con el que se guarda:**
 
 | Cómo se escribe | Qué queda en Mongo | Sirve |
 |---|---|---|
-| `750000` en mongosh | `double` | **No** |
-| `750000` como `int` de Python | `int32` (cabe en 32 bits) | **No** |
-| `NumberLong(750000)` en mongosh | `long` | Sí |
-| `bson.Int64(750000)` en Python | `long` | Sí |
+| `280000` en mongosh | `double` | **No** |
+| `280000` como `int` de Python | `int32` (cabe en 32 bits) | **No** |
+| `NumberLong(280000)` en mongosh | `long` | Sí |
+| `bson.Int64(280000)` en Python | `long` | Sí |
 
 Los validadores declaran `bsonType: "long"`, así que un `int32` **se rechaza**. La
 conversión la hace `app/repos/carga_demo.py` al escribir: todo campo que termine en
@@ -683,7 +683,7 @@ curl -X PATCH localhost:8000/api/v1/reglas/REG-001 \
 
 `pruebas/dobles/datos_demo.py`. Pequeño, reproducible y **sin un solo dato inventado**:
 todo sale de `CONTRATO-IDS.md` y del caso de `docs/02-casos-de-uso.md` — María Rodríguez,
-cuenta `8712-4455`, `TXN-001` de ₡750.000 a las 22:47 hacia la mula `6033-9001`,
+cuenta `8712-4455`, `TXN-001` de ₡280.000 a las 22:47 hacia la mula `6033-9001`,
 `ALR-001` con puntaje 75 resuelta por José Solís, la cadena `RSK-001..004`.
 
 Reproducible sin semilla aleatoria porque son literales: dos corridas dejan la base

@@ -101,7 +101,7 @@ async def prueba_la_alerta_es_la_del_caso_documentado() -> None:
     assert alerta.estado == EstadoAlerta.NUEVA
     assert alerta.fecha_creacion == AHORA
     assert (alerta.cuenta_origen, alerta.cuenta_destino) == ("8712-4455", "6033-9001")
-    assert alerta.monto_crc == 750_000
+    assert alerta.monto_crc == 280_000
     assert alerta.cliente_nombre == "Maria Rodriguez Vargas"
     creacion = alerta.historial[0]
     assert creacion.accion == EstadoAlerta.NUEVA

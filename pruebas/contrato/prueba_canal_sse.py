@@ -50,7 +50,7 @@ ALERTA_DEMO = {
     "estado": "nueva",
     "cuenta_origen": "8712-4455",
     "cuenta_destino": "6033-9001",
-    "monto_crc": 750_000,
+    "monto_crc": 280_000,
     "moneda": "CRC",
     "cliente_nombre": "Maria Rodriguez",
     "fecha_creacion": datetime(2026, 9, 25, 4, 47, tzinfo=UTC),
@@ -161,7 +161,7 @@ async def prueba_el_cuerpo_es_html_y_no_json() -> None:
     assert '\\"' not in cable, "el HTML llega verbatim, no serializado como JSON"
     assert "data: \"<div" not in cable, "el cuerpo no puede venir entrecomillado"
     assert f"event: {EVENTO_ALERTA}" in cable
-    assert "CRITICA" in cable and "750 000" in cable and "Maria Rodriguez" in cable
+    assert "CRITICA" in cable and "280 000" in cable and "Maria Rodriguez" in cable
 
 
 def prueba_el_canal_no_usa_la_variante_json_del_evento() -> None:

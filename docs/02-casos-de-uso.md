@@ -11,7 +11,7 @@ Todos los ejemplos usan la misma víctima, para que se lea como una sola histori
 |---|---|
 | Cliente | María Rodríguez Vargas |
 | Cuenta SINPE | `8712-4455` |
-| Perfil (90 días) | 47 transferencias · promedio ₡45.200 · máximo ₡180.000 |
+| Perfil (90 días) | 47 transferencias · promedio ₡25.000 · máximo ₡100.000 |
 | Horario habitual | 07:00 – 19:00, días hábiles |
 | Destinos frecuentes | 5 números, todos con 3+ transferencias previas |
 
@@ -66,12 +66,12 @@ Todos los ejemplos usan la misma víctima, para que se lea como una sola histori
 
 **Ejemplo**
 
-> **22:47** — María transfiere **₡750.000** a `6033-9001`, un número que nunca
+> **22:47** — María transfiere **₡280.000** a `6033-9001`, un número que nunca
 > había usado.
 >
 > | Regla | Dispara | Peso |
 > |---|---|---|
-> | R-01 Monto sobre 10× el promedio | si 16,6× | 35 |
+> | R-01 Monto sobre 10× el promedio | si 11,2× | 35 |
 > | R-03 Destino nunca visto | si | 25 |
 > | R-05 Fuera del horario habitual | si 22:47 | 15 |
 > | R-07 Destino en lista de riesgo | no | 0 |
@@ -132,7 +132,7 @@ Todos los ejemplos usan la misma víctima, para que se lea como una sola histori
 
 > Desde `6033-9001` el sistema encuentra:
 >
-> `6033-9001` → `7104-2288` (₡740.000, +4 min) → `8455-1177` (₡500.000, +9 min) → `6001-3344` (₡240.000, +11 min)
+> `6033-9001` → `7104-2288` (₡276.000, +4 min) → `8455-1177` (₡185.000, +9 min) → `6001-3344` (₡90.000, +11 min)
 >
 > Tres saltos en 24 minutos, con montos decrecientes: el patrón clásico de
 > fragmentación. Las tres cuentas se proponen para la lista de riesgo.

@@ -2,7 +2,7 @@
 
 Todo lo que hay aqui sale de `scripts/practica1/CONTRATO-IDS.md` y del caso ya
 documentado en `docs/02-casos-de-uso.md`: Maria Rodriguez, cuenta 8712-4455, TXN-001
-de 750.000 colones a las 22:47 hacia la mula 6033-9001, alerta ALR-001 con puntaje 75
+de 280.000 colones a las 22:47 hacia la mula 6033-9001, alerta ALR-001 con puntaje 75
 resuelta por el agente Jose Solis, y la cadena de mulas RSK-001..004 de UC-04.
 
 Reproducible sin semilla aleatoria: son literales. Dos corridas de
@@ -96,14 +96,14 @@ CUENTAS = [
 ]
 
 # Los valores de CLI-001 son los ya documentados en docs/02: 47 transferencias,
-# promedio 45.200, maximo 180.000, horario 07:00-19:00. No se agrega `desviacion_crc`
+# promedio 25.000, maximo 100.000, horario 07:00-19:00. No se agrega `desviacion_crc`
 # porque el validador de `perfiles_comportamiento` todavia no la declara, y el
 # documento en Mongo manda.
 PERFILES = [
     PerfilComportamiento(
         _id="CLI-001",
-        promedio_crc=45_200,
-        maximo_crc=180_000,
+        promedio_crc=25_000,
+        maximo_crc=100_000,
         num_transferencias=47,
         horario_habitual=HorarioHabitual(inicio="07:00", fin="19:00"),
         destinos_frecuentes=["6210-3387", "5544-9021", "3390-6612"],
@@ -154,7 +154,7 @@ TRANSACCIONES = [
         _id="TXN-001",
         cuenta_origen="CTA-001",
         cuenta_destino="6033-9001",
-        monto_crc=750_000,
+        monto_crc=280_000,
         canal=Canal.SINPE_MOVIL,
         fecha=_local(22, 47),
     ),
@@ -215,7 +215,7 @@ ALERTAS = [
         # agente lee en el panel: CTA-001 es 8712-4455 (la cuenta de Maria).
         cuenta_origen="8712-4455",
         cuenta_destino="6033-9001",
-        monto_crc=750_000,
+        monto_crc=280_000,
         cliente_nombre="Maria Rodriguez Vargas",
         historial=[
             # La primera entrada es la creacion: la escribe el motor, sin agente.

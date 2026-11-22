@@ -180,7 +180,7 @@ const reglas = [
     codigo: "R-11",
     descripcion: "El destino reenvia casi todo lo recibido en pocos minutos",
     tipo: "red_mulas",
-    // La cadena de mulas de UC-04: 6033-9001 recibe 750.000 y reenvia 740.000 (98,7 %)
+    // La cadena de mulas de UC-04: 6033-9001 recibe 280.000 y reenvia 276.000 (98,6 %)
     // cuatro minutos despues. Umbral = proporcion minima reenviada.
     umbral: 0.8,
     // En cuanto tiempo tiene que ocurrir ese reenvio y cuantos saltos se piden para

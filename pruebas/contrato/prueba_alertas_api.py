@@ -90,7 +90,7 @@ async def prueba_la_alerta_sale_con_el_contrato_de_documento(
     # Campos de despliegue: la fila del panel se pinta sin un solo $lookup.
     assert alerta["cuenta_origen"] == "8712-4455"
     assert alerta["cuenta_destino"] == "6033-9001"
-    assert alerta["monto_crc"] == 750_000
+    assert alerta["monto_crc"] == 280_000
     assert alerta["moneda"] == "CRC"
     assert alerta["cliente_nombre"] == "Maria Rodriguez Vargas"
 

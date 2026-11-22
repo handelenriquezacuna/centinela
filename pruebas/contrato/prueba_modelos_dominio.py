@@ -359,7 +359,7 @@ EMBEBIDA = {
     "codigo": "R-01",
     "version": 1,
     "peso": 35,
-    "explicacion": "monto 16,6 veces el promedio; umbral 10 veces",
+    "explicacion": "monto 11,2 veces el promedio; umbral 10 veces",
 }
 POLITICA = {"politica_id": "POL-001", "version": 1}
 

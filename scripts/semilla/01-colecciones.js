@@ -51,7 +51,7 @@
 //
 // Datos de ejemplo: el caso de uso ya documentado en docs/02-casos-de-uso.md
 // y scripts/practica1/CONTRATO-IDS.md (Maria Rodriguez, cuenta 8712-4455,
-// TXN-001 de 750000 a las 22:47, agente Jose Solis). No se inventan clientes
+// TXN-001 de 280000 a las 22:47, agente Jose Solis). No se inventan clientes
 // ni montos nuevos; donde el contrato no da un valor (p.ej. destinos
 // frecuentes del perfil, fechas de alta de los otros 3 clientes) se marca
 // con el comentario "dato de relleno" y un valor plausible.
@@ -262,7 +262,7 @@ recrearColeccion("perfiles_comportamiento", {
 });
 
 // Valores reales documentados para CLI-001 (docs/02-casos-de-uso.md y
-// CONTRATO-IDS.md): 47 transferencias, promedio 45200, maximo 180000,
+// CONTRATO-IDS.md): 47 transferencias, promedio 25000, maximo 100000,
 // horario 07:00-19:00. destinos_frecuentes no tiene numeros dados en
 // ninguna fuente (solo se dice "5 numeros, todos con 3+ transferencias
 // previas"): son dato de relleno, 3 numeros para no inventar de mas.
@@ -271,8 +271,8 @@ recrearColeccion("perfiles_comportamiento", {
 db.perfiles_comportamiento.insertMany([
   {
     _id: "CLI-001",
-    promedio_crc: NumberLong("45200"),
-    maximo_crc: NumberLong("180000"),
+    promedio_crc: NumberLong("25000"),
+    maximo_crc: NumberLong("100000"),
     num_transferencias: 47,
     horario_habitual: { inicio: "07:00", fin: "19:00" },
     destinos_frecuentes: ["2233-4455", "3344-5566", "4455-6677"],
@@ -521,7 +521,7 @@ recrearColeccion("transacciones", {
 // note el contraste; sus montos y destinos no estan dados en ninguna
 // fuente, son dato de relleno.
 db.transacciones.insertMany([
-  { _id: "TXN-001", cuenta_origen: "CTA-001", cuenta_destino: "6033-9001", monto_crc: NumberLong("750000"), moneda: "CRC", canal: "sinpe_movil", fecha: new Date("2026-09-24T22:47:00-06:00"), esquema_version: 1 },
+  { _id: "TXN-001", cuenta_origen: "CTA-001", cuenta_destino: "6033-9001", monto_crc: NumberLong("280000"), moneda: "CRC", canal: "sinpe_movil", fecha: new Date("2026-09-24T22:47:00-06:00"), esquema_version: 1 },
   { _id: "TXN-002", cuenta_origen: "CTA-002", cuenta_destino: "2233-4455", monto_crc: NumberLong("15000"), moneda: "CRC", canal: "sinpe_movil", fecha: new Date("2026-09-24T10:15:00-06:00"), esquema_version: 1 },
   { _id: "TXN-003", cuenta_origen: "CTA-003", cuenta_destino: "3344-5566", monto_crc: NumberLong("22000"), moneda: "CRC", canal: "sinpe_movil", fecha: new Date("2026-09-24T11:40:00-06:00"), esquema_version: 1 },
   { _id: "TXN-004", cuenta_origen: "CTA-004", cuenta_destino: "4455-6677", monto_crc: NumberLong("8000"), moneda: "CRC", canal: "sinpe_movil", fecha: new Date("2026-09-24T14:05:00-06:00"), esquema_version: 1 }
@@ -768,7 +768,7 @@ db.alertas.insertMany([
     transaccion_id: "TXN-001",
     cuenta_origen: "8712-4455",
     cuenta_destino: "6033-9001",
-    monto_crc: NumberLong("750000"),
+    monto_crc: NumberLong("280000"),
     moneda: "CRC",
     cliente_nombre: "María Rodríguez Vargas",
     reglas_disparadas: ["REG-001", "REG-002", "REG-003"],

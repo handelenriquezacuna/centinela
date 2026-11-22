@@ -17,7 +17,7 @@ async def prueba_get_panel_con_la_base_sembrada(cliente_con_mongo: AsyncClient) 
     ids = re.findall(r'id="alerta-(ALR-\d+)"', respuesta.text)
     assert sorted(ids) == ["ALR-001", "ALR-002", "ALR-003"]
     assert ids[0] == "ALR-001"  # la critica va primero
-    assert "750 000 CRC" in respuesta.text
+    assert "280 000 CRC" in respuesta.text
 
 
 @pytest.mark.asyncio
