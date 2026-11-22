@@ -165,6 +165,18 @@ class AjustesDeteccion(BaseModel):
         return self
 
 
+class AjustesIndicadores(BaseModel):
+    """Disparador D3 (H-22): cada cuanto se recalcula el indicador del dia actual.
+
+    Tecnico, no de negocio. D3 late una vez por recalculo, asi que el intervalo tiene
+    que ser menor que `supervision.tolerancia_retraso_segundos` (lo exige `Ajustes`).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    intervalo_segundos: float = Field(default=10.0, gt=0)
+
+
 class AjustesRegistro(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -271,6 +283,7 @@ class Ajustes(BaseSettings):
     supervision: AjustesSupervision = AjustesSupervision()
     canal: AjustesCanal = AjustesCanal()
     deteccion: AjustesDeteccion = AjustesDeteccion()
+    indicadores: AjustesIndicadores = AjustesIndicadores()
     registro: AjustesRegistro = AjustesRegistro()
     generador: AjustesGenerador = Field(default_factory=AjustesGenerador)
 
@@ -282,6 +295,16 @@ class Ajustes(BaseSettings):
         if espera >= self.supervision.tolerancia_retraso_segundos:
             raise ValueError(
                 "deteccion.espera_cursor_ms tiene que ser menor que "
+                "supervision.tolerancia_retraso_segundos"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def d3_late_antes_de_la_tolerancia(self) -> Ajustes:
+        """D3 late una vez por recalculo (mismo razonamiento que D1)."""
+        if self.indicadores.intervalo_segundos >= self.supervision.tolerancia_retraso_segundos:
+            raise ValueError(
+                "indicadores.intervalo_segundos tiene que ser menor que "
                 "supervision.tolerancia_retraso_segundos"
             )
         return self

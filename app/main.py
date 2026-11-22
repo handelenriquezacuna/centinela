@@ -35,9 +35,11 @@ from app.api.rutas import estado as rutas_estado
 from app.api.rutas import paginas as rutas_paginas
 from app.api.rutas import salud as rutas_salud
 from app.deteccion.d1 import NOMBRE_D1, d1
+from app.deteccion.d3 import NOMBRE_D3, d3
 from app.nucleo.config import Ajustes, obtener_ajustes
 from app.nucleo.db import crear_cliente, obtener_base
 from app.repos.deteccion import RepoDeteccion
+from app.repos.indicadores import RepoIndicadores
 from app.repos.salud import exigir_conexion
 from app.supervision import NOMBRE_LATIDO, Supervisor, latido
 
@@ -106,6 +108,8 @@ async def ciclo_vida(aplicacion: FastAPI) -> AsyncIterator[None]:
     )
     # H-09: transaccion -> alerta. Recibe el repositorio, no la base (ver app/deteccion/d1.py).
     supervisor.lanzar(NOMBRE_D1, d1(RepoDeteccion(base), supervisor, ajustes=ajustes.deteccion))
+    # H-22: recalcula indicadores_diarios del dia actual cada N segundos.
+    supervisor.lanzar(NOMBRE_D3, d3(RepoIndicadores(base), supervisor, ajustes=ajustes.indicadores))
 
     registro.info(
         "Centinela %s arriba | entorno=%s base=%s",
