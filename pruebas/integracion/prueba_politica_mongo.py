@@ -27,12 +27,12 @@ from app.modelos import COLECCION_POLITICA
 from app.repos.deteccion import RepoDeteccion
 from app.repos.esquemas import obtener_validadores, recrear_con_validador
 from app.repos.reglas import COLECCION_REGLAS, RepoReglas
-from pruebas.conftest import saltar_o_fallar
+from pruebas.conftest import BASE_SEMILLA, saltar_o_fallar
 from pruebas.dobles.catalogo_reglas import cuerpo_simulacion_txn_001
 
 pytestmark = pytest.mark.mongo
 
-BASE_DE_TRABAJO = "antifraude"
+BASE_DE_TRABAJO = BASE_SEMILLA  # semilla propia de las pruebas, no `antifraude`
 RUTA = "/api/v1/politica"
 
 CORTES_NUEVOS = [

@@ -25,12 +25,12 @@ from pymongo.errors import WriteError
 
 from app.repos.carga_demo import a_entero_64
 from app.repos.esquemas import obtener_validadores, recrear_con_validador
-from pruebas.conftest import saltar_o_fallar
+from pruebas.conftest import BASE_SEMILLA, saltar_o_fallar
 from pruebas.dobles.datos_demo import DATOS_DEMO
 
 pytestmark = pytest.mark.mongo
 
-BASE_DE_TRABAJO = "antifraude"
+BASE_DE_TRABAJO = BASE_SEMILLA  # semilla propia de las pruebas, no `antifraude`
 
 
 async def _preparar(base_mongo: Any, coleccion: str) -> Any:

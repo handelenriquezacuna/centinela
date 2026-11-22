@@ -39,6 +39,48 @@ RUTA_RAIZ = Path(__file__).resolve().parents[1]
 # Base aparte para las pruebas: nunca se toca la base de trabajo del equipo.
 BASE_DE_PRUEBAS = "antifraude_pruebas"
 
+# Semilla de referencia: 01-colecciones.js y 03-catalogos.js cargados en una base propia
+# de las pruebas, no en `antifraude`. Las pruebas que necesitan los validadores reales o
+# el catalogo leen de aqui, de modo que su resultado no depende de lo que el usuario
+# haya hecho en la base de trabajo (migrar, generar, editar reglas).
+BASE_SEMILLA = "antifraude_pruebas_semilla"
+_SEMILLA_LISTA: set[str] = set()
+
+_JS_SEMILLA = """
+const destino = db.getMongo().getDB("%(base)s");
+destino.dropDatabase();
+db.getSiblingDB = function () { return destino; };
+print = function () {};
+load("%(semilla)s/01-colecciones.js");
+var BASE_CENTINELA = "%(base)s";
+load("%(semilla)s/03-catalogos.js");
+"""
+
+
+async def _asegurar_semilla(uri: str) -> None:
+    """Carga la semilla real (01 y 03) en `BASE_SEMILLA`, una vez por proceso y URI."""
+    if uri in _SEMILLA_LISTA:
+        return
+    import asyncio
+    import shutil
+    import subprocess
+
+    mongosh = shutil.which("mongosh")
+    if mongosh is None:
+        saltar_o_fallar("mongosh no esta en el PATH; hace falta para sembrar la base de pruebas")
+    js = _JS_SEMILLA % {"base": BASE_SEMILLA, "semilla": str(RUTA_RAIZ / "scripts" / "semilla")}
+    resultado = await asyncio.to_thread(
+        subprocess.run,
+        [mongosh, uri, "--quiet", "--eval", js],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    if resultado.returncode != 0:
+        saltar_o_fallar(f"no se pudo sembrar {BASE_SEMILLA}: {resultado.stdout}{resultado.stderr}")
+    _SEMILLA_LISTA.add(uri)
+
 
 @pytest.fixture(autouse=True)
 def limpiar_cache_de_ajustes() -> Iterator[None]:
@@ -152,6 +194,8 @@ async def base_mongo(ajustes: Ajustes) -> AsyncIterator[Any]:
 
     if not await _mongo_responde(ajustes):
         saltar_o_fallar(MENSAJE_SIN_MONGO)
+
+    await _asegurar_semilla(ajustes.mongo.uri)
 
     async with ciclo_cliente(ajustes) as cliente_mongo:
         yield cliente_mongo[ajustes.mongo.base]

@@ -494,6 +494,8 @@ por SHA. La auditoría de dependencias (`pip-audit`) no es compuerta todavía: h
 vulnerabilidades en `certifi`, `dnspython` y `pymongo`, que se cierran subiendo versiones
 en el lock.
 
+Ninguna prueba `mongo` lee ni escribe la base de trabajo `antifraude`: usan `antifraude_pruebas*`, y lo que necesitan de la semilla (validadores, catalogo, ALR-001 en v1) lo carga `conftest.py` en `antifraude_pruebas_semilla` desde `scripts/semilla/`. Resultado igual sobre una base recien sembrada, migrada o con datos del generador (T-34).
+
 ---
 
 ## 6. Contrato HTTP

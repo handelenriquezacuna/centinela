@@ -29,11 +29,12 @@ from app.api.rutas.reglas import _exigir_tipo_y_parametros
 from app.modelos import COLECCION_POLITICA
 from app.repos.esquemas import obtener_validadores, recrear_con_validador
 from app.repos.reglas import COLECCION_REGLAS, RepoReglas
+from pruebas.conftest import BASE_SEMILLA
 from pruebas.dobles.catalogo_reglas import cuerpo_simulacion_txn_001
 
 pytestmark = pytest.mark.mongo
 
-BASE_DE_TRABAJO = "antifraude"
+BASE_DE_TRABAJO = BASE_SEMILLA  # semilla propia de las pruebas, no `antifraude`
 RUTA = "/api/v1/reglas"
 
 
