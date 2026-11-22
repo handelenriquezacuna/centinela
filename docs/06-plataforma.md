@@ -784,3 +784,28 @@ La fila del panel es la misma plantilla (`sse/fila_alerta.html`) para la carga i
 para cada evento SSE. El formulario de reglas reutiliza el handler de `PATCH
 /api/v1/reglas/{id}`. Sin autenticacion hasta H-25: la cabecera lo avisa ("modo local").
 
+
+## Politica por API y validadores sin re-sembrar (T-20, T-24, T-28)
+
+**Politica (D-16).** `GET /api/v1/politica` devuelve la politica vigente con su historia;
+`PATCH /api/v1/politica` edita `umbral_alerta`, `puntaje_maximo` y `cortes_severidad` con el
+mismo patron que una regla (H-16): `version` + 1, la anterior completa en
+`versiones_anteriores` (con `reemplazada_en`), `version_esperada` y 409, y una sola escritura
+filtrada por la version leida. Los cortes se validan contra el resultado final: contiguos, sin
+huecos ni solapes, de `umbral_alerta` a `puntaje_maximo`, con severidades validas; si no, 422
+con el tramo que falla. D1 relee la politica en cada evento (`leer_politica_vigente`), asi
+que el cambio rige en la siguiente evaluacion. Requiere que el validador de
+`politica_deteccion` declare `versiones_anteriores` (la prueba
+`prueba_el_validador_real_declara_la_historia_de_la_politica` lo vigila).
+
+**Validadores.** `python tareas.py validadores` corre
+`scripts/semilla/actualizar-validadores.js`: carga `01-colecciones.js` contra
+`antifraude_validadores_tmp`, copia validator, validationLevel y validationAction a
+`antifraude` con `collMod` donde difieren (crea la coleccion si falta), y borra la temporal.
+No toca documentos. Es la salida cuando un validador viejo produce el codigo 121: la API
+responde 409 `conflicto` con esa sugerencia en lugar de un 500. Re-sembrar sigue existiendo,
+pero borra todo.
+
+**Generador.** `python tareas.py generar [banderas]` corre `uv run python -m app.generador`
+pasando las banderas tal cual. `Cuenta.entidad` y `Transaccion.simulacion` son opcionales
+en los modelos (los escribe el generador; el motor nunca lee `simulacion`).

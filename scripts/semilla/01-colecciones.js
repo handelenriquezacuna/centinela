@@ -377,7 +377,7 @@ recrearColeccion("reglas_deteccion", {
           parametros: { bsonType: "object" },
           peso: { bsonType: "int", minimum: 0 },
           activa: { bsonType: "bool" },
-          version: { bsonType: "int", minimum: 1 },
+          version: { bsonType: ["int", "long"], minimum: 1 },
           esquema_version: { bsonType: "int", minimum: 1 },
           reemplazada_en: {
             bsonType: "date",
@@ -1047,6 +1047,18 @@ asegurarValidador("politica_deteccion", {
     vigente_desde: {
       bsonType: "date",
       description: "ISODate UTC desde cuando rige esta version de la politica"
+    },
+    versiones_anteriores: {
+      bsonType: "array",
+      description: "Versiones de la politica que ya no rigen, de la mas vieja a la mas reciente (T-20). Opcional: una politica nunca editada no lo tiene",
+      items: {
+        bsonType: "object",
+        required: ["version", "umbral_alerta", "puntaje_maximo", "cortes_severidad", "reemplazada_en"],
+        properties: {
+          version: { bsonType: ["int", "long"], minimum: 1 },
+          reemplazada_en: { bsonType: "date" }
+        }
+      }
     },
     esquema_version: {
       bsonType: "int",
