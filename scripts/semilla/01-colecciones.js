@@ -296,6 +296,10 @@ db.perfiles_comportamiento.insertMany([
 //     de oro de que las reglas viven en datos. Es un objeto generico por
 //     tipo, no un campo por familia de regla, para no acoplar el esquema a
 //     cuantos tipos de regla existan hoy.
+//   - versiones_anteriores (H-16): editar una regla desde la API sube
+//     `version` y guarda la version anterior completa aqui, en el mismo
+//     documento, con `reemplazada_en`. Sin coleccion nueva (el contrato es
+//     de 13) porque las reglas se editan poco y se leen con su historia.
 // ------------------------------------------------------------
 recrearColeccion("reglas_deteccion", {
   bsonType: "object",
@@ -350,6 +354,30 @@ recrearColeccion("reglas_deteccion", {
       bsonType: "int",
       minimum: 1,
       description: "Version del esquema del documento"
+    },
+    versiones_anteriores: {
+      bsonType: "array",
+      description: "Versiones que ya no rigen, de la mas vieja a la mas reciente (H-16). Opcional: una regla nunca editada no lo tiene",
+      items: {
+        bsonType: "object",
+        required: ["codigo", "descripcion", "tipo", "umbral", "peso", "activa", "version", "esquema_version", "reemplazada_en"],
+        additionalProperties: false,
+        properties: {
+          codigo: { bsonType: "string", pattern: "^R-[0-9]{2}$" },
+          descripcion: { bsonType: "string", minLength: 1 },
+          tipo: { bsonType: "string", minLength: 1 },
+          umbral: { bsonType: ["int", "long", "double"], minimum: 0 },
+          parametros: { bsonType: "object" },
+          peso: { bsonType: "int", minimum: 0 },
+          activa: { bsonType: "bool" },
+          version: { bsonType: "int", minimum: 1 },
+          esquema_version: { bsonType: "int", minimum: 1 },
+          reemplazada_en: {
+            bsonType: "date",
+            description: "Cuando esta version dejo de regir (ISODate UTC)"
+          }
+        }
+      }
     }
   }
 });
