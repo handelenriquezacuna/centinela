@@ -134,6 +134,19 @@ class ErrorDeTarea(BaseModel):
     fecha: datetime
 
 
+class LatenciaMs(BaseModel):
+    """Latencia de deteccion de las ultimas mediciones (ventana movil), en milisegundos.
+
+    Desde que la transaccion quedo insertada (hora del change stream) hasta que D1
+    termino de escribir la alerta. Con `n == 0` los demas campos son nulos.
+    """
+
+    n: int = Field(ge=0, description="Mediciones en la ventana (como maximo 500)")
+    p50: float | None = None
+    p95: float | None = None
+    max: float | None = None
+
+
 class TareaSupervisada(BaseModel):
     """Una tarea de fondo tal como la publica `/estado`.
 
@@ -166,6 +179,10 @@ class TareaSupervisada(BaseModel):
             "Condicion vigente que degrada la tarea aunque siga viva; por ejemplo D1 "
             "sin reglas activas (T-18)"
         ),
+    )
+    latencia_ms: LatenciaMs | None = Field(
+        default=None,
+        description="Solo D1: latencia de deteccion medida (H-09); nulo en las demas tareas",
     )
 
 
@@ -229,6 +246,16 @@ class EstadoFuncional(BaseModel):
             ),
             historia=fila.historia,
             advertencia=fila.advertencia,
+            latencia_ms=(
+                LatenciaMs(
+                    n=fila.latencia.n,
+                    p50=fila.latencia.p50,
+                    p95=fila.latencia.p95,
+                    max=fila.latencia.max,
+                )
+                if fila.latencia is not None
+                else None
+            ),
         )
 
 

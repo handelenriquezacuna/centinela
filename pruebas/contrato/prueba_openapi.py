@@ -128,6 +128,7 @@ def prueba_el_estado_publica_las_tareas_con_su_vocabulario() -> None:
         "ultimo_error",
         "historia",
         "advertencia",
+        "latencia_ms",
     }
 
 

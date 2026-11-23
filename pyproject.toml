@@ -38,6 +38,7 @@ asyncio_mode = "strict"
 markers = [
     "mongo: necesita el replica set rsfraude arriba; se salta si no responde",
     "volumen: prueba de carga larga (100.000 documentos); se corre aparte",
+    "resiliencia: failover con un replica set de tres nodos en Docker; solo corre si se pide con -m resiliencia (python tareas.py resiliencia)",
 ]
 
 [build-system]

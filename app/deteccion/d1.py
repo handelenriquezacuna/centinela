@@ -24,6 +24,13 @@ El contrato, y por que cada pieza:
   sigue: un evento envenenado no puede detener la deteccion de todos los demas. Si ni
   el descarte se puede escribir (la base no esta), el error sube, el token no avanza y
   D1 reabre desde el ultimo token guardado con la misma espera progresiva.
+- **Latencia medida.** Desde que Mongo inserto la transaccion (la hora del evento del
+  change stream, `wallTime`; NO `Transaccion.fecha`, que es la hora del negocio y puede
+  ser historica) hasta que la alerta quedo escrita. Se guarda una ventana movil de las
+  ultimas 500 en el supervisor y `/estado` publica p50, p95, max y n. Solo se miden
+  las alertas nuevas: un reproceso o una transaccion sin alerta no tienen una escritura
+  que medir. Los dos relojes son el del servidor de Mongo y el de este proceso; en
+  produccion se asume sincronizados (NTP) y un desfase negativo se registra como 0.
 - **Latido por vuelta**, con o sin evento. `/estado` mide el retraso desde el ultimo
   latido: un D1 sano sin trafico late cada `espera_cursor_ms`; uno atascado deja de
   latir y pasa a `retrasada`.
@@ -263,6 +270,13 @@ async def procesar_transaccion(
     return Resultado.YA_PROCESADA
 
 
+def latencia_ms(insertada_en: datetime | None, escrita_en: datetime) -> float | None:
+    """Milisegundos entre la insercion y la escritura de la alerta, o `None` sin hora."""
+    if insertada_en is None:
+        return None
+    return (escrita_en - insertada_en).total_seconds() * 1000
+
+
 async def _procesar_con_reintentos(
     repo: ProtocoloRepoDeteccion,
     supervisor: Supervisor,
@@ -358,6 +372,10 @@ async def _consumir(
                 # El orden del contrato: la alerta (o el descarte) ya esta escrita.
                 # Recien ahora avanza el token.
                 transaccion_id = str(vuelta.documento.get("_id"))
+                if resultado is Resultado.ALERTA_CREADA:
+                    medida = latencia_ms(vuelta.insertada_en, reloj())
+                    if medida is not None:
+                        supervisor.registrar_latencia(nombre, medida)
                 await repo.guardar_token(nombre, vuelta.token, transaccion_id=transaccion_id)
                 hay_token_guardado = True
                 registro_log.debug("%s: %s", transaccion_id, resultado or "descartada")
@@ -387,6 +405,7 @@ async def d1(
     apagado del lifespan en una tarea que no muere.
     """
     vigilancia = _Vigilancia()
+    supervisor.habilitar_latencia(nombre)
     while True:
         try:
             # T-18: el catalogo se mira tambien al abrir, para que `/estado` diga

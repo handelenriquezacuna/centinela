@@ -87,6 +87,23 @@ async def _asegurar_semilla(uri: str) -> None:
     _SEMILLA_LISTA.add(uri)
 
 
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Las pruebas `resiliencia` solo corren si se piden por nombre (`-m resiliencia`).
+
+    Levantan contenedores de Docker y tardan minutos: no pueden colarse en `pytest`, ni en
+    `-m mongo`, ni en `-m "not mongo"`. Se DESELECCIONAN y no se saltan: un salto cuenta
+    como prueba omitida y la compuerta de integracion exige cero saltos.
+    """
+    expresion = config.getoption("-m") or ""
+    if "resiliencia" in expresion and "not resiliencia" not in expresion:
+        return
+    elegidas = [item for item in items if "resiliencia" not in item.keywords]
+    deseleccionadas = [item for item in items if "resiliencia" in item.keywords]
+    if deseleccionadas:
+        config.hook.pytest_deselected(items=deseleccionadas)
+        items[:] = elegidas
+
+
 @pytest.fixture(autouse=True)
 def limpiar_cache_de_ajustes() -> Iterator[None]:
     """`obtener_ajustes` esta memorizado; entre pruebas hay que soltar la memoria.

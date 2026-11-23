@@ -58,10 +58,11 @@
 # fijada en el paso y correr el mismo comando en local antes de empujar.
 #
 # Lo que a proposito NO esta aqui: pruebas de rendimiento y de resiliencia. La
-# resiliencia (que el replica set elija otro primario si el actual cae) necesita
-# como minimo tres nodos con eleccion real; con un solo nodo no hay a quien elegir.
-# Esas pruebas, si llegan a escribirse, corren contra el cluster de tres nodos de
-# infra/docker-compose.yml y no contra este de un solo nodo de CI.
+# resiliencia (que el replica set elija otro primario si el actual cae, y que D1 no
+# duplique ni pierda alertas) necesita tres nodos con eleccion real y Docker con puertos
+# fijos; con un solo nodo no hay a quien elegir. Vive en pruebas/resiliencia/, levanta sus
+# propios contenedores, y es una compuerta manual antes de cada hito:
+# `python tareas.py resiliencia`. Razones en docs/06-plataforma.md.
 name: CI
 
 on:
