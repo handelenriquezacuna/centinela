@@ -75,10 +75,54 @@ funciona para leer, pero rompe los Change Streams cuando cambia el primario:
 mongodb://localhost:27018,localhost:27019,localhost:27020/antifraude?replicaSet=rsfraude
 ```
 
+## Autenticacion y usuarios (H-25)
+
+La base exige usuario y contrasena. Los tres nodos arrancan con un `keyFile` (lo agrega
+`infra/mongo-entrada.sh`) y los puertos solo se publican en `127.0.0.1`.
+
+| Usuario | Rol | Para que |
+|---|---|---|
+| `centinela_app` | `centinela_app_rol`: find, insert, update, remove, changeStream, indexStats, listCollections, listIndexes sobre `antifraude` | La aplicacion. Cubre transacciones y `$merge`. No crea indices ni borra colecciones o bases, ni toca usuarios |
+| `centinela_analista` | `read` sobre `antifraude` | Compass y la defensa. No escribe |
+| `centinela_admin` | `dbOwner` de `antifraude` (dbAdmin + userAdmin + readWrite) | Semillas, validadores, migraciones, usuarios |
+| `centinela_pruebas` | `dbOwner` de las bases `antifraude_pruebas*` | Solo la suite de pruebas. No toca `antifraude` |
+
+Todos viven en `antifraude`: se autentican con `authSource=antifraude`. Los crea
+`scripts/semilla/04-usuarios.js`, idempotente.
+
+Las contrasenas son aleatorias y estan en `.env` (en la raiz, ignorado por git). Lo crea
+`python tareas.py arriba` la primera vez, igual que `infra/secretos/keyfile`. `.env.example`
+es solo el molde. Nada de esto va al repo.
+
+**Compass**, con el usuario analista (la contrasena es `MONGO_CLAVE_ANALISTA` de `.env`):
+
+```
+mongodb://centinela_analista:<MONGO_CLAVE_ANALISTA>@localhost:27018,localhost:27019,localhost:27020/antifraude?replicaSet=rsfraude&authSource=antifraude
+```
+
+**Base existente sin autenticacion** (con datos): `python tareas.py asegurar`. Cuenta los
+documentos, levanta los nodos sin keyfile, crea los usuarios, recrea los nodos con
+keyfile y vuelve a contar; falla si el conteo cambia. Los volumenes no se tocan. Si se
+interrumpe, volver a correrlo. Una base nueva pasa por lo mismo dentro de `arriba`.
+
+**Vuelta atras** (volver a una base sin autenticacion, con los datos):
+
+1. `python tareas.py abajo` (sin `--borrar-datos`).
+2. En `infra/docker-compose.yml` volver a `git show <commit-anterior>:infra/docker-compose.yml`
+   (o `git checkout dev -- infra/docker-compose.yml` si `dev` aun no lo tiene).
+3. `docker compose -f infra/docker-compose.yml up -d --wait`. Sin `--keyFile` el nodo
+   arranca sin autenticacion y los usuarios quedan guardados pero inertes.
+4. Quitar `MONGO_CLAVE_*` del entorno (o borrar `.env`): `tareas.py` vuelve a la URI sin
+   credenciales.
+
+Variables que usa `tareas.py`: `MONGO_CLAVE_APP`, `MONGO_CLAVE_ANALISTA`,
+`MONGO_CLAVE_ADMIN`, `MONGO_CLAVE_PRUEBAS` y `CENTINELA_SESION__CLAVE`. La URI con usuario
+llega al proceso por `CENTINELA_MONGO__URI`; `config/centinela.yml` no lleva secretos.
+
 ## Verificación
 
 ```
-docker compose -f infra/docker-compose.yml exec mongo1 mongosh --port 27018 --quiet --eval "rs.status().members.map(m => m.name + ' -> ' + m.stateStr)"
+python tareas.py estado
 ```
 
 Debe listar un `PRIMARY` y dos `SECONDARY`.

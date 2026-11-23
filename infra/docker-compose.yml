@@ -36,14 +36,23 @@ services:
   mongo1:
     image: mongo:8
     container_name: fraude-mongo1
-    command: ["mongod","--replSet","rsfraude","--port","27018","--bind_ip_all"]
+    entrypoint: ["bash","/entrada/mongo-entrada.sh"]
+    command: ["mongod","--replSet","rsfraude","--port","27018","--bind_ip_all","--wiredTigerCacheSizeGB","0.5"]
+    environment:
+      CENTINELA_SIN_AUTH: ${CENTINELA_SIN_AUTH:-}
     ports:
-      - "27018:27018"   # primario
-      - "27019:27019"   # mongo2
-      - "27020:27020"   # mongo3
-      - "8000:8000"     # API del servicio app (comparte este espacio de red)
+      # Solo en la interfaz local (H-25): ni un puerto de Mongo ni de la API queda
+      # expuesto a la red del anfitrion. Los miembros se hablan por localhost dentro
+      # del espacio de red compartido, asi que esto no les afecta.
+      - "127.0.0.1:27018:27018"   # primario
+      - "127.0.0.1:27019:27019"   # mongo2
+      - "127.0.0.1:27020:27020"   # mongo3
+      - "127.0.0.1:8000:8000"     # API del servicio app (comparte este espacio de red)
     volumes:
       - mongo1data:/data/db
+      # H-25: el punto de entrada que agrega --keyFile y el keyfile que genera tareas.py.
+      - ./mongo-entrada.sh:/entrada/mongo-entrada.sh:ro
+      - ./secretos:/secretos:ro
       # Este montaje queda por compatibilidad, pero NO es la forma recomendada de
       # correr un script, y conviene saber por que: el clúster es uno solo y lo
       # recrea quien corre `up` de ultimo, asi que /scripts apunta a la carpeta del
@@ -64,9 +73,14 @@ services:
     image: mongo:8
     container_name: fraude-mongo2
     network_mode: "service:mongo1"
-    command: ["mongod","--replSet","rsfraude","--port","27019","--bind_ip_all"]
+    entrypoint: ["bash","/entrada/mongo-entrada.sh"]
+    command: ["mongod","--replSet","rsfraude","--port","27019","--bind_ip_all","--wiredTigerCacheSizeGB","0.5"]
+    environment:
+      CENTINELA_SIN_AUTH: ${CENTINELA_SIN_AUTH:-}
     volumes:
       - mongo2data:/data/db
+      - ./mongo-entrada.sh:/entrada/mongo-entrada.sh:ro
+      - ./secretos:/secretos:ro
     depends_on:
       mongo1:
         condition: service_healthy
@@ -75,9 +89,14 @@ services:
     image: mongo:8
     container_name: fraude-mongo3
     network_mode: "service:mongo1"
-    command: ["mongod","--replSet","rsfraude","--port","27020","--bind_ip_all"]
+    entrypoint: ["bash","/entrada/mongo-entrada.sh"]
+    command: ["mongod","--replSet","rsfraude","--port","27020","--bind_ip_all","--wiredTigerCacheSizeGB","0.5"]
+    environment:
+      CENTINELA_SIN_AUTH: ${CENTINELA_SIN_AUTH:-}
     volumes:
       - mongo3data:/data/db
+      - ./mongo-entrada.sh:/entrada/mongo-entrada.sh:ro
+      - ./secretos:/secretos:ro
     depends_on:
       mongo1:
         condition: service_healthy
@@ -93,6 +112,10 @@ services:
     container_name: fraude-app
     profiles: ["app"]
     network_mode: "service:mongo1"
+    environment:
+      # La URI con el usuario centinela_app la arma tareas.py desde .env (H-25). Nunca
+      # va en el repo ni en config/centinela.yml.
+      CENTINELA_MONGO__URI: ${CENTINELA_MONGO__URI:-}
     depends_on:
       mongo1:
         condition: service_healthy

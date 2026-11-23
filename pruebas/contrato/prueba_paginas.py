@@ -12,12 +12,19 @@ from asgi_lifespan import LifespanManager
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from app.api.dependencias import dep_repo_alertas, dep_repo_reglas
+from app.api.dependencias import (
+    dep_repo_alertas,
+    dep_repo_busqueda,
+    dep_repo_reglas,
+    dep_repo_tablero,
+)
 from app.main import crear_aplicacion
 from pruebas.dobles.catalogo_reglas import (
     politica_como_documento,
     reglas_como_documentos,
 )
+from pruebas.dobles.repo_busqueda_falso import RepoBusquedaFalso
+from pruebas.dobles.repo_tablero_falso import RepoTableroFalso
 from pruebas.dobles.repos_falsos import RepoAlertasFalso, RepoReglasFalso
 from pruebas.sesiones import encabezados_de
 
@@ -62,6 +69,9 @@ def aplicacion(repo_alertas_falso: RepoAlertasFalso, repo_reglas: RepoReglasFals
     creada = crear_aplicacion()
     creada.dependency_overrides[dep_repo_alertas] = lambda: repo_alertas_falso
     creada.dependency_overrides[dep_repo_reglas] = lambda: repo_reglas
+    # Busqueda y tablero con sus dobles: una prueba sin la marca mongo no toca la base.
+    creada.dependency_overrides[dep_repo_busqueda] = lambda: RepoBusquedaFalso([], [])
+    creada.dependency_overrides[dep_repo_tablero] = lambda: RepoTableroFalso()
     return creada
 
 

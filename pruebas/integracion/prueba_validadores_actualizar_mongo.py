@@ -22,7 +22,7 @@ from typing import Any
 
 import pytest
 import pytest_asyncio
-from pymongo.errors import WriteError
+from pymongo.errors import OperationFailure, WriteError
 
 from app.nucleo.config import Ajustes
 from app.repos.esquemas import obtener_validadores
@@ -155,13 +155,18 @@ async def prueba_el_script_no_modifica_la_semilla_ni_toca_antifraude(
     Se compara el conteo de documentos de `antifraude` antes y despues (si existe).
     """
     cliente = base_mongo.client
-    colecciones = await cliente["antifraude"].list_collection_names()
-    antes = {c: await cliente["antifraude"][c].count_documents({}) for c in colecciones}
 
+    async def conteos() -> dict[str, int]:
+        # Con la autenticacion encendida (H-25) el usuario de pruebas no puede leer
+        # `antifraude`: tampoco podria escribirla, y no hay nada que comparar.
+        try:
+            nombres = await cliente["antifraude"].list_collection_names()
+            return {c: await cliente["antifraude"][c].count_documents({}) for c in nombres}
+        except OperationFailure as error:
+            if error.code != 13:
+                raise
+            return {}
+
+    antes = await conteos()
     await _correr_script(ajustes)
-
-    despues = {
-        c: await cliente["antifraude"][c].count_documents({})
-        for c in await cliente["antifraude"].list_collection_names()
-    }
-    assert despues == antes
+    assert await conteos() == antes
