@@ -1,8 +1,8 @@
 {# T-57: aviso de D1 atrasado. Sin pendientes sobre el umbral, el fragmento queda vacio. #}
 {% if atrasada %}
 <div class="mensaje mensaje-error aviso-rezago">
-  <strong>Deteccion atrasada:</strong>
-  {{ pendientes }} transacciones por evaluar{% if antiguedad %}, la mas vieja de hace {{ antiguedad }}{% endif %}.
-  Las alertas de esas transacciones apareceran cuando D1 se ponga al dia.
+  <strong>Detección atrasada:</strong>
+  {{ pendientes }} transacciones por evaluar{% if antiguedad %}, la más vieja de hace {{ antiguedad }}{% endif %}.
+  Las alertas de esas transacciones aparecerán cuando D1 se ponga al dia.
 </div>
 {% endif %}

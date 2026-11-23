@@ -89,7 +89,7 @@ async def prueba_el_aviso_aparece_sobre_el_umbral_con_cantidad_y_antiguedad(
     respuesta = await cliente.get("/panel/rezago")
 
     assert respuesta.status_code == 200
-    assert "Deteccion atrasada" in respuesta.text
+    assert "Detección atrasada" in respuesta.text
     assert f"{_umbral() + 1} transacciones por evaluar" in respuesta.text
     assert "la mas vieja de hace 2 min" in respuesta.text
 
@@ -101,12 +101,12 @@ async def prueba_en_el_umbral_o_debajo_no_hay_aviso(
 ) -> None:
     supervisor.registrar_rezago(NOMBRE_D1, _umbral() + delta, 10.0, AHORA)
 
-    assert "Deteccion atrasada" not in (await cliente.get("/panel/rezago")).text
+    assert "Detección atrasada" not in (await cliente.get("/panel/rezago")).text
 
 
 @pytest.mark.asyncio
 async def prueba_sin_medicion_no_hay_aviso(cliente: AsyncClient) -> None:
-    assert "Deteccion atrasada" not in (await cliente.get("/panel/rezago")).text
+    assert "Detección atrasada" not in (await cliente.get("/panel/rezago")).text
 
 
 @pytest.mark.asyncio
