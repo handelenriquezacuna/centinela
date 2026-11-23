@@ -5,7 +5,7 @@
   {% elif puede_gestionar %}
   <form class="form-inline" method="post" action="/red-mulas/{{ cuenta }}/listas-riesgo/{{ entrada['_id'] }}/baja"
         hx-post="/red-mulas/{{ cuenta }}/listas-riesgo/{{ entrada['_id'] }}/baja" hx-target="#entrada-{{ entrada['_id'] }}" hx-swap="outerHTML"
-        hx-confirm="Se borra la entrada {{ entrada['_id'] }} de {{ entrada.cuenta }}. Queda registro en el log. Continuar?">
+        hx-confirm="Se borra la entrada {{ entrada['_id'] }} de {{ entrada.cuenta }}. Queda registro en el log. ¿Continuar?">
     <button class="boton" type="submit">Dar de baja</button>
   </form>
   {% endif %}
