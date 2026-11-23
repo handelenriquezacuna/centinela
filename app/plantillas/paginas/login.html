@@ -1,8 +1,8 @@
 {% extends "paginas/base.html" %}
-{% block titulo %}Iniciar sesion{% endblock %}
+{% block titulo %}Iniciar sesión{% endblock %}
 {% block contenido %}
-<section class="tarjeta" aria-label="Iniciar sesion">
-  <h1 class="seccion-titulo">Iniciar sesion</h1>
+<section class="tarjeta" aria-label="Iniciar sesión">
+  <h1 class="seccion-titulo">Iniciar sesión</h1>
   {% if mensaje %}
   <div class="mensaje mensaje-error" role="alert">{{ mensaje }}</div>
   {% endif %}
@@ -13,7 +13,7 @@
       <input type="text" id="agente-id" name="agente_id" value="{{ agente_id }}" placeholder="AGT-001" autocomplete="username" required autofocus>
     </div>
     <div class="campo">
-      <label for="contrasena">Contrasena</label>
+      <label for="contrasena">Contraseña</label>
       <input type="password" id="contrasena" name="contrasena" autocomplete="current-password" required>
     </div>
     <div class="grupo-botones">

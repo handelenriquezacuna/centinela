@@ -89,9 +89,8 @@ async def cliente(aplicacion: FastAPI) -> Any:
     ("ruta", "esperado"),
     [
         ("/panel", "Panel de alertas"),
-        ("/reglas", "Reglas de deteccion"),
-        ("/detalle", "En construccion"),
-        ("/busqueda", "Busqueda forense"),
+        ("/reglas", "Reglas de detección"),
+        ("/busqueda", "Búsqueda forense"),
         ("/tablero", "Tablero de indicadores"),
     ],
 )
@@ -102,8 +101,9 @@ async def prueba_cada_pagina_responde_200_con_la_navegacion(
     assert respuesta.status_code == 200
     assert respuesta.headers["content-type"].startswith("text/html")
     assert esperado in respuesta.text
-    for destino in ("/panel", "/reglas", "/detalle", "/busqueda", "/tablero"):
+    for destino in ("/panel", "/reglas", "/busqueda", "/tablero"):
         assert f'href="{destino}"' in respuesta.text
+    assert 'href="/detalle"' not in respuesta.text
     assert "AGT-001" in respuesta.text and "/salir" in respuesta.text
     assert "/estaticos/htmx.min.js" in respuesta.text
     assert "//unpkg" not in respuesta.text
@@ -137,8 +137,8 @@ async def prueba_el_panel_se_conecta_al_canal_y_se_resincroniza(cliente: AsyncCl
 @pytest.mark.asyncio
 async def prueba_la_fila_se_formatea_y_escapa(cliente: AsyncClient) -> None:
     html = (await cliente.get("/panel")).text
-    assert "125 000 CRC" in html
-    assert "2026-10-24 06:00" in html  # 12:00 UTC es 06:00 en Costa Rica
+    assert "₡125.000" in html
+    assert "24/10/2026 06:00" in html  # 12:00 UTC es 06:00 en Costa Rica
     assert "<b>Rodriguez" not in html
     assert "&lt;b&gt;Rodriguez" in html
 
@@ -167,7 +167,7 @@ async def prueba_reglas_muestra_catalogo_tipos_y_politica(cliente: AsyncClient) 
     for codigo in ("R-01", "R-03", "R-05", "R-07", "R-09", "R-11"):
         assert codigo in html
     assert "lista_riesgo" in html and "red_mulas" in html  # tipos soportados
-    assert "Politica vigente" in html and "CRITICA" in html
+    assert "Política vigente" in html and "Crítica" in html
     assert "Versiones anteriores (0)" in html
     assert 'name="version_esperada" value="1"' in html
 
@@ -184,7 +184,7 @@ async def prueba_editar_sube_la_version_y_guarda_la_anterior(
 ) -> None:
     respuesta = await cliente.post("/reglas/REG-001", data=_formulario(umbral="12", peso="40"))
     assert respuesta.status_code == 200
-    assert "ahora es la version 2" in respuesta.text
+    assert "ahora es la versión 2" in respuesta.text
     assert "Versiones anteriores (1)" in respuesta.text
     guardada = await repo_reglas.obtener("REG-001")
     assert guardada is not None

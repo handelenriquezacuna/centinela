@@ -15,8 +15,8 @@ las dos puertas no pueden divergir.
   aporte, la politica, el historial y la resolucion desde ahi. Resolver llama al mismo
   handler que `POST /api/v1/alertas/{id}/transiciones`, asi que las dos puertas no
   divergen: misma maquina de estados, mismo 409.
-- `/detalle` (sin id), `/busqueda`: la maqueta estatica dentro de la plantilla
-  base, marcada "en construccion", hasta que llegue H-19. `/tablero` vive en `paginas_tablero.py` (H-20).
+- `/detalle` (sin id) redirige a `/panel`: el detalle se abre desde una alerta.
+  `/busqueda` vive en `paginas_busqueda.py` (H-19) y `/tablero` en `paginas_tablero.py` (H-20).
 
 Todas las paginas exigen sesion (H-25): el permiso de cada una esta en
 `app/seguridad/permisos.py` y lo aplica el guardia de `app/api/sesion.py`.
@@ -26,8 +26,6 @@ from __future__ import annotations
 
 import json
 import re
-from functools import cache
-from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
 
@@ -44,33 +42,30 @@ from app.api.dependencias import (
 )
 from app.api.errores import ErrorCentinela
 from app.api.esquemas import EdicionRegla, PeticionTransicion
-from app.api.fragmentos import ENTORNO as ENTORNO_FRAGMENTOS
+from app.api.formatos import colones, decimal, etiqueta
+from app.api.formatos import registrar as registrar_formatos
 from app.api.fragmentos import RUTA_PLANTILLAS
 from app.api.rutas.alertas import AlertaIdRuta, transicionar_alerta
 from app.api.rutas.reglas import ReglaIdRuta, editar_regla
 from app.api.sesion import SesionDep, permite_ruta, sesion_actual
 from app.deteccion.evaluador import TIPOS_REGLA
-from app.modelos import EstadoAlerta, TransicionInvalida, transiciones_validas
+from app.modelos import (
+    ZONA_COSTA_RICA,
+    EstadoAlerta,
+    TransicionInvalida,
+    transiciones_validas,
+)
 
 enrutador = APIRouter(include_in_schema=False)
+
+ID_ALERTA = re.compile(r"^ALR-\d{3,}$")
 
 NAVEGACION = [
     ("/panel", "Panel", "panel"),
     ("/reglas", "Reglas", "reglas"),
-    ("/detalle", "Detalle", "detalle"),
-    ("/busqueda", "Buscar", "busqueda"),
+    ("/busqueda", "Búsqueda", "busqueda"),
     ("/tablero", "Tablero", "tablero"),
 ]
-
-# Mayor gravedad primero. La severidad llega de Mongo en mayusculas.
-
-RUTA_MAQUETAS = RUTA_PLANTILLAS / "maquetas"
-ENLACES_MAQUETA = {
-    "panel.html": "/panel",
-    "detalle.html": "/detalle",
-    "busqueda.html": "/busqueda",
-    "tablero.html": "/tablero",
-}
 
 ENTORNO = Environment(
     loader=FileSystemLoader(str(RUTA_PLANTILLAS)),
@@ -79,8 +74,7 @@ ENTORNO = Environment(
     lstrip_blocks=True,
 )
 # Los mismos filtros que usa el fragmento del canal: una fila se ve igual venga de donde venga.
-ENTORNO.filters["hora_costa_rica"] = ENTORNO_FRAGMENTOS.filters["hora_costa_rica"]
-ENTORNO.filters["colones"] = ENTORNO_FRAGMENTOS.filters["colones"]
+registrar_formatos(ENTORNO)
 # Para la barra de navegacion y el encabezado: que ve cada rol, y quien es.
 ENTORNO.globals["permite_ruta"] = permite_ruta
 ENTORNO.globals["sesion_actual"] = sesion_actual
@@ -184,16 +178,16 @@ def _edicion_desde_formulario(
         if parametros.strip():
             decodificados = json.loads(parametros)
             if not isinstance(decodificados, dict):
-                raise ValueError("los parametros tienen que ser un objeto JSON")
+                raise ValueError("los parámetros tienen que ser un objeto JSON")
             campos["parametros"] = decodificados
         if version_esperada.strip():
             campos["version_esperada"] = int(version_esperada)
     except json.JSONDecodeError as fallo:
-        raise ValueError(f"los parametros no son JSON valido ({fallo.msg})") from fallo
+        raise ValueError(f"los parámetros no son JSON válido ({fallo.msg})") from fallo
     except ValueError as fallo:
-        if "parametros" in str(fallo):
+        if "parámetros" in str(fallo):
             raise
-        raise ValueError(f"un numero no es valido ({fallo})") from fallo
+        raise ValueError(f"un número no es válido ({fallo})") from fallo
     if activa in ("true", "false"):
         campos["activa"] = activa == "true"
     return EdicionRegla(**campos)
@@ -233,7 +227,7 @@ async def guardar_regla(
     except ValidationError as fallo:
         detalles = [f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in fallo.errors()]
         return _tarjeta(
-            antes, mensaje="Los datos no son validos", es_error=True, detalles=detalles, estado=422
+            antes, mensaje="Los datos no son válidos", es_error=True, detalles=detalles, estado=422
         )
     except ValueError as fallo:
         return _tarjeta(antes, mensaje=str(fallo), es_error=True, estado=422)
@@ -252,8 +246,8 @@ async def guardar_regla(
 
     actual = await repo.obtener(regla_id) or antes
     if resultado.version == antes.get("version"):
-        return _tarjeta(actual, mensaje="Sin cambios: no se creo una version nueva")
-    return _tarjeta(actual, mensaje=f"Guardada: ahora es la version {resultado.version}")
+        return _tarjeta(actual, mensaje="Sin cambios: no se creó una versión nueva")
+    return _tarjeta(actual, mensaje=f"Guardada: ahora es la versión {resultado.version}")
 
 
 # ---------------------------------------------------------------------------
@@ -261,11 +255,36 @@ async def guardar_regla(
 # ---------------------------------------------------------------------------
 
 # Orden y rotulo de los botones. Cuales aparecen lo decide la maquina de estados.
+# Cuarto elemento: ayuda corta del boton. Quinto: si la accion cierra la alerta y pide confirmar.
 ACCIONES = [
-    (EstadoAlerta.EN_REVISION, "Tomar", "boton-primario"),
-    (EstadoAlerta.CONFIRMADA, "Confirmar fraude", "boton-confirmar"),
-    (EstadoAlerta.DESCARTADA, "Descartar", "boton-descartar"),
-    (EstadoAlerta.ESCALADA, "Escalar a caso", "boton-escalar"),
+    (
+        EstadoAlerta.EN_REVISION,
+        "Tomar",
+        "boton-primario",
+        "Te asigna la alerta y la pasa a En revisión.",
+        False,
+    ),
+    (
+        EstadoAlerta.CONFIRMADA,
+        "Confirmar fraude",
+        "boton-confirmar",
+        "Cierra la alerta como fraude real. No se puede deshacer.",
+        True,
+    ),
+    (
+        EstadoAlerta.DESCARTADA,
+        "Descartar",
+        "boton-descartar",
+        "Cierra la alerta como falso positivo. No se puede deshacer.",
+        True,
+    ),
+    (
+        EstadoAlerta.ESCALADA,
+        "Escalar a caso",
+        "boton-escalar",
+        "Abre un caso de investigación y cierra la alerta. No se puede deshacer.",
+        True,
+    ),
 ]
 
 AVISO_V1 = "alerta v1: migrar con python tareas.py migrar"
@@ -275,13 +294,96 @@ def _porcentaje(valor: int, total: int) -> int:
     return max(0, min(100, round(valor * 100 / total))) if total > 0 else 0
 
 
-def _explicacion_puntaje(alerta: dict[str, Any], politica: Any) -> dict[str, Any]:
+_PREFIJO_REGLA = re.compile(r"^\s*R-\d+\s+v\d+\s*:\s*")
+_APORTE_INTERNO = re.compile(r"\s*\(aporta\s+\d+[^)]*\)")
+_RUIDO_MIGRACION = re.compile(r";?\s*explicaci[oó]n reconstruida por la migraci[oó]n 001", re.IGNORECASE)
+
+
+def _limpiar_explicacion(texto: str) -> str:
+    """Quita lo que la tabla ya muestra en otra columna: "R-01 v2:", "(aporta 35)" y la nota de migracion."""
+    limpio = _PREFIJO_REGLA.sub("", texto)
+    limpio = _APORTE_INTERNO.sub("", limpio)
+    limpio = _RUIDO_MIGRACION.sub("", limpio).strip(" ;")
+    return limpio[:1].upper() + limpio[1:]
+
+
+def _evidencia(
+    tipo: str | None,
+    alerta: dict[str, Any],
+    transaccion: dict[str, Any] | None,
+    perfil: dict[str, Any] | None,
+) -> str | None:
+    """Una linea calculada con datos que la pagina ya muestra. None si no alcanza para calcularla."""
+    if perfil is None:
+        return None
+    if tipo == "monto":
+        promedio = perfil.get("promedio_crc")
+        if isinstance(promedio, int) and promedio > 0:
+            veces = decimal(alerta["monto_crc"] / promedio)
+            return (
+                f"Monto {colones(alerta['monto_crc'])} contra un promedio de "
+                f"{colones(promedio)}: {veces}x."
+            )
+    if tipo == "destino":
+        frecuentes = [str(c) for c in perfil.get("destinos_frecuentes") or []]
+        destino = alerta["cuenta_destino"]
+        if destino not in frecuentes:
+            return (
+                f"El destino {destino} no figura entre los {len(frecuentes)} destinos "
+                "frecuentes del cliente."
+            )
+    if tipo == "horario":
+        horario = perfil.get("horario_habitual") or {}
+        momento = (transaccion or {}).get("fecha") or alerta["fecha_creacion"]
+        if horario.get("inicio") and horario.get("fin"):
+            local = momento.astimezone(ZONA_COSTA_RICA)
+            if not horario["inicio"] <= f"{local:%H:%M}" <= horario["fin"]:
+                return (
+                    f"{local:%H:%M} (hora CR) está fuera del horario habitual "
+                    f"{horario['inicio']}-{horario['fin']}."
+                )
+    return None
+
+
+def _cortes_de(
+    alerta: dict[str, Any], vigente: dict[str, Any] | None
+) -> tuple[dict[str, Any] | None, str]:
+    """La politica con que se calculo la alerta, y de donde salieron los cortes.
+
+    Devuelve `(documento, origen)`: `usada` si es la politica que la alerta registra (la
+    vigente o una version anterior de su historia); `vigente` si la alerta no registra
+    politica o su version ya no esta disponible (los cortes son los de ahora, y la
+    pagina lo rotula); `ninguna` si no hay politica en la base.
+    """
+    if vigente is None:
+        return None, "ninguna"
+    usada = alerta.get("politica")
+    if not usada:
+        return vigente, "vigente"
+    if usada["politica_id"] == vigente.get("_id") and usada["version"] == vigente.get("version"):
+        return vigente, "usada"
+    if usada["politica_id"] == vigente.get("_id"):
+        for anterior in vigente.get("versiones_anteriores") or []:
+            if anterior.get("version") == usada["version"] and anterior.get("cortes_severidad"):
+                return anterior, "usada"
+    return vigente, "vigente"
+
+
+def _explicacion_puntaje(
+    alerta: dict[str, Any],
+    politica: dict[str, Any] | None,
+    *,
+    tipos: dict[str, str],
+    transaccion: dict[str, Any] | None,
+    perfil: dict[str, Any] | None,
+) -> dict[str, Any]:
     """Los aportes en orden, el acumulado de cada uno y el corte que alcanza el puntaje.
 
     Solo v2 trae aporte por regla; en v1 la lista es de ids y no hay nada que sumar.
+    `politica` es el documento cuyos cortes se muestran (ver `_cortes_de`).
     """
     puntaje = alerta["puntaje"]
-    maximo = politica.puntaje_maximo if politica is not None else 100
+    maximo = politica["puntaje_maximo"] if politica is not None else 100
     acumulado = 0
     filas = []
     for regla in alerta["reglas_disparadas"]:
@@ -289,18 +391,26 @@ def _explicacion_puntaje(alerta: dict[str, Any], politica: Any) -> dict[str, Any
             continue
         acumulado += regla["peso"]
         filas.append(
-            {**regla, "acumulado": acumulado, "ancho": _porcentaje(regla["peso"], maximo)}
+            {
+                **regla,
+                "explicacion": _limpiar_explicacion(regla["explicacion"]),
+                "evidencia": _evidencia(
+                    tipos.get(regla["regla_id"]), alerta, transaccion, perfil
+                ),
+                "acumulado": acumulado,
+                "ancho": _porcentaje(regla["peso"], maximo),
+            }
         )
     cortes = []
     if politica is not None:
-        for corte in politica.cortes_severidad:
+        for corte in politica["cortes_severidad"]:
             cortes.append(
                 {
-                    "severidad": str(corte.severidad),
-                    "minimo": corte.puntaje_minimo,
-                    "maximo": corte.puntaje_maximo,
-                    "inicio": _porcentaje(corte.puntaje_minimo, maximo),
-                    "alcanzado": corte.puntaje_minimo <= puntaje <= corte.puntaje_maximo,
+                    "severidad": str(corte["severidad"]),
+                    "minimo": corte["puntaje_minimo"],
+                    "maximo": corte["puntaje_maximo"],
+                    "inicio": _porcentaje(corte["puntaje_minimo"], maximo),
+                    "alcanzado": corte["puntaje_minimo"] <= puntaje <= corte["puntaje_maximo"],
                 }
             )
     return {
@@ -310,7 +420,7 @@ def _explicacion_puntaje(alerta: dict[str, Any], politica: Any) -> dict[str, Any
         "maximo": maximo,
         "cortes": cortes,
         "ancho_puntaje": _porcentaje(puntaje, maximo),
-        "umbral": politica.umbral_alerta if politica is not None else None,
+        "umbral": politica["umbral_alerta"] if politica is not None else None,
     }
 
 
@@ -329,7 +439,11 @@ def _contexto_acciones(
     return {
         "alerta": alerta,
         "estado_alerta": estado.value,
-        "botones": [(e.value, rotulo, clase) for e, rotulo, clase in ACCIONES if e in permitidas],
+        "botones": [
+            (e.value, rotulo, clase, ayuda, terminal)
+            for e, rotulo, clase, ayuda, terminal in ACCIONES
+            if e in permitidas
+        ],
         "nombres": nombres,
         "caso_id": caso_id,
         "mensaje": mensaje,
@@ -345,25 +459,34 @@ async def _caso_de(alerta: dict[str, Any], repo_detalle: RepoDetalleDep) -> str 
     return caso["_id"] if caso is not None else None
 
 
+@enrutador.get("/detalle")
+async def detalle_sin_id() -> RedirectResponse:
+    """El detalle se abre desde una alerta: sin id no hay nada que mostrar, se vuelve al panel."""
+    return RedirectResponse("/panel")
+
+
 @enrutador.get("/detalle/{alerta_id}", response_class=HTMLResponse)
 async def detalle(
-    alerta_id: AlertaIdRuta,
+    alerta_id: str,
     repo: RepoAlertasDep,
     repo_detalle: RepoDetalleDep,
     repo_reglas: RepoReglasDep,
 ) -> HTMLResponse:
-    alerta = await repo.obtener(alerta_id)
+    # Un id mal formado es una alerta que no existe, no un 422 de validacion: la
+    # pagina responde con la plantilla amable en los dos casos.
+    alerta = await repo.obtener(alerta_id) if ID_ALERTA.match(alerta_id) else None
     if alerta is None:
         return _pagina(
             "paginas/detalle_no_existe.html", "detalle", estado=404, alerta_id=alerta_id
         )
-    politica = await repo_reglas.politica_vigente()
+    vigente = await repo_reglas.politica_documento()
+    politica, origen_cortes = _cortes_de(alerta, vigente)
     contexto = await repo_detalle.contexto(alerta["transaccion_id"])
     agentes = await repo_detalle.agentes()
+    tipos = {r["_id"]: r["tipo"] for r in await repo_reglas.listar(activa=None)}
     es_v2 = bool(alerta["reglas_disparadas"]) and all(
         isinstance(r, dict) for r in alerta["reglas_disparadas"]
     )
-    usada = alerta.get("politica")
     return _pagina(
         "paginas/detalle.html",
         "detalle",
@@ -373,15 +496,15 @@ async def detalle(
         cliente=contexto["cliente"],
         perfil=contexto["perfil"],
         politica=politica,
-        politica_usada=usada,
-        # La alerta se calculo con otra version: los cortes que se ven son los vigentes.
-        politica_distinta=bool(
-            es_v2
-            and politica is not None
-            and usada
-            and (usada["politica_id"], usada["version"]) != (politica.politica_id, politica.version)
+        politica_usada=alerta.get("politica"),
+        origen_cortes=origen_cortes,
+        puntaje=_explicacion_puntaje(
+            alerta,
+            politica,
+            tipos=tipos,
+            transaccion=contexto["transaccion"],
+            perfil=contexto["perfil"],
         ),
-        puntaje=_explicacion_puntaje(alerta, politica),
         **_contexto_acciones(alerta, agentes, caso_id=await _caso_de(alerta, repo_detalle)),
     )
 
@@ -431,10 +554,10 @@ async def resolver_desde_detalle(
         )
         resultado = await transicionar_alerta(alerta_id, pedida, repo, sesion)
         caso_id = resultado.caso_id
-        mensaje = f"Listo: la alerta paso a {pedida.destino.value}"
+        mensaje = f"Listo: la alerta pasó a {etiqueta(pedida.destino.value)}"
     except ValidationError as fallo:
         estado_http = 422
-        mensaje = "Los datos no son validos: " + "; ".join(
+        mensaje = "Los datos no son válidos: " + "; ".join(
             f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in fallo.errors()
         )
     except ErrorCentinela as fallo:
@@ -458,33 +581,3 @@ async def resolver_desde_detalle(
         ),
         estado=estado_http,
     )
-
-
-# ---------------------------------------------------------------------------
-# Maquetas, hasta que existan H-19 y H-20
-# ---------------------------------------------------------------------------
-
-
-@cache
-def _cuerpo_maqueta(archivo: str) -> str:
-    """El `<main>` de la maqueta, con sus enlaces apuntando a las rutas del portal."""
-    texto = Path(RUTA_MAQUETAS / archivo).read_text(encoding="utf-8")
-    coincidencia = re.search(r"<main[^>]*>(.*)</main>", texto, flags=re.DOTALL)
-    cuerpo = coincidencia.group(1) if coincidencia else ""
-    for original, ruta in ENLACES_MAQUETA.items():
-        cuerpo = cuerpo.replace(original, ruta)
-    return cuerpo
-
-
-def _ruta_maqueta(clave: str, titulo: str) -> None:
-    @enrutador.get(f"/{clave}", response_class=HTMLResponse, name=f"pagina_{clave}")
-    async def _pagina_maqueta() -> HTMLResponse:
-        return _pagina(
-            "paginas/maqueta.html",
-            clave,
-            titulo=titulo,
-            cuerpo=_cuerpo_maqueta(f"{clave}.html"),
-        )
-
-
-_ruta_maqueta("detalle", "Detalle de alerta")

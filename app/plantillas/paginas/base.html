@@ -13,10 +13,10 @@
 <body>
 <header class="encabezado">
   <a class="marca" href="/panel">Centinela <span class="marca-sufijo">portal de fraude</span></a>
-  <nav class="nav-portal" aria-label="Navegacion principal">
-    {% for destino, etiqueta, clave in navegacion %}
+  <nav class="nav-portal" aria-label="Navegación principal">
+    {% for destino, rotulo, clave in navegacion %}
     {% if permite_ruta(destino) %}
-    <a href="{{ destino }}"{% if clave == activa %} aria-current="page"{% endif %}>{{ etiqueta }}</a>
+    <a href="{{ destino }}"{% if clave == activa %} aria-current="page"{% endif %}>{{ rotulo }}</a>
     {% endif %}
     {% endfor %}
     {% if navegacion and permite_ruta('/red-mulas') %}

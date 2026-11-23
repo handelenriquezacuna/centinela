@@ -140,13 +140,13 @@ async def prueba_detalle_de_alr_001_tras_migrar(http: AsyncClient) -> None:
     for codigo in ("R-01", "R-03", "R-05"):
         assert codigo in html
     assert re.search(r'id="suma-aportes">75<', html)
-    assert re.search(r'<tr class="corte-alcanzado">\s*<td>CRITICA</td>', html)
+    assert re.search(r'<tr class="corte-alcanzado">\s*<td>Crítica</td>', html)
     assert "POL-001" in html
-    assert "280 000 CRC" in html and "María Rodríguez Vargas" in html
-    assert "2026-09-24 22:47" in html  # 04:47Z es 22:47 del dia anterior en Costa Rica
-    assert "25 000 CRC" in html and "07:00 - 19:00" in html
+    assert "₡280.000" in html and "María Rodríguez Vargas" in html
+    assert "24/09/2026 22:47" in html  # 04:47Z es 22:47 del dia anterior en Costa Rica
+    assert "₡25.000" in html and "07:00 - 19:00" in html
     assert "AGT-001 (José Solís)" in html
-    assert re.findall(r"Accion: <strong>(\w+)</strong>", html) == ["confirmada"]
+    assert re.findall(r"Acción: <strong>([^<]+)</strong>", html) == ["Confirmada"]
     assert 'id="caso-creado"' not in html  # confirmada, no escalada
     assert 'data-destino=' not in html  # terminal: sin botones
 

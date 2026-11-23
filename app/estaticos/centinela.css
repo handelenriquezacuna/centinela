@@ -905,6 +905,7 @@ summary:focus-visible {
 }
 
 .fila-alerta {
+  position: relative;
   border-bottom: 1px solid var(--color-borde);
   border-left: 5px solid var(--color-borde);
 }
@@ -941,6 +942,17 @@ summary:focus-visible {
 .fila-alerta .alerta-cuentas {
   font-family: var(--fuente-mono);
   font-size: 0.85rem;
+}
+
+/* El enlace del id cubre la fila entera: se puede abrir con un clic en cualquier parte. */
+.fila-alerta .alerta-id a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.fila-alerta:hover {
+  background: var(--color-fondo-tenue, #f3f4f6);
 }
 
 .fila-alerta .alerta-monto {

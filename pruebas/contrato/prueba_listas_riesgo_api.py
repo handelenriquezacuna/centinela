@@ -267,4 +267,4 @@ async def prueba_el_tablero_muestra_los_kpi_con_comparacion(
     assert "5 min" in html  # el dia previo: 900 / 3 = 300 s
     assert re.search(r"500\D000", html) and re.search(r"200\D000", html)  # sea cual sea el formato
     assert "66.7%" in html and "contra el periodo anterior" in html  # 2 / (2 + 1)
-    assert "la mas antigua sin atender" in html
+    assert "la más antigua sin atender" in html

@@ -130,7 +130,7 @@ async def manejar_sin_sesion(peticion: Request, fallo: SesionRequerida) -> Respo
 
 
 async def manejar_prohibido(peticion: Request, fallo: AccesoProhibido) -> Response:
-    mensaje = "Tu rol no permite esta operacion"
+    mensaje = "Tu rol no permite esta operación"
     if not es_superficie_api(peticion.url.path):
         if peticion.headers.get("hx-request") == "true":
             return HTMLResponse(
