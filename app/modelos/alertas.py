@@ -36,13 +36,36 @@ class RolAgente(StrEnum):
     ADMINISTRADOR = "administrador"
 
 
+class ParametrosScrypt(ModeloCentinela):
+    """Parametros con que se derivo el hash; viajan con la credencial (H-25)."""
+
+    algoritmo: Literal["scrypt"] = "scrypt"
+    n: int = Field(ge=2)
+    r: int = Field(ge=1)
+    p: int = Field(ge=1)
+    dklen: int = Field(ge=16)
+
+
+class Credencial(ModeloCentinela):
+    """Contrasena cifrada de un agente: hash y sal en base64, nunca la contrasena."""
+
+    hash: str = Field(min_length=1)
+    sal: str = Field(min_length=1)
+    parametros: ParametrosScrypt
+
+
 class Agente(DocumentoBase):
-    """Usuario humano del sistema. La autenticacion es H-25; aca solo la identidad."""
+    """Usuario humano del sistema.
+
+    `credencial` es opcional: la semilla deja a todos sin ella y quien no la tiene no
+    puede iniciar sesion. La crea `python -m app.seguridad.usuarios` (H-25).
+    """
 
     agente_id: AgenteId = Field(alias="_id")
     nombre: str = Field(min_length=1)
     rol: RolAgente = RolAgente.AGENTE
     activo: bool = True
+    credencial: Credencial | None = None
 
 
 class AccionHistorial(ModeloCentinela):

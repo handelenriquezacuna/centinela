@@ -1,0 +1,24 @@
+{% extends "paginas/base.html" %}
+{% block titulo %}Iniciar sesion{% endblock %}
+{% block contenido %}
+<section class="tarjeta" aria-label="Iniciar sesion">
+  <h1 class="seccion-titulo">Iniciar sesion</h1>
+  {% if mensaje %}
+  <div class="mensaje mensaje-error" role="alert">{{ mensaje }}</div>
+  {% endif %}
+  <form method="post" action="/login" class="form-regla">
+    <input type="hidden" name="siguiente" value="{{ siguiente }}">
+    <div class="campo">
+      <label for="agente-id">Identificador</label>
+      <input type="text" id="agente-id" name="agente_id" value="{{ agente_id }}" placeholder="AGT-001" autocomplete="username" required autofocus>
+    </div>
+    <div class="campo">
+      <label for="contrasena">Contrasena</label>
+      <input type="password" id="contrasena" name="contrasena" autocomplete="current-password" required>
+    </div>
+    <div class="grupo-botones">
+      <button type="submit" class="boton">Entrar</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

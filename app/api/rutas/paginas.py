@@ -18,7 +18,8 @@ las dos puertas no pueden divergir.
 - `/detalle` (sin id), `/busqueda`: la maqueta estatica dentro de la plantilla
   base, marcada "en construccion", hasta que llegue H-19. `/tablero` vive en `paginas_tablero.py` (H-20).
 
-Sin autenticacion hasta H-25.
+Todas las paginas exigen sesion (H-25): el permiso de cada una esta en
+`app/seguridad/permisos.py` y lo aplica el guardia de `app/api/sesion.py`.
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ from app.api.fragmentos import ENTORNO as ENTORNO_FRAGMENTOS
 from app.api.fragmentos import RUTA_PLANTILLAS
 from app.api.rutas.alertas import AlertaIdRuta, transicionar_alerta
 from app.api.rutas.reglas import ReglaIdRuta, editar_regla
+from app.api.sesion import SesionDep, permite_ruta, sesion_actual
 from app.deteccion.evaluador import TIPOS_REGLA
 from app.modelos import EstadoAlerta, TransicionInvalida, transiciones_validas
 
@@ -79,6 +81,9 @@ ENTORNO = Environment(
 # Los mismos filtros que usa el fragmento del canal: una fila se ve igual venga de donde venga.
 ENTORNO.filters["hora_costa_rica"] = ENTORNO_FRAGMENTOS.filters["hora_costa_rica"]
 ENTORNO.filters["colones"] = ENTORNO_FRAGMENTOS.filters["colones"]
+# Para la barra de navegacion y el encabezado: que ve cada rol, y quien es.
+ENTORNO.globals["permite_ruta"] = permite_ruta
+ENTORNO.globals["sesion_actual"] = sesion_actual
 
 
 def _json_compacto(valor: Any) -> str:
@@ -96,6 +101,11 @@ def _pagina(plantilla: str, activa: str, estado: int = 200, **contexto: Any) -> 
         navegacion=NAVEGACION, activa=activa, **contexto
     )
     return HTMLResponse(html, status_code=estado)
+
+
+def pagina_prohibida(mensaje: str) -> HTMLResponse:
+    """403 del portal: la pagina de acceso denegado, dentro del marco normal."""
+    return _pagina("paginas/prohibido.html", "", estado=403, mensaje=mensaje)
 
 
 async def _cola(repo: RepoAlertasDep, ajustes: AjustesDep) -> list[dict[str, Any]]:
@@ -315,15 +325,11 @@ def _contexto_acciones(
 ) -> dict[str, Any]:
     estado = EstadoAlerta(alerta["estado"])
     permitidas = transiciones_validas(estado)
-    duenio = alerta.get("agente_id")
     nombres = {a["_id"]: a["nombre"] for a in agentes}
-    seleccionable = [a for a in agentes if a.get("activo", True) or a["_id"] == duenio]
     return {
         "alerta": alerta,
         "estado_alerta": estado.value,
         "botones": [(e.value, rotulo, clase) for e, rotulo, clase in ACCIONES if e in permitidas],
-        "agentes": seleccionable,
-        "agente_por_omision": duenio or (seleccionable[0]["_id"] if seleccionable else ""),
         "nombres": nombres,
         "caso_id": caso_id,
         "mensaje": mensaje,
@@ -391,10 +397,12 @@ async def resolver_desde_detalle(
     peticion: Request,
     repo: RepoAlertasDep,
     repo_detalle: RepoDetalleDep,
+    sesion: SesionDep,
 ) -> HTMLResponse:
     """Mueve la alerta con el mismo handler que la API y devuelve la seccion de acciones.
 
-    Sin autenticacion (H-25) el agente viaja en el formulario. Un 409 (otro agente la
+    El agente que queda en el historial es el de la sesion: el formulario ya no lo
+    manda, y si lo mandara se ignora. Un 409 (otro agente la
     tomo, la transicion no esta en la tabla) vuelve como mensaje sobre la alerta tal
     como esta ahora en la base, no como lo que el agente veia.
     """
@@ -417,11 +425,11 @@ async def resolver_desde_detalle(
     try:
         pedida = PeticionTransicion(
             destino=campo("destino"),  # type: ignore[arg-type]
-            agente_id=campo("agente_id"),
+            agente_id=sesion.agente_id,
             nota=campo("nota").strip(),
             estado_esperado=campo("estado_esperado") or None,  # type: ignore[arg-type]
         )
-        resultado = await transicionar_alerta(alerta_id, pedida, repo)
+        resultado = await transicionar_alerta(alerta_id, pedida, repo, sesion)
         caso_id = resultado.caso_id
         mensaje = f"Listo: la alerta paso a {pedida.destino.value}"
     except ValidationError as fallo:

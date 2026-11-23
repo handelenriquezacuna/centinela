@@ -28,6 +28,7 @@ from pruebas.dobles.repo_tablero_falso import (
     red_de_cuatro_saltos,
 )
 from pruebas.dobles.repos_falsos import RepoAlertasFalso
+from pruebas.sesiones import encabezados_de
 
 Armar = Callable[..., Awaitable[AsyncClient]]
 
@@ -47,7 +48,7 @@ async def armar() -> AsyncIterator[Armar]:
         creada.dependency_overrides[dep_repo_red_mulas_portal] = lambda: red or RepoRedMulasFalso()
         gestor = LifespanManager(creada)
         gestionada = await gestor.__aenter__()
-        http = AsyncClient(transport=ASGITransport(app=gestionada.app), base_url="http://pruebas")
+        http = AsyncClient(headers=encabezados_de(), transport=ASGITransport(app=gestionada.app), base_url="http://pruebas")
         abiertos.append((gestor, http))
         return http
 

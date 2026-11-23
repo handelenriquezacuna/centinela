@@ -22,6 +22,7 @@ from app.api.errores import (
 )
 from app.api.esquemas import PaginaAlertas, PeticionTransicion, ResultadoTransicion
 from app.api.paginacion import acotar_limite
+from app.api.sesion import SesionDep
 from app.modelos import Alerta, EstadoAlerta, Severidad
 from app.modelos.base import asumir_utc
 from app.repos.alertas import ConflictoAlerta, planear_transicion
@@ -124,7 +125,10 @@ def _conflicto(fallo: ConflictoAlerta) -> ErrorCentinela:
     ),
 )
 async def transicionar_alerta(
-    alerta_id: AlertaIdRuta, peticion: PeticionTransicion, repo: RepoAlertasDep
+    alerta_id: AlertaIdRuta,
+    peticion: PeticionTransicion,
+    repo: RepoAlertasDep,
+    sesion: SesionDep,
 ) -> ResultadoTransicion:
     """Una transicion es un recurso que se agrega, no un estado que se pisa: POST.
 
@@ -135,7 +139,8 @@ async def transicionar_alerta(
     - `en_revision -> X` solo la hace el agente que la tomo; otro recibe 409.
     - `escalada` crea el caso `CAS-xxx` en la misma transaccion multi-documento.
 
-    Sin autenticacion hasta H-25: el agente viaja en el cuerpo.
+    El agente de la accion es el de la sesion (`agente_id` del cuerpo se ignora): el
+    historial no se puede firmar a nombre de otro.
     """
     actual = await repo.obtener(alerta_id)
     if actual is None:
@@ -157,7 +162,7 @@ async def transicionar_alerta(
         plan = planear_transicion(
             actual,
             destino=peticion.destino,
-            agente_id=peticion.agente_id,
+            agente_id=sesion.agente_id,
             nota=peticion.nota,
             ahora=datetime.now(UTC),
         )

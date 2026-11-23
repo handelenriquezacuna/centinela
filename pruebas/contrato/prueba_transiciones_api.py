@@ -27,6 +27,7 @@ from app.modelos import TRANSICIONES, EstadoAlerta
 from app.repos.alertas import ProtocoloRepoAlertas, RepoAlertas
 from pruebas.dobles.datos_demo import alertas_como_documentos
 from pruebas.dobles.repos_falsos import RepoAlertasFalso
+from pruebas.sesiones import encabezados_de
 
 AGENTE = "AGT-001"
 
@@ -55,7 +56,7 @@ async def armar() -> AsyncIterator[Any]:
         aplicacion.dependency_overrides[dep_repo_alertas] = lambda: repo
         gestor = LifespanManager(aplicacion)
         gestionada = await gestor.__aenter__()
-        cliente = AsyncClient(transport=ASGITransport(app=gestionada.app), base_url="http://p")
+        cliente = AsyncClient(headers=encabezados_de(), transport=ASGITransport(app=gestionada.app), base_url="http://p")
         abiertos.append((gestor, cliente))
         return cliente, repo
 
@@ -132,13 +133,33 @@ async def prueba_escalar_devuelve_el_caso_creado(armar: Any) -> None:
 async def prueba_resolver_la_de_otro_agente_es_conflicto(armar: Any) -> None:
     cliente, repo = await armar([_alerta_en(EstadoAlerta.EN_REVISION)])
 
+    # Quien resuelve es el de la sesion: la alerta es de AGT-001 y entra AGT-002.
     respuesta = await cliente.post(
-        _ruta("ALR-002"), json={"destino": "confirmada", "agente_id": "AGT-002"}
+        _ruta("ALR-002"),
+        json={"destino": "confirmada"},
+        headers=encabezados_de("agente", "AGT-002"),
     )
 
     assert respuesta.status_code == status.HTTP_409_CONFLICT
     assert respuesta.json()["error"]["codigo"] == "conflicto"
     assert repo.escrituras == 0
+
+
+@pytest.mark.asyncio
+async def prueba_el_agente_del_cuerpo_se_ignora_y_manda_la_sesion(armar: Any) -> None:
+    """Un cliente no puede firmar el historial a nombre de otro agente (H-25)."""
+    cliente, _ = await armar([_alerta_en(EstadoAlerta.NUEVA)])
+
+    respuesta = await cliente.post(
+        _ruta("ALR-002"),
+        json={"destino": "en_revision", "agente_id": "AGT-002"},
+        headers=encabezados_de("agente", "AGT-001"),
+    )
+
+    assert respuesta.status_code == status.HTTP_200_OK
+    alerta = respuesta.json()["alerta"]
+    assert alerta["agente_id"] == "AGT-001"
+    assert alerta["historial"][-1]["agente_id"] == "AGT-001"
 
 
 @pytest.mark.asyncio
@@ -187,7 +208,6 @@ async def prueba_alerta_inexistente_es_404(armar: Any) -> None:
     [
         pytest.param({"destino": "resuelta", "agente_id": AGENTE}, id="estado-inexistente"),
         pytest.param({"destino": "en_revision", "agente_id": "Jose"}, id="agente-mal-formado"),
-        pytest.param({"destino": "en_revision"}, id="sin-agente"),
         pytest.param(
             {"destino": "en_revision", "agente_id": AGENTE, "estado": "nueva"}, id="campo-extra"
         ),

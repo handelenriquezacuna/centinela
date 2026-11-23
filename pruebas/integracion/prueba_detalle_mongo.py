@@ -31,6 +31,7 @@ from app.main import crear_aplicacion
 from app.nucleo.config import Ajustes, obtener_ajustes
 from app.repos.esquemas import obtener_validadores, recrear_con_validador
 from pruebas.conftest import BASE_SEMILLA, saltar_o_fallar
+from pruebas.sesiones import encabezados_de
 
 pytestmark = pytest.mark.mongo
 
@@ -121,6 +122,7 @@ async def http(ajustes: Ajustes, base_detalle: Any) -> AsyncIterator[AsyncClient
     obtener_ajustes.cache_clear()
     try:
         async with LifespanManager(crear_aplicacion()) as gestionada, AsyncClient(
+            headers=encabezados_de(),
             transport=ASGITransport(app=gestionada.app), base_url="http://pruebas"
         ) as cliente_http:
             yield cliente_http
@@ -155,7 +157,8 @@ async def prueba_nueva_en_revision_escalada_crea_el_caso(
 ) -> None:
     tomada = await http.post(
         "/detalle/ALR-002/transicion",
-        content="destino=en_revision&agente_id=AGT-002&estado_esperado=nueva",
+        content="destino=en_revision&estado_esperado=nueva",
+        headers=encabezados_de("agente", "AGT-002"),
     )
     assert tomada.status_code == 200
     assert 'data-destino="escalada"' in tomada.text
@@ -163,14 +166,16 @@ async def prueba_nueva_en_revision_escalada_crea_el_caso(
     # Otro agente no la resuelve: 409 visible, sin caso.
     ajeno = await http.post(
         "/detalle/ALR-002/transicion",
-        content="destino=escalada&agente_id=AGT-001&estado_esperado=en_revision",
+        content="destino=escalada&estado_esperado=en_revision",
+        headers=encabezados_de("agente", "AGT-001"),
     )
     assert ajeno.status_code == 409 and "AGT-002" in ajeno.text
     assert await base_detalle["casos"].find_one({"_id": "CAS-002"}) is None
 
     escalada = await http.post(
         "/detalle/ALR-002/transicion",
-        content="destino=escalada&agente_id=AGT-002&nota=sospecha+de+mula&estado_esperado=en_revision",
+        content="destino=escalada&nota=sospecha+de+mula&estado_esperado=en_revision",
+        headers=encabezados_de("agente", "AGT-002"),
     )
     assert escalada.status_code == 200
     assert "CAS-002" in escalada.text

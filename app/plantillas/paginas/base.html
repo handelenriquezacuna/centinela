@@ -15,13 +15,21 @@
   <a class="marca" href="/panel">Centinela <span class="marca-sufijo">portal de fraude</span></a>
   <nav class="nav-portal" aria-label="Navegacion principal">
     {% for destino, etiqueta, clave in navegacion %}
+    {% if permite_ruta(destino) %}
     <a href="{{ destino }}"{% if clave == activa %} aria-current="page"{% endif %}>{{ etiqueta }}</a>
+    {% endif %}
     {% endfor %}
+    {% if navegacion and permite_ruta('/red-mulas') %}
     <a href="/red-mulas"{% if activa == 'red_mulas' %} aria-current="page"{% endif %}>Red de mulas</a>
+    {% endif %}
   </nav>
+  {% set sesion = sesion_actual() %}
+  {% if sesion %}
   <div class="sesion-agente">
-    <span class="aviso-modo-local" title="Sin autenticacion hasta H-25">modo local</span>
+    <span id="sesion-quien"><strong>{{ sesion.agente_id }}</strong> ({{ sesion.rol.value }})</span>
+    <form method="post" action="/salir" class="form-salir"><button type="submit" class="boton boton-secundario">Salir</button></form>
   </div>
+  {% endif %}
 </header>
 <main class="contenedor">
 {% block contenido %}{% endblock %}

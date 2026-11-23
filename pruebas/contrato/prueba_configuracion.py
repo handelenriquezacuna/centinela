@@ -23,6 +23,7 @@ from app.nucleo.config import (
     VARIABLE_DIRECTORIO,
     Ajustes,
 )
+from pruebas.sesiones import CLAVE_DE_PRUEBAS
 
 URI_DE_PRUEBA = "mongodb://localhost:27018/?replicaSet=rsfraude"
 
@@ -56,6 +57,9 @@ def directorio_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         yaml.safe_dump(YAML_BASE), encoding="utf-8"
     )
     monkeypatch.setenv(VARIABLE_DIRECTORIO, str(tmp_path))
+    # Los YAML de estas pruebas declaran un entorno que no es dev, y fuera de dev la
+    # clave de sesion es obligatoria.
+    monkeypatch.setenv("CENTINELA_SESION__CLAVE", CLAVE_DE_PRUEBAS)
     return tmp_path
 
 
@@ -297,3 +301,36 @@ def prueba_d3_tiene_su_intervalo_y_tiene_que_latir_antes_de_la_tolerancia(
     )
     with pytest.raises(ValidationError):
         Ajustes()
+
+
+def prueba_fuera_de_dev_la_clave_de_sesion_es_obligatoria(
+    directorio_yaml: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """H-25: en un entorno que no es dev, sin CENTINELA_SESION__CLAVE no arranca."""
+    from pydantic import ValidationError
+
+    monkeypatch.delenv("CENTINELA_SESION__CLAVE")
+    with pytest.raises(ValidationError, match="CENTINELA_SESION__CLAVE"):
+        Ajustes()
+
+
+def prueba_en_dev_se_arranca_sin_clave_y_la_clave_corta_se_rechaza(
+    directorio_yaml: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pydantic import ValidationError
+
+    monkeypatch.delenv("CENTINELA_SESION__CLAVE")
+    (directorio_yaml / NOMBRE_YAML_BASE).write_text(
+        yaml.safe_dump({**YAML_BASE, "app": {**YAML_BASE["app"], "entorno": "dev"}})
+    )
+    assert Ajustes().sesion.clave is None
+
+    monkeypatch.setenv("CENTINELA_SESION__CLAVE", "corta")
+    with pytest.raises(ValidationError):
+        Ajustes()
+
+
+def prueba_el_yaml_del_repo_no_lleva_la_clave_de_sesion() -> None:
+    """La clave es un secreto: entra por el entorno, nunca por config/centinela.yml."""
+    crudo = yaml.safe_load((RUTA_RAIZ / "config" / NOMBRE_YAML_BASE).read_text(encoding="utf-8"))
+    assert "clave" not in crudo["sesion"]
