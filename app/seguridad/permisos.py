@@ -94,6 +94,7 @@ ACCESOS: tuple[Acceso, ...] = (
     # Panel y alertas
     _a("GET", "/panel", Permiso.PANEL),
     _a("GET", "/panel/cola", Permiso.PANEL),
+    _a("GET", "/panel/rezago", Permiso.PANEL),
     _a("GET", "/api/v1/alertas", Permiso.PANEL),
     _a("GET", "/api/v1/alertas/flujo", Permiso.PANEL),
     # Detalle y resolucion

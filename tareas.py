@@ -21,6 +21,7 @@ Uso:
     python tareas.py generar [...]   corre el generador de datos (T-28), con sus banderas
     python tareas.py usuarios [...]  administra los usuarios de la app (T-41)
     python tareas.py indicadores [...] recalcula indicadores_diarios (H-22)
+    python tareas.py cargar --archivo x.jsonl  carga transacciones desde JSONL, en lotes (T-57)
     python tareas.py pruebas         corre las pruebas
     python tareas.py e2e             recorridos con navegador real (Chromium) contra la app (T-58)
     python tareas.py resiliencia     failover de D1 con un replica set de 3 nodos en Docker (T-52)
@@ -818,6 +819,20 @@ def tarea_indicadores(args: argparse.Namespace) -> None:
     )
 
 
+def tarea_cargar(args: argparse.Namespace) -> None:
+    """Carga transacciones desde un archivo JSONL, en lotes y sin duplicar (T-57).
+
+    Ejemplo: python tareas.py cargar --archivo transacciones.jsonl
+    Reporta cargadas, repetidas y rechazadas con su numero de linea. Se puede volver a
+    correr: lo ya cargado cuenta como repetido. Respeta CENTINELA_MONGO__URI.
+    """
+    correr(
+        uv("run", "python", "-m", "app.carga", *args.argumentos),
+        dry_run=args.dry_run,
+        env=entorno_app(),
+    )
+
+
 def tarea_usuarios(args: argparse.Namespace) -> None:
     """Administra los usuarios de la app (T-41); las banderas pasan tal cual.
 
@@ -887,6 +902,7 @@ TAREAS = {
     "validadores": tarea_validadores,
     "generar": tarea_generar,
     "indicadores": tarea_indicadores,
+    "cargar": tarea_cargar,
     "usuarios": tarea_usuarios,
     "pruebas": tarea_pruebas,
     "e2e": tarea_e2e,
@@ -960,7 +976,7 @@ def main(argumentos: list[str] | None = None) -> int:
     # Todo lo que sigue a `generar` es del generador (incluidas sus banderas y --help):
     # argparse no sabe repartir banderas desconocidas a un subcomando, asi que se corta aca.
     pasadas: list[str] = []
-    for pasante in ("generar", "indicadores", "usuarios"):
+    for pasante in ("generar", "indicadores", "usuarios", "cargar"):
         if pasante not in argumentos:
             continue
         corte = argumentos.index(pasante) + 1

@@ -146,6 +146,10 @@ class AjustesDeteccion(BaseModel):
     - `espera_inicial_segundos` / `espera_maxima_segundos`: la espera progresiva entre
       reintentos, y entre reaperturas del change stream si se cae. Se duplica en cada
       intento hasta el tope.
+    - `rezago_intervalo_segundos`: cada cuanto D1 mide cuantas transacciones tiene sin
+      evaluar (T-57). Es una consulta barata por indice, pero no se hace por evento.
+    - `rezago_aviso_desde`: desde cuantas transacciones sin evaluar el panel muestra el
+      aviso "Deteccion atrasada". Es operacion, no una regla de negocio.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -154,6 +158,8 @@ class AjustesDeteccion(BaseModel):
     reintentos: int = Field(default=3, ge=0)
     espera_inicial_segundos: float = Field(default=0.5, gt=0)
     espera_maxima_segundos: float = Field(default=10.0, gt=0)
+    rezago_intervalo_segundos: float = Field(default=2.0, gt=0)
+    rezago_aviso_desde: int = Field(default=500, ge=1)
 
     @model_validator(mode="after")
     def el_tope_supera_la_espera_inicial(self) -> AjustesDeteccion:

@@ -1076,3 +1076,118 @@ El visor muestra la linea de tiempo de acciones; al pulsar una se ve la pagina t
 estaba (antes y despues), con la accion que fallo marcada, y las pestanas Red y Consola
 dicen si el servidor respondio mal o el navegador lanzo un error. Si el servidor no llega a
 arrancar, el registro del `uvicorn` se imprime en el reporte de pytest.
+
+## Rezago de D1, throughput y carga por lotes (T-57)
+
+El riesgo de un volumen grande no es que la ingesta falle (el generador inserta decenas de
+miles de documentos por segundo) sino que D1, que evalua de a una transaccion con varias
+consultas por regla, se quede atras. Hasta aqui nadie lo veia: la latencia solo mide las
+alertas ya escritas y el latido solo dice que D1 sigue vivo.
+
+### Rezago medido y publicado
+
+D1 mide, como mucho cada `deteccion.rezago_intervalo_segundos` (2 s) y despues de guardar el
+token, cuantas transacciones hay sin evaluar y la antiguedad de la mas vieja.
+`GET /estado`, en la tarea `d1_deteccion`, publica:
+
+```json
+"rezago": {"pendientes": 9988, "antiguedad_segundos": 2592000.0, "medido_en": "2026-11-23T18:04:11Z"}
+```
+
+- Pendientes son las transacciones con `_id` posterior a `ultima_transaccion_id` del token
+  de D1 en `deteccion_estado`. Los identificadores `TXN-NNNNNN` se asignan en orden de
+  insercion, de modo que el orden por `_id` es el orden en que D1 las recibe. Es valido
+  mientras el numero tenga el mismo ancho (seis digitos); con un contrato de ids de otro
+  ancho habria que medir de otra forma.
+- Sin `ultima_transaccion_id` (D1 nunca termino una transaccion, por ejemplo una base
+  recien sembrada) no hay referencia y se publica 0. D1 arranca "desde ahora" y no evalua
+  lo anterior, asi que contar todo el historico como pendiente seria falso.
+- `antiguedad_segundos` se mide contra `transacciones.fecha` de la mas vieja sin evaluar,
+  la hora del negocio, porque `transacciones` no guarda hora de insercion. Con trafico real
+  de SINPE coincide con la hora de llegada; con datos sinteticos de historia pasada
+  (el generador cubre 30 dias hacia atras) sale de dias. Es una limitacion conocida, no un
+  error: la cifra que importa para el aviso es la cantidad.
+- `medido_en` deja ver si la cifra se renueva. Si D1 se atasca, deja de renovarse y la tarea
+  pasa a `retrasada` por el latido de siempre.
+- Una falla al medir no detiene a D1: se registra y se conserva la cifra anterior.
+- La consulta vive en `app/repos/deteccion.py` (`medir_rezago`, `filtro_pendientes`).
+
+Plan de la consulta, con `explain("executionStats")` sobre 3.000 transacciones y 2.500
+pendientes (`pruebas/integracion/prueba_rezago_mongo.py`; no hace falta indice nuevo, el
+de `_id` ya existe):
+
+| Consulta | Plan | nReturned | totalKeysExamined | totalDocsExamined |
+|---|---|---|---|---|
+| Contar pendientes (`$match` + `$group`) | COUNT_SCAN sobre `_id_` | 1 | 2.500 | 0 |
+| La mas vieja (`find`, orden `_id`, limite 1) | IXSCAN sobre `_id_`, sin SORT | 1 | 1 | 1 |
+
+Contar recorre claves del indice y no lee un documento; la mas vieja lee uno solo, sin
+importar cuantos haya pendientes. El costo del conteo crece con el rezago (una clave por
+pendiente), por eso se mide cada 2 s y no por evento.
+
+### Aviso en el panel
+
+`/panel` incluye una region `role="status"` (`aria-live="polite"`) que se refresca con HTMX
+cada 10 s desde `GET /panel/rezago`. Ese fragmento no consulta la base: lee la ultima
+medicion del supervisor, igual que `/estado`. Si los pendientes superan
+`deteccion.rezago_aviso_desde` (500, en `config/centinela.yml`) muestra:
+
+> Deteccion atrasada: N transacciones por evaluar, la mas vieja de hace X.
+
+Sobre el umbral el aviso aparece; en el umbral o debajo, o sin medicion, el fragmento va
+vacio. El umbral es operacion, no una regla de negocio: no decide que es fraude.
+
+### Throughput de D1 medido
+
+Prueba `pruebas/integracion/prueba_rezago_volumen.py` (marcas `mongo` y `volumen`): con D1
+corriendo, el generador inserta 10.000 transacciones de golpe y se mide hasta rezago 0.
+
+Maquina: Apple M4 Max (14 nucleos, 36 GB), macOS 27.0.1, Docker 28.0.4, Mongo 8.3 de un
+nodo en contenedor con cache de WiredTiger de 0,25 GB, D1 con los reintentos del YAML.
+
+| Medida | Cifra |
+|---|---|
+| Insercion de 10.000 transacciones | 0,2 s (unas 52.900 docs/s) |
+| D1: transacciones evaluadas por segundo | 137 |
+| Tiempo total hasta rezago 0 | 73,1 s |
+| Puesta al dia tras terminar la insercion | 72,7 s |
+| Rezago maximo visto | 9.988 |
+| Alertas escritas | 140 |
+| Latencia de la alerta (p50 / p95) | 34,9 s / 69,8 s |
+
+Lectura: D1 sostiene unas 137 transacciones por segundo, es decir, unos 7 ms por
+transaccion, igual que la cifra de T-52. Una rafaga de 10.000 tarda poco mas de un minuto en
+quedar evaluada, y mientras tanto la latencia de cada alerta es la espera en la cola, no el
+costo de evaluarla. El piso de la prueba es 25 transacciones por segundo (un orden de magnitud
+bajo lo medido): detecta una regresion seria, no ruido.
+
+Dimensionamiento: con 137 transacciones por segundo, 100.000 transacciones tardan unos 12
+minutos en evaluarse y el aviso del panel se mantiene encendido todo ese tiempo. Si la
+defensa necesita cargar 100.000 con D1 al dia, hay que cargar con ritmo (`generador.ritmo_por_segundo`
+menor a 137) o aceptar el atraso. Optimizacion propuesta, sin implementar: leer las reglas y la
+politica una vez por vuelta del cursor y no por transaccion (hoy son dos lecturas por evento,
+a proposito, para que un cambio de umbral aplique a la siguiente transaccion; leerlas una vez
+por segundo conserva esa propiedad con un retraso de un segundo), y resolver `leer_origen`
+con un cache de cuentas. Medir antes de decidir.
+
+### Carga desde JSONL: `python tareas.py cargar --archivo x.jsonl`
+
+Carga transacciones desde un archivo con una por linea, validando cada una con el modelo
+`Transaccion` antes de insertar: monto entero, fecha con zona (se normaliza a UTC; una fecha
+sin zona se rechaza), identificador `TXN-`. Ejemplo de linea:
+
+```json
+{"_id": "TXN-000001", "cuenta_origen": "CTA-001", "cuenta_destino": "6033-9001", "monto_crc": 150000, "fecha": "2026-11-23T14:05:00-06:00"}
+```
+
+- Lotes de 1.000 con `insert_many(ordered=False)`. Reintentable: una transaccion ya
+  cargada choca con el `_id` unico y se cuenta como repetida, no como error. Volver a correr
+  un archivo a medias lo completa.
+- Reporta cargadas, repetidas y rechazadas con su numero de linea. Una linea rechazada por el
+  modelo o por el validador de la base no frena a las demas.
+- Salida: 0 si todo bien, 1 si hubo lineas rechazadas, 2 si el archivo no existe.
+- Respeta `CENTINELA_MONGO__URI` (corre con `entorno_app()`). El codigo vive en `app/carga/` y
+  `app/repos/carga_transacciones.py`; `tareas.py` solo lo invoca.
+- Con D1 corriendo, cada transaccion cargada se evalua por el change stream como cualquier otra.
+
+Cifra: 2.498 transacciones cargadas en 0,07 s (unas 38.000 por segundo) en la misma maquina.

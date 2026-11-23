@@ -39,6 +39,7 @@ from app.api.dependencias import (
     RepoAlertasDep,
     RepoDetalleDep,
     RepoReglasDep,
+    SupervisorDep,
 )
 from app.api.errores import ErrorCentinela
 from app.api.esquemas import EdicionRegla, PeticionTransicion
@@ -48,6 +49,7 @@ from app.api.fragmentos import RUTA_PLANTILLAS
 from app.api.rutas.alertas import AlertaIdRuta, transicionar_alerta
 from app.api.rutas.reglas import ReglaIdRuta, editar_regla
 from app.api.sesion import SesionDep, permite_ruta, sesion_actual
+from app.deteccion.d1 import NOMBRE_D1
 from app.deteccion.evaluador import TIPOS_REGLA
 from app.modelos import (
     ZONA_COSTA_RICA,
@@ -127,6 +129,38 @@ async def cola(repo: RepoAlertasDep, ajustes: AjustesDep) -> HTMLResponse:
     """Solo las filas: lo que se pide ante `resincronizar` o al reconectar."""
     html = ENTORNO.get_template("paginas/cola.html").render(
         alertas=await _cola(repo, ajustes)
+    )
+    return HTMLResponse(html)
+
+
+def antiguedad_legible(segundos: float | None) -> str:
+    """`125.0` -> `2 min`; el aviso dice hace cuanto es la transaccion mas vieja."""
+    if segundos is None:
+        return ""
+    total = int(segundos)
+    if total < 60:
+        return f"{total} s"
+    if total < 3600:
+        return f"{total // 60} min"
+    if total < 86400:
+        return f"{total // 3600} h"
+    return f"{total // 86400} d"
+
+
+@enrutador.get("/panel/rezago", response_class=HTMLResponse)
+async def rezago(supervisor: SupervisorDep, ajustes: AjustesDep) -> HTMLResponse:
+    """Aviso de D1 atrasado (T-57). No consulta la base: lee la ultima medicion que D1
+    dejo en el supervisor, igual que `/estado`. Vacio si D1 esta al dia o sin medir."""
+    medida = None
+    try:
+        medida = supervisor.informe().tarea(NOMBRE_D1).rezago
+    except KeyError:
+        pass
+    atrasada = medida is not None and medida.pendientes > ajustes.deteccion.rezago_aviso_desde
+    html = ENTORNO.get_template("paginas/aviso_rezago.html").render(
+        atrasada=atrasada,
+        pendientes=f"{medida.pendientes:,}".replace(",", " ") if medida else 0,
+        antiguedad=antiguedad_legible(medida.antiguedad_segundos) if medida else "",
     )
     return HTMLResponse(html)
 

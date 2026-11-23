@@ -147,6 +147,21 @@ class LatenciaMs(BaseModel):
     max: float | None = None
 
 
+class RezagoTarea(BaseModel):
+    """Trabajo que a la tarea le falta por hacer (T-57), para D1: transacciones sin evaluar.
+
+    `antiguedad_segundos` se mide contra `fecha` (hora del negocio) de la transaccion mas
+    vieja sin evaluar; es nulo si no hay pendientes. `medido_en` dice cuando se tomo la
+    cifra: si deja de renovarse, D1 esta atascado y `estado` lo dira.
+    """
+
+    pendientes: int = Field(ge=0, description="Transacciones insertadas y todavia sin evaluar")
+    antiguedad_segundos: float | None = Field(
+        default=None, description="Antiguedad de la mas vieja sin evaluar; nulo sin pendientes"
+    )
+    medido_en: datetime = Field(description="Cuando se tomo la medicion, en UTC")
+
+
 class TareaSupervisada(BaseModel):
     """Una tarea de fondo tal como la publica `/estado`.
 
@@ -183,6 +198,13 @@ class TareaSupervisada(BaseModel):
     latencia_ms: LatenciaMs | None = Field(
         default=None,
         description="Solo D1: latencia de deteccion medida (H-09); nulo en las demas tareas",
+    )
+    rezago: RezagoTarea | None = Field(
+        default=None,
+        description=(
+            "Solo D1: transacciones sin evaluar y antiguedad de la mas vieja (T-57); "
+            "nulo en las demas tareas y antes de la primera medicion"
+        ),
     )
 
 
@@ -246,6 +268,15 @@ class EstadoFuncional(BaseModel):
             ),
             historia=fila.historia,
             advertencia=fila.advertencia,
+            rezago=(
+                RezagoTarea(
+                    pendientes=fila.rezago.pendientes,
+                    antiguedad_segundos=fila.rezago.antiguedad_segundos,
+                    medido_en=fila.rezago.medido_en,
+                )
+                if fila.rezago is not None
+                else None
+            ),
             latencia_ms=(
                 LatenciaMs(
                     n=fila.latencia.n,

@@ -14,6 +14,10 @@
   </div>
 </div>
 
+{# T-57: aviso de rezago de D1. El fragmento llega vacio mientras D1 esta al dia. #}
+<div id="aviso-rezago" role="status" aria-live="polite"
+     hx-get="/panel/rezago" hx-trigger="load, every 10s" hx-swap="innerHTML"></div>
+
 <section class="tarjeta" aria-label="Cola de alertas" hx-ext="sse" sse-connect="/api/v1/alertas/flujo">
   {# El evento `resincronizar` no trae fila: pide la cola entera, que es lo que promete H-17. #}
   <div hx-get="/panel/cola" hx-trigger="sse:resincronizar" hx-target="#cola" hx-swap="innerHTML"></div>

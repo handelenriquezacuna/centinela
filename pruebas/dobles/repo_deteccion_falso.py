@@ -26,7 +26,7 @@ from typing import Any
 
 from app.deteccion import ContextoEvaluacion, PoliticaDeteccion, VentanaOrigen
 from app.modelos import Alerta, Regla, Transaccion
-from app.repos.deteccion import DatosOrigen, EventoTransaccion
+from app.repos.deteccion import DatosOrigen, EventoTransaccion, RezagoMedido
 from app.repos.flujo_alertas import TokenDeReanudacionInvalido
 from pruebas.dobles.datos_demo import PERFILES
 
@@ -111,6 +111,11 @@ class RepoDeteccionFalso:
         self.aperturas: list[Mapping[str, Any] | None] = []
         self.descartes: list[dict[str, Any]] = []
         self.agotado = asyncio.Event()
+        # T-57: lo que responde la medicion de rezago. No entra en `bitacora`, que es el
+        # orden de las escrituras.
+        self.rezago = RezagoMedido(pendientes=0, mas_vieja=None)
+        self.fallar_rezago = False
+        self.mediciones_rezago = 0
 
     # -- Change stream ----------------------------------------------------
 
@@ -175,6 +180,12 @@ class RepoDeteccionFalso:
 
     async def leer_token(self, disparador: str) -> Mapping[str, Any] | None:
         return self.token_guardado
+
+    async def medir_rezago(self, disparador: str) -> RezagoMedido:
+        self.mediciones_rezago += 1
+        if self.fallar_rezago:
+            raise ConnectionError("la base no contesta")
+        return self.rezago
 
     async def guardar_token(
         self,
