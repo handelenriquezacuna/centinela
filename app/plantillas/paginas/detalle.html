@@ -29,7 +29,8 @@
   <dl class="lista-datos">
     <div><dt>Id transaccion</dt><dd class="id-corto">{{ alerta['transaccion_id'] }}</dd></div>
     <div><dt>Cuenta origen</dt><dd class="id-corto">{{ alerta['cuenta_origen'] }}{% if transaccion %} ({{ transaccion['cuenta_origen'] }}){% endif %}</dd></div>
-    <div><dt>Cuenta destino</dt><dd class="id-corto">{{ alerta['cuenta_destino'] }}</dd></div>
+    <div><dt>Cuenta destino</dt><dd class="id-corto">{{ alerta['cuenta_destino'] }}
+      <a id="enlace-red-mulas" href="/red-mulas/{{ alerta['cuenta_destino'] }}?desde={{ (transaccion['fecha'] if transaccion else alerta['fecha_creacion']).isoformat() | urlencode }}">ver red de mulas</a></dd></div>
     <div><dt>Monto</dt><dd class="monto">{{ alerta['monto_crc'] | colones }} {{ alerta['moneda'] }}</dd></div>
     {% if transaccion %}<div><dt>Canal</dt><dd>{{ transaccion['canal'] }}</dd></div>{% endif %}
     <div><dt>Fecha y hora (hora CR)</dt><dd class="hora">{{ (transaccion['fecha'] if transaccion else alerta['fecha_creacion']) | hora_costa_rica }}</dd></div>

@@ -272,3 +272,28 @@ def prueba_el_entorno_sobrescribe_el_generador(
     monkeypatch.setenv("CENTINELA_GENERADOR__CLIENTES", "37")
 
     assert Ajustes().generador.clientes == 37
+
+
+def prueba_d3_tiene_su_intervalo_y_tiene_que_latir_antes_de_la_tolerancia(
+    directorio_yaml: Path,
+) -> None:
+    """H-22: `indicadores.intervalo_segundos` existe, y D3 no puede quedar `retrasada`."""
+    from pydantic import ValidationError
+
+    base = dict(YAML_BASE)
+    (directorio_yaml / NOMBRE_YAML_BASE).write_text(
+        yaml.safe_dump({**base, "indicadores": {"intervalo_segundos": 7}})
+    )
+    assert Ajustes().indicadores.intervalo_segundos == 7
+
+    (directorio_yaml / NOMBRE_YAML_BASE).write_text(
+        yaml.safe_dump(
+            {
+                **base,
+                "supervision": {"intervalo_latido_segundos": 5, "tolerancia_retraso_segundos": 30},
+                "indicadores": {"intervalo_segundos": 30},
+            }
+        )
+    )
+    with pytest.raises(ValidationError):
+        Ajustes()

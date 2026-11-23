@@ -17,6 +17,7 @@ Uso:
     python tareas.py migrar          corre las migraciones de esquema (H-26)
     python tareas.py validadores     actualiza los validadores sin borrar datos (T-24)
     python tareas.py generar [...]   corre el generador de datos (T-28), con sus banderas
+    python tareas.py indicadores [...] recalcula indicadores_diarios (H-22)
     python tareas.py pruebas         corre las pruebas
     python tareas.py verificar       instala, prueba y reporta
 
@@ -400,6 +401,17 @@ def tarea_generar(args: argparse.Namespace) -> None:
     correr(uv("run", "python", "-m", "app.generador", *args.argumentos), dry_run=args.dry_run)
 
 
+def tarea_indicadores(args: argparse.Namespace) -> None:
+    """Recalcula indicadores_diarios (H-22); sin banderas, el dia de hoy.
+
+    Ejemplo: python tareas.py indicadores --desde 2026-11-01 --hasta 2026-11-22
+    """
+    correr(
+        uv("run", "python", "-m", "app.deteccion.indicadores", *args.argumentos),
+        dry_run=args.dry_run,
+    )
+
+
 def tarea_pruebas(args: argparse.Namespace) -> None:
     """Corre las pruebas. Las que necesitan Mongo se saltan solas si no esta."""
     orden = uv("run", "pytest")
@@ -432,6 +444,7 @@ TAREAS = {
     "migrar": tarea_migrar,
     "validadores": tarea_validadores,
     "generar": tarea_generar,
+    "indicadores": tarea_indicadores,
     "pruebas": tarea_pruebas,
     "verificar": tarea_verificar,
 }
@@ -496,9 +509,12 @@ def main(argumentos: list[str] | None = None) -> int:
     # Todo lo que sigue a `generar` es del generador (incluidas sus banderas y --help):
     # argparse no sabe repartir banderas desconocidas a un subcomando, asi que se corta aca.
     pasadas: list[str] = []
-    if "generar" in argumentos:
-        corte = argumentos.index("generar") + 1
+    for pasante in ("generar", "indicadores"):
+        if pasante not in argumentos:
+            continue
+        corte = argumentos.index(pasante) + 1
         argumentos, pasadas = argumentos[:corte], argumentos[corte:]
+        break
 
     args = analizador.parse_args(argumentos)
     args.argumentos = pasadas

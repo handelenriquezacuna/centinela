@@ -15,8 +15,8 @@ las dos puertas no pueden divergir.
   aporte, la politica, el historial y la resolucion desde ahi. Resolver llama al mismo
   handler que `POST /api/v1/alertas/{id}/transiciones`, asi que las dos puertas no
   divergen: misma maquina de estados, mismo 409.
-- `/detalle` (sin id), `/busqueda`, `/tablero`: la maqueta estatica dentro de la plantilla
-  base, marcada "en construccion", hasta que lleguen H-19 y H-20.
+- `/detalle` (sin id), `/busqueda`: la maqueta estatica dentro de la plantilla
+  base, marcada "en construccion", hasta que llegue H-19. `/tablero` vive en `paginas_tablero.py` (H-20).
 
 Sin autenticacion hasta H-25.
 """
@@ -61,7 +61,6 @@ NAVEGACION = [
 ]
 
 # Mayor gravedad primero. La severidad llega de Mongo en mayusculas.
-RANGO_SEVERIDAD = {"CRITICA": 0, "ALTA": 1, "MEDIA": 2}
 
 RUTA_MAQUETAS = RUTA_PLANTILLAS / "maquetas"
 ENLACES_MAQUETA = {
@@ -99,19 +98,14 @@ def _pagina(plantilla: str, activa: str, estado: int = 200, **contexto: Any) -> 
     return HTMLResponse(html, status_code=estado)
 
 
-def ordenar_cola(alertas: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Severidad (critica primero) y luego fecha (la mas reciente primero)."""
-    por_fecha = sorted(alertas, key=lambda a: a["fecha_creacion"], reverse=True)
-    return sorted(por_fecha, key=lambda a: RANGO_SEVERIDAD.get(a["severidad"], 9))
-
-
 async def _cola(repo: RepoAlertasDep, ajustes: AjustesDep) -> list[dict[str, Any]]:
     # `limite` acotado por app.pagina_maxima, igual que la API.
     limite = min(ajustes.app.pagina_por_omision, ajustes.app.pagina_maxima)
     alertas, _total = await repo.listar(
         estado=None, severidad=None, desde=None, hasta=None, limite=limite, desplazamiento=0
     )
-    return ordenar_cola(alertas)
+    # El orden (puntaje, fecha, _id) ya viene de la base: ORDEN_PANEL.
+    return alertas
 
 
 @enrutador.get("/")
@@ -486,4 +480,3 @@ def _ruta_maqueta(clave: str, titulo: str) -> None:
 
 
 _ruta_maqueta("detalle", "Detalle de alerta")
-_ruta_maqueta("tablero", "Tablero de indicadores")

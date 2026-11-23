@@ -1,0 +1,88 @@
+{% extends "paginas/base.html" %}
+{% block titulo %}Tablero{% endblock %}
+{% macro barras(g, titulo) %}
+<svg class="grafico" viewBox="0 0 {{ g.ancho }} {{ g.alto }}" role="img" aria-label="{{ titulo }}">
+  <title>{{ titulo }}</title>
+  {% for f in g.filas %}
+  <text x="0" y="{{ f.y + 17 }}">{{ f.rotulo }}</text>
+  <rect class="{{ f.clase }}" x="{{ g.etiqueta }}" y="{{ f.y + 4 }}" width="{{ f.ancho }}" height="16" rx="2"></rect>
+  <text class="valor" x="{{ g.etiqueta + f.ancho + 6 }}" y="{{ f.y + 17 }}">{{ f.valor }}</text>
+  {% endfor %}
+</svg>
+{% endmacro %}
+{% macro variacion(v) %}
+{% if v.delta > 0 %}<span class="variacion-sube">+{{ v.delta }}{% if v.porcentaje is not none %} ({{ v.porcentaje }}%){% endif %}</span>
+{% elif v.delta < 0 %}<span class="variacion-baja">{{ v.delta }}{% if v.porcentaje is not none %} ({{ v.porcentaje }}%){% endif %}</span>
+{% else %}sin cambio{% endif %}
+{% endmacro %}
+{% block contenido %}
+<link rel="stylesheet" href="/estaticos/tablero.css">
+<div class="titulo-pantalla">
+  <div>
+    <h1>Tablero de indicadores</h1>
+    <p class="subtitulo">Alertas por estado, severidad, agente y hora, contra el periodo anterior.</p>
+  </div>
+</div>
+
+{% if resumen.vacio %}
+<section class="tarjeta vacio" id="tablero-vacio">
+  <h2 class="seccion-titulo">Sin indicadores</h2>
+  <p>La coleccion <code>indicadores_diarios</code> esta vacia: el tablero lee el rollup y no lo calcula al vuelo.</p>
+  <p>Para materializarlo: <code>{{ comando }}</code></p>
+</section>
+{% else %}
+<nav class="periodos" aria-label="Periodo">
+  {% for p in periodos %}<a href="/tablero?dias={{ p }}"{% if p == dias %} aria-current="true"{% endif %}>{{ p }} {{ 'dia' if p == 1 else 'dias' }}</a>{% endfor %}
+</nav>
+<p class="nota-tecnica" id="marca-calculo">
+  {% if resumen.calculado_en %}Ultimo calculo: <strong>{{ resumen.calculado_en | hora_costa_rica }}</strong> (hora CR).{% else %}El rollup no registra la marca de tiempo del calculo.{% endif %}
+  Periodo: {{ resumen.periodo_actual.desde }} a {{ resumen.periodo_actual.hasta }}
+  ({{ resumen.actual.dias_con_datos }} con datos); anterior: {{ resumen.periodo_previo.desde }} a {{ resumen.periodo_previo.hasta }}
+  ({{ resumen.previo.dias_con_datos }} con datos).
+</p>
+
+<section class="tarjeta" aria-label="Total de alertas">
+  <h2 class="seccion-titulo">Total de alertas</h2>
+  <div class="cifras">
+    <span class="cifra-grande" id="total-actual">{{ resumen.total.actual }}</span>
+    <span>periodo anterior: <strong id="total-previo">{{ resumen.total.previo }}</strong></span>
+    <span id="total-variacion">{% if resumen.hay_periodo_previo %}{{ variacion(resumen.total) }}{% else %}sin periodo anterior con que comparar{% endif %}</span>
+  </div>
+</section>
+
+<div class="rejilla-graficos">
+  <section class="tarjeta"><h2 class="seccion-titulo">Por estado</h2>{{ barras(graficos.estado, "Alertas por estado") }}</section>
+  <section class="tarjeta"><h2 class="seccion-titulo">Por severidad</h2>{{ barras(graficos.severidad, "Alertas por severidad") }}</section>
+  <section class="tarjeta" id="seccion-agente"><h2 class="seccion-titulo">Por agente</h2>
+    {% if graficos.agente %}{{ barras(graficos.agente, "Alertas por agente") }}
+    {% else %}<p class="nota-tecnica">El rollup todavia no trae el desglose por agente.</p>{% endif %}
+  </section>
+  <section class="tarjeta" id="seccion-hora"><h2 class="seccion-titulo">Por hora (hora CR)</h2>
+    {% if graficos.hora %}{% set h = graficos.hora %}
+    <svg class="grafico" viewBox="0 0 {{ h.ancho }} {{ h.alto }}" role="img" aria-label="Alertas por hora">
+      <title>Alertas por hora</title>
+      {% for c in h.columnas %}
+      <rect class="barra-hora" x="{{ c.x + 2 }}" y="{{ c.y }}" width="{{ h.paso - 4 }}" height="{{ c.alto }}"><title>{{ c.hora }}:00 - {{ c.valor }}</title></rect>
+      {% if c.hora|int % 3 == 0 %}<text x="{{ c.x }}" y="{{ h.base + 14 }}">{{ c.hora }}</text>{% endif %}
+      {% endfor %}
+    </svg>
+    {% else %}<p class="nota-tecnica">El rollup todavia no trae el desglose por hora.</p>{% endif %}
+  </section>
+</div>
+
+<section class="tarjeta" aria-label="Comparacion">
+  <h2 class="seccion-titulo">Comparacion con el periodo anterior</h2>
+  <table class="tabla-simple" id="tabla-comparacion">
+    <thead><tr><th>Indicador</th><th>Actual</th><th>Anterior</th><th>Variacion</th></tr></thead>
+    <tbody>
+      {% for nombre, v in resumen.severidad.items() %}
+      <tr><td>Severidad {{ nombre }}</td><td>{{ v.actual }}</td><td>{{ v.previo }}</td><td>{% if resumen.hay_periodo_previo %}{{ variacion(v) }}{% else %}-{% endif %}</td></tr>
+      {% endfor %}
+      {% for nombre, v in resumen.estado.items() %}
+      <tr><td>Estado {{ nombre }}</td><td>{{ v.actual }}</td><td>{{ v.previo }}</td><td>{% if resumen.hay_periodo_previo %}{{ variacion(v) }}{% else %}-{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

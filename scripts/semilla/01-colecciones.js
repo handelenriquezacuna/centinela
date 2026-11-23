@@ -941,6 +941,23 @@ recrearColeccion("indicadores_diarios", {
       },
       description: "Conteo por cada estado de la maquina de alertas.estado"
     },
+    por_agente: {
+      bsonType: "object",
+      additionalProperties: false,
+      patternProperties: {
+        "^(AGT-[0-9]{3,}|sin_asignar)$": { bsonType: "int", minimum: 0 }
+      },
+      description: "Opcional (H-22). Alertas del dia por agente_id; las alertas sin agente van bajo la clave sin_asignar"
+    },
+    por_hora: {
+      bsonType: "object",
+      required: ["00","01","02","03","04","05","06","07","08","09","10","11","12","13","14","15","16","17","18","19","20","21","22","23"],
+      additionalProperties: false,
+      patternProperties: {
+        "^[0-9]{2}$": { bsonType: "int", minimum: 0 }
+      },
+      description: "Opcional (H-22). Alertas del dia por hora de Costa Rica (UTC-6), claves 00 a 23; las 24 siempre presentes"
+    },
     calculado_en: {
       bsonType: "date",
       description: "ISODate UTC del ultimo calculo del rollup (H-20: 'muestra la marca de tiempo del ultimo calculo'; nunca se recalcula al vuelo en la peticion). Opcional: no esta en CONTRATO-IDS.md, la escribe el pipeline $merge de H-21 cuando corra"

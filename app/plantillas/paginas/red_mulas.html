@@ -1,0 +1,73 @@
+{% extends "paginas/base.html" %}
+{% block titulo %}Red de mulas{% endblock %}
+{% block contenido %}
+<link rel="stylesheet" href="/estaticos/tablero.css">
+<div class="titulo-pantalla">
+  <div>
+    <h1>Red de cuentas mula</h1>
+    <p class="subtitulo">Hacia donde se movio el dinero desde una cuenta, hasta 6 saltos.</p>
+  </div>
+</div>
+
+<form class="formulario-cuenta" method="get" action="/red-mulas">
+  <label for="cuenta">Cuenta (SINPE 6033-9001 o CTA-001)</label>
+  <input id="cuenta" name="cuenta" value="{{ cuenta or '' }}" pattern="(CTA-[0-9]{3,}|[0-9]{4}-[0-9]{4})" required>
+  <button class="boton boton-primario" type="submit">Ver red</button>
+</form>
+
+{% if error %}
+<div class="mensaje mensaje-error" role="alert" id="red-error">{{ error }}</div>
+{% elif red %}
+<p class="nota-tecnica" id="red-resumen">
+  Partida: <span class="id-corto">{{ red.cuenta }}</span>{% if red.desde %} desde {{ red.desde | hora_costa_rica }} (hora CR){% endif %};
+  ventana entre eslabones: {{ red.ventana_minutos }} min; saltos recorridos: {{ red.saltos_recorridos }} de {{ red.saltos_maximos }}.
+  {% if red.truncada %}La red se trunco por tamano.{% endif %}
+</p>
+{% if grafo %}
+<section class="tarjeta grafo-contenedor" aria-label="Grafo">
+  <svg class="grafico grafo" id="grafo-red" width="{{ grafo.ancho }}" height="{{ grafo.alto }}" viewBox="0 0 {{ grafo.ancho }} {{ grafo.alto }}" role="img" aria-label="Red de mulas de {{ red.cuenta }}">
+    <defs><marker id="flecha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#475569"></path></marker></defs>
+    {% for a in grafo.aristas %}
+    <line class="arista" x1="{{ a.x1 }}" y1="{{ a.y1 }}" x2="{{ a.x2 }}" y2="{{ a.y2 }}" marker-end="url(#flecha)"></line>
+    <text class="etiqueta-arista" x="{{ a.tx }}" y="{{ a.ty }}">{{ a.monto_crc | colones }} CRC{% if a.minutos is not none %} · {{ a.minutos }} min{% endif %}</text>
+    {% endfor %}
+    {% for n in grafo.nodos %}
+    <g class="nodo-grupo">
+      <rect class="nodo{% if n.inicio %} nodo-inicio{% endif %}{% if n.externa %} nodo-externa{% endif %}{% if n.en_lista %} nodo-lista{% endif %}" x="{{ n.x }}" y="{{ n.y }}" width="{{ n.ancho }}" height="{{ n.alto }}" rx="6"></rect>
+      <text class="cuenta" x="{{ n.x + n.ancho // 2 }}" y="{{ n.y + 19 }}">{{ n.cuenta }}</text>
+      <text class="sub" x="{{ n.x + n.ancho // 2 }}" y="{{ n.y + 35 }}">{% if n.inicio %}partida{% elif n.externa %}externa{% else %}{{ n.cuenta_id }}{% endif %}{% if n.en_lista %} · en lista de riesgo{% endif %}</text>
+    </g>
+    {% endfor %}
+  </svg>
+</section>
+
+<section class="tarjeta" aria-label="Transferencias">
+  <h2 class="seccion-titulo">Transferencias de la red</h2>
+  <table class="tabla-simple" id="tabla-aristas">
+    <thead><tr><th>Salto</th><th>Origen</th><th>Destino</th><th>Monto</th><th>Fecha (hora CR)</th><th>Minutos desde el eslabon anterior</th></tr></thead>
+    <tbody>
+      {% for a in red.aristas %}
+      <tr><td>{{ a.salto }}</td><td class="id-corto">{{ a.origen }}</td><td class="id-corto">{{ a.destino }}</td>
+        <td>{{ a.monto_crc | colones }} CRC</td><td>{{ a.fecha | hora_costa_rica }}</td>
+        <td>{{ a.minutos_desde_anterior if a.minutos_desde_anterior is not none else '-' }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% else %}
+<section class="tarjeta" id="red-sin-aristas"><p>Esta cuenta no tiene salidas registradas en la ventana: no hay red que dibujar.</p></section>
+{% endif %}
+
+<section class="tarjeta" aria-label="Propuestas">
+  <h2 class="seccion-titulo">Propuestas para listas_riesgo</h2>
+  {% if red.propuestas_lista_riesgo %}
+  <ul id="propuestas">
+    {% for sinpe in red.propuestas_lista_riesgo %}<li class="id-corto">{{ sinpe }}</li>{% endfor %}
+  </ul>
+  <p class="nota-tecnica">Son propuestas: el sistema no escribe en la lista. Agregarlas es decision del agente.</p>
+  {% else %}
+  <p id="propuestas-vacias">No hay cuentas por proponer.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

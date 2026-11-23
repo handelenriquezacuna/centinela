@@ -113,18 +113,46 @@ db.agentes.createIndex(
 
 // ------------------------------------------------------------
 // alertas
-// Consultas: el panel del agente filtra por estado y ordena por severidad
-// y fecha (UC-03/UC-06); el motor busca por agente_id para la carga de
-// trabajo; transaccion_id es la clave de idempotencia de todo el sistema
-// (CLAUDE.md: "una transaccion produce una sola alerta"), por eso es unico.
+// Consultas: el panel del agente filtra por estado y/o severidad y/o rango
+// de fecha, y ordena por puntaje, fecha y _id (ORDEN_PANEL en
+// app/repos/alertas.py, D-20: el puntaje da el orden de severidad); el
+// motor busca por agente_id para la carga de trabajo; transaccion_id es la
+// clave de idempotencia de todo el sistema (CLAUDE.md: "una transaccion
+// produce una sola alerta"), por eso es unico.
+// Regla igualdad, orden, rango (ESR): los campos de igualdad del filtro van
+// primero y el orden del panel completo despues, asi el SORT sale del indice
+// y no en memoria. Un indice por combinacion de filtros del panel. El rango
+// de fecha_creacion va al final: se recorre el indice ya ordenado. Evidencia
+// con explain en docs/09-explain-indices.md (H-06).
 // ------------------------------------------------------------
 db.alertas.createIndex(
   { transaccion_id: 1 },
   { name: "idx_alertas_transaccion_id", unique: true }
 );
+// idx_alertas_estado_severidad_fecha cambio de clave con D-20. createIndex
+// con el mismo nombre y otra clave falla, asi que la clave vieja se borra
+// antes: el script sigue siendo re-ejecutable sobre una base viva.
+(function () {
+  const clave = { estado: 1, severidad: 1, puntaje: -1, fecha_creacion: -1, _id: 1 };
+  const previo = db.alertas.getIndexes().find(function (ix) {
+    return ix.name === "idx_alertas_estado_severidad_fecha";
+  });
+  if (previo && JSON.stringify(previo.key) !== JSON.stringify(clave)) {
+    db.alertas.dropIndex("idx_alertas_estado_severidad_fecha");
+  }
+  db.alertas.createIndex(clave, { name: "idx_alertas_estado_severidad_fecha" });
+})();
 db.alertas.createIndex(
-  { estado: 1, severidad: -1, fecha_creacion: -1 },
-  { name: "idx_alertas_estado_severidad_fecha" }
+  { estado: 1, puntaje: -1, fecha_creacion: -1, _id: 1 },
+  { name: "idx_alertas_estado_puntaje_fecha" }
+);
+db.alertas.createIndex(
+  { severidad: 1, puntaje: -1, fecha_creacion: -1, _id: 1 },
+  { name: "idx_alertas_severidad_puntaje_fecha" }
+);
+db.alertas.createIndex(
+  { puntaje: -1, fecha_creacion: -1, _id: 1 },
+  { name: "idx_alertas_puntaje_fecha" }
 );
 db.alertas.createIndex(
   { agente_id: 1 },

@@ -17,6 +17,7 @@
     {% for destino, etiqueta, clave in navegacion %}
     <a href="{{ destino }}"{% if clave == activa %} aria-current="page"{% endif %}>{{ etiqueta }}</a>
     {% endfor %}
+    <a href="/red-mulas"{% if activa == 'red_mulas' %} aria-current="page"{% endif %}>Red de mulas</a>
   </nav>
   <div class="sesion-agente">
     <span class="aviso-modo-local" title="Sin autenticacion hasta H-25">modo local</span>
