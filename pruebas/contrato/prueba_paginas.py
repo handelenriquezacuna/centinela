@@ -80,7 +80,7 @@ async def cliente(aplicacion: FastAPI) -> Any:
         ("/reglas", "Reglas de deteccion"),
         ("/detalle", "En construccion"),
         ("/busqueda", "En construccion"),
-        ("/tablero", "En construccion"),
+        ("/tablero", "Tablero de indicadores"),
     ],
 )
 async def prueba_cada_pagina_responde_200_con_la_navegacion(

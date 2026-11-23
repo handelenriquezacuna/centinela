@@ -1,0 +1,37 @@
+/* Tablero (H-20) y grafo de la red de mulas (T-35). Graficos SVG propios. */
+.periodos { display: flex; gap: var(--espacio-2); margin: var(--espacio-3) 0; flex-wrap: wrap; }
+.periodos a { padding: var(--espacio-1) var(--espacio-3); border: 1px solid var(--color-borde);
+  border-radius: var(--radio-chico); background: var(--color-superficie); }
+.periodos a[aria-current="true"] { background: var(--color-primario); color: #fff; }
+.rejilla-graficos { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: var(--espacio-4); }
+.grafico { width: 100%; height: auto; max-width: 560px; }
+.grafico text { font-size: 12px; fill: var(--color-texto); font-family: var(--fuente); }
+.grafico .valor { fill: var(--color-texto-tenue); }
+.barra-nueva { fill: var(--color-nueva); }
+.barra-en_revision { fill: var(--color-en-revision); }
+.barra-confirmada { fill: var(--color-confirmada); }
+.barra-descartada { fill: var(--color-descartada); }
+.barra-escalada { fill: var(--color-escalada); }
+.barra-critica { fill: var(--color-critica); }
+.barra-alta { fill: var(--color-alta); }
+.barra-media { fill: var(--color-media); }
+.barra-agente, .barra-hora { fill: var(--color-acento); }
+.variacion-sube { color: var(--color-critica); }
+.variacion-baja { color: var(--color-confirmada); }
+.cifras { display: flex; gap: var(--espacio-5); flex-wrap: wrap; align-items: baseline; }
+.cifra-grande { font-size: 2rem; font-weight: 700; }
+.vacio { border-left: 4px solid var(--color-acento); }
+.vacio code { background: #f1f5f9; padding: 2px 6px; border-radius: var(--radio-chico); }
+/* Grafo de la red de mulas */
+.grafo-contenedor { overflow-x: auto; }
+.grafo { max-width: none; }
+.grafo .nodo { fill: #fff; stroke: var(--color-primario); stroke-width: 1.5; }
+.grafo .nodo-inicio { fill: #dbeafe; }
+.grafo .nodo-externa { stroke-dasharray: 5 3; fill: #f8fafc; }
+.grafo .nodo-lista { stroke: var(--color-critica); stroke-width: 2.5; }
+.grafo .arista { stroke: var(--color-texto-tenue); stroke-width: 1.5; fill: none; }
+.grafo .etiqueta-arista { font-size: 11px; text-anchor: middle; paint-order: stroke; stroke: #fff; stroke-width: 4px; }
+.grafo .cuenta { font-family: var(--fuente-mono); font-size: 12px; text-anchor: middle; }
+.grafo .sub { font-size: 10px; text-anchor: middle; fill: var(--color-texto-tenue); }
+.formulario-cuenta { display: flex; gap: var(--espacio-2); flex-wrap: wrap; }
