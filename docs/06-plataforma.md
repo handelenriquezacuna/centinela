@@ -859,3 +859,36 @@ cadena es por eslabon: la salida tiene que ser posterior a la llegada y caer den
 aplica despues, en Python (`filtrar_por_eslabon`, puro), sobre lo que devolvio el
 `$graphLookup`. Una prueba unitaria falla si el repositorio deja de mandar el
 `$graphLookup`.
+
+## Indicadores diarios: vista materializada y D3 (H-22)
+
+`indicadores_diarios` es una **vista materializada**: una coleccion derivada de `alertas`,
+calculada por un pipeline y guardada con `$merge`, para que el tablero (H-20) lea un
+documento por dia y no recorra las alertas. Nadie la escribe a mano ni desde la API; la
+unica escritora es `app/repos/indicadores.py`. Si se borra, se reconstruye.
+
+Pipeline (`construir_pipeline`, funcion pura): `$match` de `fecha_creacion` en el rango,
+`$group` por dia en hora de Costa Rica (`$dateToString` con `timezone: "-06:00"`; el
+`$match` usa esos mismos limites en UTC), `$sort` por `_id`, `$project` con la forma del
+documento y `$merge` en `indicadores_diarios` con `on: _id`, `whenMatched: replace`. El
+`_id` y `fecha` son el texto `YYYY-MM-DD`, la unica excepcion al contrato de fechas.
+
+**Idempotente:** el `_id` es la fecha y el `$merge` reemplaza el documento completo; dos
+corridas dejan los mismos documentos (solo cambia `calculado_en`). Un dia del rango sin
+alertas se escribe en ceros aparte, solo si no existe, para que el tablero lea un cero y
+no un hueco.
+
+**Que guarda:** `total_alertas`, `por_severidad`, `por_estado`, `por_agente` (clave
+`agente_id`; las alertas sin agente van bajo `sin_asignar`), `por_hora` (claves "00" a
+"23" en hora de Costa Rica, las 24 siempre) , `calculado_en` y `esquema_version`. El
+validador de `scripts/semilla/01-colecciones.js` declara `por_agente` y `por_hora` como
+opcionales, con `patternProperties` para las claves. `actualizar-validadores.js` carga
+ese mismo archivo, asi que no tiene copia aparte. Las transacciones evaluadas no se guardan.
+
+**D3** (`app/deteccion/d3.py`): tarea del supervisor que recalcula el dia actual cada
+`indicadores.intervalo_segundos` (YAML; tiene que ser menor que la tolerancia de retraso,
+porque cada recalculo es un latido). `/estado` la reporta `corriendo`. Si falla, anota el
+error y reintenta en la vuelta siguiente.
+
+**A mano:** `python tareas.py indicadores [--desde YYYY-MM-DD --hasta YYYY-MM-DD]` (o
+`python -m app.deteccion.indicadores`); sin banderas, el dia de hoy.
