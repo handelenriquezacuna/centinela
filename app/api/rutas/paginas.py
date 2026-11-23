@@ -15,8 +15,8 @@ las dos puertas no pueden divergir.
   aporte, la politica, el historial y la resolucion desde ahi. Resolver llama al mismo
   handler que `POST /api/v1/alertas/{id}/transiciones`, asi que las dos puertas no
   divergen: misma maquina de estados, mismo 409.
-- `/detalle` (sin id), `/busqueda`, `/tablero`: la maqueta estatica dentro de la plantilla
-  base, marcada "en construccion", hasta que lleguen H-19 y H-20.
+- `/detalle` (sin id), `/busqueda`: la maqueta estatica dentro de la plantilla
+  base, marcada "en construccion", hasta que llegue H-19. `/tablero` vive en `paginas_tablero.py` (H-20).
 
 Sin autenticacion hasta H-25.
 """
@@ -481,4 +481,3 @@ def _ruta_maqueta(clave: str, titulo: str) -> None:
 
 _ruta_maqueta("detalle", "Detalle de alerta")
 _ruta_maqueta("busqueda", "Busqueda")
-_ruta_maqueta("tablero", "Tablero de indicadores")
