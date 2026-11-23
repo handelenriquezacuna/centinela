@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from httpx import AsyncClient
 
@@ -24,6 +26,18 @@ async def prueba_tablero_lee_el_rollup_de_la_coleccion(
     cliente_con_mongo: AsyncClient, base_con_demo: object
 ) -> None:
     base = base_con_demo  # type: ignore[assignment]
+    # D3 arranca con el lifespan de esta app y escribe el dia de hoy; si lo hace despues
+    # del delete_many, el tablero se ancla en hoy y no en estos dias fijos. Se espera su
+    # primer latido en /estado (el documento de hoy puede venir de otra prueba): la
+    # vuelta siguiente llega tras indicadores.intervalo_segundos.
+    for _ in range(100):
+        tareas = (await cliente_con_mongo.get("/estado")).json()["tareas"]
+        d3 = next(t for t in tareas if t["nombre"] == "d3_indicadores")
+        if d3["eventos_procesados"] >= 1:
+            break
+        await asyncio.sleep(0.05)
+    else:
+        pytest.fail("D3 no completo su primera vuelta en 5 s")
     await base["indicadores_diarios"].delete_many({})  # type: ignore[index]
     await base["indicadores_diarios"].insert_many(  # type: ignore[index]
         [
