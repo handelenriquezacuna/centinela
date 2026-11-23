@@ -18,14 +18,8 @@
     {% if botones %}
     <div id="form-resolver" class="form-regla">
       <input type="hidden" name="estado_esperado" value="{{ estado_alerta }}">
-      <div class="campo">
-        <label for="agente-id">Agente (sin autenticacion hasta H-25)</label>
-        <select id="agente-id" name="agente_id">
-          {% for agente in agentes %}
-          <option value="{{ agente['_id'] }}"{% if agente['_id'] == agente_por_omision %} selected{% endif %}>{{ agente['nombre'] }} ({{ agente['_id'] }}){% if not agente.get('activo', True) %} - inactivo{% endif %}</option>
-          {% endfor %}
-        </select>
-      </div>
+      {% set yo = sesion_actual() %}
+      <p class="nota-tecnica" id="actuas-como">Actuas como <strong>{{ yo.agente_id }}{% if yo and nombres.get(yo.agente_id) %} ({{ nombres.get(yo.agente_id) }}){% endif %}</strong>: tu nombre queda en el historial.</p>
       <div class="campo">
         <label for="nota-resolucion">Nota (se agrega al historial)</label>
         <input type="text" id="nota-resolucion" name="nota" maxlength="1000">

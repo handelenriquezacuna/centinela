@@ -25,6 +25,7 @@ from fastapi import APIRouter, status
 from app.api.dependencias import AjustesDep, SupervisorDep
 from app.api.errores import respuestas_documentadas
 from app.api.esquemas import EstadoFuncional
+from app.api.sesion import ServicioSesionDep
 
 enrutador = APIRouter(tags=["salud"])
 
@@ -35,7 +36,9 @@ enrutador = APIRouter(tags=["salud"])
     summary="Estado funcional: tareas de fondo, ultimo evento, retraso y ultimo error",
     responses=respuestas_documentadas(status.HTTP_500_INTERNAL_SERVER_ERROR),
 )
-async def estado(ajustes: AjustesDep, supervisor: SupervisorDep) -> EstadoFuncional:
+async def estado(
+    ajustes: AjustesDep, supervisor: SupervisorDep, servicio: ServicioSesionDep
+) -> EstadoFuncional:
     """Informe de las tareas de fondo del proceso.
 
     No consulta la base: lee lo que el supervisor ya sabe. Es deliberado y es la
@@ -47,6 +50,8 @@ async def estado(ajustes: AjustesDep, supervisor: SupervisorDep) -> EstadoFuncio
     """
     from app import VERSION
 
-    return EstadoFuncional.desde_informe(
+    resultado = EstadoFuncional.desde_informe(
         supervisor.informe(), version=VERSION, entorno=ajustes.app.entorno
     )
+    resultado.advertencias = list(servicio.advertencias)
+    return resultado

@@ -19,6 +19,7 @@ from pruebas.dobles.catalogo_reglas import (
     reglas_como_documentos,
 )
 from pruebas.dobles.repos_falsos import RepoAlertasFalso, RepoReglasFalso
+from pruebas.sesiones import encabezados_de
 
 # Puntaje coherente con los cortes de POL-001 v2: el panel ordena por puntaje (D-20).
 PUNTAJE_POR_SEVERIDAD = {"CRITICA": 75, "ALTA": 60, "MEDIA": 40}
@@ -67,6 +68,7 @@ def aplicacion(repo_alertas_falso: RepoAlertasFalso, repo_reglas: RepoReglasFals
 @pytest_asyncio.fixture
 async def cliente(aplicacion: FastAPI) -> Any:
     async with LifespanManager(aplicacion) as gestionada, AsyncClient(
+        headers=encabezados_de(),
         transport=ASGITransport(app=gestionada.app), base_url="http://pruebas"
     ) as http:
         yield http
@@ -92,7 +94,7 @@ async def prueba_cada_pagina_responde_200_con_la_navegacion(
     assert esperado in respuesta.text
     for destino in ("/panel", "/reglas", "/detalle", "/busqueda", "/tablero"):
         assert f'href="{destino}"' in respuesta.text
-    assert "modo local" in respuesta.text
+    assert "AGT-001" in respuesta.text and "/salir" in respuesta.text
     assert "/estaticos/htmx.min.js" in respuesta.text
     assert "//unpkg" not in respuesta.text
 

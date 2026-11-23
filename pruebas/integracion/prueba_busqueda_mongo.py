@@ -30,6 +30,7 @@ from app.repos.esquemas import obtener_validadores, recrear_con_validador
 from app.repos.generador import RepoGenerador
 from pruebas.conftest import BASE_SEMILLA, _asegurar_semilla, saltar_o_fallar
 from pruebas.dobles.repo_busqueda_falso import RepoBusquedaFalso
+from pruebas.sesiones import encabezados_de
 
 pytestmark = pytest.mark.mongo
 
@@ -213,6 +214,7 @@ async def cliente_http(mongo_ok: Any) -> AsyncIterator[AsyncClient]:
     obtener_ajustes.cache_clear()
     try:
         async with LifespanManager(crear_aplicacion()) as gestionada, AsyncClient(
+            headers=encabezados_de(),
             transport=ASGITransport(app=gestionada.app), base_url="http://pruebas"
         ) as http:
             yield http

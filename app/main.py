@@ -25,17 +25,19 @@ from contextlib import asynccontextmanager
 from functools import partial
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app import VERSION
 from app.api.errores import registrar_manejadores
+from app.api.rutas import acceso as rutas_acceso
 from app.api.rutas import enrutador_v1
 from app.api.rutas import estado as rutas_estado
 from app.api.rutas import paginas as rutas_paginas
 from app.api.rutas import paginas_busqueda as rutas_paginas_busqueda
 from app.api.rutas import paginas_tablero as rutas_paginas_tablero
 from app.api.rutas import salud as rutas_salud
+from app.api.sesion import guardia, registrar_manejadores_sesion
 from app.deteccion.d1 import NOMBRE_D1, d1
 from app.deteccion.d3 import NOMBRE_D3, d3
 from app.nucleo.config import Ajustes, obtener_ajustes
@@ -43,6 +45,7 @@ from app.nucleo.db import crear_cliente, obtener_base
 from app.repos.deteccion import RepoDeteccion
 from app.repos.indicadores import RepoIndicadores
 from app.repos.salud import exigir_conexion
+from app.seguridad.servicio import ServicioSesion
 from app.supervision import NOMBRE_LATIDO, Supervisor, latido
 
 # app/main.py -> app/estaticos. Aqui vive `htmx-ext-sse.js`, vendorizado: la extension
@@ -85,6 +88,13 @@ async def ciclo_vida(aplicacion: FastAPI) -> AsyncIterator[None]:
     cliente = crear_cliente(ajustes)
     aplicacion.state.ajustes = ajustes
     aplicacion.state.cliente_mongo = cliente
+
+    # H-25: la clave de firma. Sin ella en dev se genera una al vuelo y queda la
+    # advertencia en /estado; fuera de dev `Ajustes` ya se nego a arrancar.
+    servicio_sesion = ServicioSesion.desde_ajustes(ajustes)
+    aplicacion.state.servicio_sesion = servicio_sesion
+    for advertencia in servicio_sesion.advertencias:
+        registro.warning(advertencia)
 
     supervisor = Supervisor(
         tolerancia_segundos=ajustes.supervision.tolerancia_retraso_segundos
@@ -138,9 +148,18 @@ def crear_aplicacion() -> FastAPI:
         description=DESCRIPCION,
         summary="Monitoreo de fraude SINPE en tiempo real",
         lifespan=ciclo_vida,
+        # H-25: el guardia aplica la tabla de permisos a TODA ruta. /docs y /redoc se
+        # retiran (cargan JavaScript de una CDN); /openapi.json lo sirve `rutas_acceso`,
+        # detras de sesion.
+        dependencies=[Depends(guardia)],
+        openapi_url=None,
+        docs_url=None,
+        redoc_url=None,
     )
 
     registrar_manejadores(aplicacion)
+    registrar_manejadores_sesion(aplicacion)
+    aplicacion.include_router(rutas_acceso.enrutador)
     aplicacion.include_router(rutas_salud.enrutador)
     aplicacion.include_router(rutas_estado.enrutador)
     aplicacion.include_router(enrutador_v1)

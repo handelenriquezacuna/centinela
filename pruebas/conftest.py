@@ -33,6 +33,7 @@ from app.main import crear_aplicacion
 from app.nucleo.config import Ajustes, obtener_ajustes
 from pruebas.dobles.datos_demo import DATOS_DEMO, alertas_como_documentos
 from pruebas.dobles.repos_falsos import RepoAlertasFalso
+from pruebas.sesiones import CLAVE_DE_PRUEBAS, encabezados_de
 
 RUTA_RAIZ = Path(__file__).resolve().parents[1]
 
@@ -98,6 +99,12 @@ def limpiar_cache_de_ajustes() -> Iterator[None]:
     obtener_ajustes.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def clave_de_sesion(monkeypatch: pytest.MonkeyPatch) -> None:
+    """La clave con que `pruebas/sesiones.py` firma los tokens y la app los valida."""
+    monkeypatch.setenv("CENTINELA_SESION__CLAVE", CLAVE_DE_PRUEBAS)
+
+
 @pytest.fixture
 def ajustes() -> Ajustes:
     """Ajustes reales, leidos de `config/centinela.yml`, con la base de pruebas."""
@@ -128,6 +135,7 @@ async def cliente(aplicacion: FastAPI) -> AsyncIterator[AsyncClient]:
     async with LifespanManager(aplicacion) as gestionada, AsyncClient(
         transport=ASGITransport(app=gestionada.app),
         base_url="http://pruebas",
+        headers=encabezados_de(),
     ) as cliente_http:
         yield cliente_http
 
@@ -230,6 +238,7 @@ async def cliente_con_mongo(
         async with LifespanManager(creada) as gestionada, AsyncClient(
             transport=ASGITransport(app=gestionada.app),
             base_url="http://pruebas",
+            headers=encabezados_de(),
         ) as cliente_http:
             yield cliente_http
     finally:

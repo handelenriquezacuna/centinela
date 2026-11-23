@@ -14,7 +14,7 @@ muestra como error sobre el formulario en vez de un JSON de 422.
 - `/busqueda/exportar.csv` aplica los mismos filtros en el servidor: montos enteros,
   fechas en hora de Costa Rica, hasta `LIMITE_EXPORTACION` filas.
 
-Sin autenticacion hasta H-25.
+Exige sesion y el permiso de busqueda (H-25).
 """
 
 from __future__ import annotations

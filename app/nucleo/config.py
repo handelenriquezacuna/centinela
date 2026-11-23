@@ -177,6 +177,25 @@ class AjustesIndicadores(BaseModel):
     intervalo_segundos: float = Field(default=10.0, gt=0)
 
 
+class AjustesSesion(BaseModel):
+    """Sesion del portal y la API (H-25). Tecnico: duracion y forma de la cookie.
+
+    `clave` firma los tokens y es un SECRETO: no va en el YAML, entra por la variable
+    `CENTINELA_SESION__CLAVE`. Sin ella, en entorno `dev` el proceso genera una aleatoria
+    al arrancar (las sesiones no sobreviven a un reinicio) y `/estado` lo advierte; en
+    cualquier otro entorno la aplicacion no arranca.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    minutos: int = Field(default=60, ge=1, le=24 * 60)
+    # Secure: la cookie solo viaja por HTTPS. Apagado por omision porque el portal local
+    # corre por HTTP; se enciende detras de TLS.
+    cookie_segura: bool = False
+    nombre_cookie: str = Field(default="centinela_sesion", min_length=1)
+    clave: str | None = Field(default=None, min_length=32, repr=False)
+
+
 class AjustesRegistro(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -284,6 +303,7 @@ class Ajustes(BaseSettings):
     canal: AjustesCanal = AjustesCanal()
     deteccion: AjustesDeteccion = AjustesDeteccion()
     indicadores: AjustesIndicadores = AjustesIndicadores()
+    sesion: AjustesSesion = AjustesSesion()
     registro: AjustesRegistro = AjustesRegistro()
     generador: AjustesGenerador = Field(default_factory=AjustesGenerador)
 
@@ -296,6 +316,16 @@ class Ajustes(BaseSettings):
             raise ValueError(
                 "deteccion.espera_cursor_ms tiene que ser menor que "
                 "supervision.tolerancia_retraso_segundos"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def la_sesion_tiene_clave_fuera_de_dev(self) -> Ajustes:
+        """Solo en `dev` se tolera arrancar sin clave de firma (se genera una al vuelo)."""
+        if self.app.entorno != "dev" and self.sesion.clave is None:
+            raise ValueError(
+                "falta la clave de firma de sesion: definir CENTINELA_SESION__CLAVE "
+                "(obligatoria cuando app.entorno no es dev)"
             )
         return self
 

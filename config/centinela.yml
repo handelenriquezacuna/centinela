@@ -77,6 +77,16 @@ indicadores:
   # cada recalculo es un latido de D3 en /estado.
   intervalo_segundos: 10
 
+# Sesion del portal y la API (H-25). La clave de firma NO va aqui: entra por la variable
+# de entorno CENTINELA_SESION__CLAVE (minimo 32 caracteres). Sin ella, en entorno dev se
+# genera una al arrancar y /estado lo advierte; en otro entorno no arranca.
+sesion:
+  # Duracion de la sesion, en minutos.
+  minutos: 60
+  # true = la cookie solo viaja por HTTPS. Encender detras de TLS.
+  cookie_segura: false
+  nombre_cookie: centinela_sesion
+
 registro:
   nivel: INFO
 

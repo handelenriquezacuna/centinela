@@ -15,6 +15,7 @@ from app.api.dependencias import dep_repo_busqueda
 from app.main import crear_aplicacion
 from pruebas.contrato.prueba_busqueda_api import ALERTAS, TRANSACCIONES
 from pruebas.dobles.repo_busqueda_falso import RepoBusquedaFalso
+from pruebas.sesiones import encabezados_de
 
 
 @pytest.fixture
@@ -29,6 +30,7 @@ async def cliente(repo: RepoBusquedaFalso) -> AsyncIterator[AsyncClient]:
     async with (
         LifespanManager(aplicacion) as gestionada,
         AsyncClient(
+            headers=encabezados_de(),
             transport=ASGITransport(app=gestionada.app), base_url="http://pruebas"
         ) as http,
     ):

@@ -20,6 +20,7 @@ from pruebas.dobles.catalogo_reglas import (
 )
 from pruebas.dobles.repo_detalle_falso import RepoDetalleFalso, alerta_v1, alerta_v2
 from pruebas.dobles.repos_falsos import RepoAlertasFalso, RepoReglasFalso
+from pruebas.sesiones import encabezados_de
 
 Armar = Callable[[dict[str, Any]], Awaitable[tuple[AsyncClient, RepoAlertasFalso]]]
 
@@ -39,6 +40,7 @@ async def armar() -> Any:
         gestor = LifespanManager(creada)
         gestionada = await gestor.__aenter__()
         http = AsyncClient(
+            headers=encabezados_de(),
             transport=ASGITransport(app=gestionada.app), base_url="http://pruebas"
         )
         abiertos.append((gestor, http))
@@ -111,10 +113,25 @@ async def prueba_solo_aparecen_los_botones_que_la_maquina_permite(
 
 
 @pytest.mark.asyncio
-async def prueba_el_selector_trae_los_agentes_de_la_coleccion(armar: Armar) -> None:
+async def prueba_el_detalle_dice_quien_actua_y_ya_no_ofrece_elegir(armar: Armar) -> None:
     http, _ = await armar(alerta_v2())
     html = (await http.get("/detalle/ALR-001")).text
-    assert "Jose Solis (AGT-001)" in html and "Laura Mendez (AGT-002)" in html
+    assert "Actuas como" in html and "AGT-001" in html
+    assert "<select" not in html and 'name="agente_id"' not in html
+
+
+@pytest.mark.asyncio
+async def prueba_el_agente_del_historial_es_el_de_la_sesion(armar: Armar) -> None:
+    """Un formulario que se arme a mano con otro agente_id no firma a nombre de otro."""
+    http, alertas = await armar(alerta_v2())
+    tomada = await http.post(
+        "/detalle/ALR-001/transicion",
+        content="destino=en_revision&agente_id=AGT-002&estado_esperado=nueva",
+        headers=encabezados_de("agente", "AGT-001"),
+    )
+    assert tomada.status_code == 200
+    historial = (await alertas.obtener("ALR-001"))["historial"]
+    assert historial[-1]["agente_id"] == "AGT-001"
 
 
 @pytest.mark.asyncio

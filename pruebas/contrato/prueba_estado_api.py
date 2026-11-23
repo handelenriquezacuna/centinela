@@ -23,6 +23,7 @@ from httpx import ASGITransport, AsyncClient
 from app.api.dependencias import dep_supervisor
 from app.main import crear_aplicacion
 from app.supervision import DISPARADORES_PREVISTOS, NOMBRE_LATIDO, Supervisor
+from pruebas.sesiones import encabezados_de
 
 RUTA = "/estado"
 
@@ -51,6 +52,7 @@ async def cliente_estado(supervisor: Supervisor) -> AsyncIterator[AsyncClient]:
     aplicacion: FastAPI = crear_aplicacion()
     aplicacion.dependency_overrides[dep_supervisor] = lambda: supervisor
     async with AsyncClient(
+        headers=encabezados_de(),
         transport=ASGITransport(app=aplicacion), base_url="http://pruebas"
     ) as cliente:
         yield cliente
@@ -69,6 +71,7 @@ async def prueba_responde_la_forma_completa(cliente_estado: AsyncClient) -> None
         "entorno",
         "tolerancia_retraso_segundos",
         "tareas",
+        "advertencias",
     }
     assert cuerpo["estado"] == "ok"
     assert cuerpo["tolerancia_retraso_segundos"] == 30
@@ -161,6 +164,7 @@ async def prueba_sin_tareas_el_estado_no_dice_ok() -> None:
     )
 
     async with AsyncClient(
+        headers=encabezados_de(),
         transport=ASGITransport(app=aplicacion), base_url="http://pruebas"
     ) as cliente:
         cuerpo = (await cliente.get(RUTA)).json()

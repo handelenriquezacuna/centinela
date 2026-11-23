@@ -25,6 +25,7 @@ from app.repos.busqueda import (
     construir_filtro_busqueda,
 )
 from pruebas.dobles.repo_busqueda_falso import RepoBusquedaFalso
+from pruebas.sesiones import encabezados_de
 
 RUTA = "/api/v1/transacciones"
 
@@ -71,7 +72,7 @@ async def cliente(repo: RepoBusquedaFalso) -> AsyncIterator[AsyncClient]:
     aplicacion.dependency_overrides[dep_repo_busqueda] = lambda: repo
     async with (
         LifespanManager(aplicacion) as gestionada,
-        AsyncClient(transport=ASGITransport(app=gestionada.app), base_url="http://pruebas") as http,
+        AsyncClient(headers=encabezados_de(), transport=ASGITransport(app=gestionada.app), base_url="http://pruebas") as http,
     ):
         yield http
 

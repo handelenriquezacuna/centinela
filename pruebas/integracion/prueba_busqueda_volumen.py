@@ -27,6 +27,7 @@ from app.main import crear_aplicacion
 from app.nucleo.config import Ajustes, AjustesGenerador, obtener_ajustes
 from pruebas.conftest import MENSAJE_SIN_MONGO, _mongo_responde, saltar_o_fallar
 from pruebas.integracion.prueba_busqueda_mongo import preparar_base
+from pruebas.sesiones import encabezados_de
 
 pytestmark = [pytest.mark.mongo, pytest.mark.volumen]
 
@@ -82,6 +83,7 @@ async def cliente_volumen() -> AsyncIterator[AsyncClient]:
             os.environ["CENTINELA_MONGO__BASE"] = BASE_VOLUMEN
             obtener_ajustes.cache_clear()
             async with LifespanManager(crear_aplicacion()) as gestionada, AsyncClient(
+                headers=encabezados_de(),
                 transport=ASGITransport(app=gestionada.app), base_url="http://pruebas"
             ) as http:
                 yield http

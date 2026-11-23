@@ -562,6 +562,28 @@ recrearColeccion("agentes", {
       bsonType: "bool",
       description: "Si la cuenta del agente esta habilitada"
     },
+    credencial: {
+      bsonType: "object",
+      required: ["hash", "sal", "parametros"],
+      additionalProperties: false,
+      description: "Contrasena cifrada (H-25). Opcional: sin ella el agente no inicia sesion. La semilla no trae ninguna; la crea python -m app.seguridad.usuarios",
+      properties: {
+        hash: { bsonType: "string", minLength: 1, description: "scrypt en base64" },
+        sal: { bsonType: "string", minLength: 1, description: "Sal aleatoria en base64" },
+        parametros: {
+          bsonType: "object",
+          required: ["algoritmo", "n", "r", "p", "dklen"],
+          additionalProperties: false,
+          properties: {
+            algoritmo: { enum: ["scrypt"] },
+            n: { bsonType: ["int", "long"], minimum: 2 },
+            r: { bsonType: ["int", "long"], minimum: 1 },
+            p: { bsonType: ["int", "long"], minimum: 1 },
+            dklen: { bsonType: ["int", "long"], minimum: 16 }
+          }
+        }
+      }
+    },
     esquema_version: {
       bsonType: "int",
       minimum: 1,

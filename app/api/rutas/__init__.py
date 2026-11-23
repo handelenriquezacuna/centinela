@@ -8,12 +8,19 @@ de API para hacerlo.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, status
 
 from app.api import PREFIJO_V1
-from app.api.rutas import alertas, inteligencia, reglas, sse, transacciones
+from app.api.errores import respuestas_documentadas
+from app.api.rutas import acceso, alertas, inteligencia, reglas, sse, transacciones
 
-enrutador_v1 = APIRouter(prefix=PREFIJO_V1)
+enrutador_v1 = APIRouter(
+    prefix=PREFIJO_V1,
+    responses=respuestas_documentadas(
+        status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN
+    ),
+)
+enrutador_v1.include_router(acceso.enrutador_api)
 enrutador_v1.include_router(alertas.enrutador)
 enrutador_v1.include_router(sse.enrutador)
 enrutador_v1.include_router(reglas.enrutador)

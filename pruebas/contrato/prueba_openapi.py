@@ -28,6 +28,7 @@ def prueba_estan_publicadas_las_rutas_decididas() -> None:
     assert set(ESQUEMA["paths"]) == {
         "/salud",
         "/estado",
+        "/api/v1/sesion",
         "/api/v1/alertas",
         "/api/v1/alertas/flujo",
         "/api/v1/alertas/{alerta_id}/transiciones",
@@ -173,6 +174,8 @@ def prueba_el_codigo_de_error_es_un_vocabulario_cerrado() -> None:
         "parametros_invalidos",
         "no_encontrado",
         "conflicto",
+        "no_autenticado",
+        "prohibido",
         "transicion_invalida",
         "base_no_disponible",
         "error_interno",
@@ -295,7 +298,8 @@ async def prueba_el_esquema_se_sirve_por_http(cliente: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def prueba_la_documentacion_interactiva_responde(cliente: AsyncClient) -> None:
-    respuesta = await cliente.get("/docs")
-
-    assert respuesta.status_code == status.HTTP_200_OK
+async def prueba_la_documentacion_interactiva_se_retiro(cliente: AsyncClient) -> None:
+    """H-25: /docs y /redoc cargaban su JavaScript de una CDN y quedaban fuera del guardia.
+    El documento sigue en /openapi.json, detras de sesion."""
+    assert (await cliente.get("/docs")).status_code == status.HTTP_404_NOT_FOUND
+    assert (await cliente.get("/redoc")).status_code == status.HTTP_404_NOT_FOUND

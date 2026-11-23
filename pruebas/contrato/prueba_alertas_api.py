@@ -13,6 +13,7 @@ from httpx import AsyncClient
 
 from app.repos.alertas import ProtocoloRepoAlertas
 from pruebas.dobles.repos_falsos import RepoAlertasFalso
+from pruebas.sesiones import encabezados_de
 
 RUTA = "/api/v1/alertas"
 
@@ -321,6 +322,7 @@ async def prueba_el_tope_respeta_la_configuracion_y_no_un_numero_del_codigo(
     aplicacion.dependency_overrides[dep_repo_alertas] = lambda: doble
 
     async with LifespanManager(aplicacion) as gestionada, AsyncClient(
+        headers=encabezados_de(),
         transport=ASGITransport(app=gestionada.app), base_url="http://pruebas"
     ) as cliente_http:
         sin_limite = (await cliente_http.get(RUTA)).json()

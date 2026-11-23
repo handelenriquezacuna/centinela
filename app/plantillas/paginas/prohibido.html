@@ -1,0 +1,9 @@
+{% extends "paginas/base.html" %}
+{% block titulo %}Acceso denegado{% endblock %}
+{% block contenido %}
+<section class="tarjeta" aria-label="Acceso denegado">
+  <h1 class="seccion-titulo">Acceso denegado</h1>
+  <div class="mensaje mensaje-error" role="alert">{{ mensaje }}</div>
+  <p><a href="/panel">Volver al panel</a></p>
+</section>
+{% endblock %}

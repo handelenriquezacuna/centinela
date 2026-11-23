@@ -141,8 +141,8 @@ def planear_transicion(
 
     - Tomar (`nueva -> en_revision`) asigna `agente_id`.
     - Resolver (`en_revision -> confirmada/descartada/escalada`) solo lo puede hacer el
-      agente que la tomo: si es otro, conflicto. Sin autenticacion hasta H-25, el
-      agente viaja en la peticion.
+      agente que la tomo: si es otro, conflicto. El agente
+      es el de la sesion (H-25), no uno que mande el cliente.
     """
     alerta_id = str(actual["_id"])
     origen = EstadoAlerta(actual["estado"])

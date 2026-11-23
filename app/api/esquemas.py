@@ -88,7 +88,11 @@ class PeticionTransicion(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     destino: EstadoAlerta = Field(description="Estado al que pasa la alerta")
-    agente_id: AgenteId = Field(description="Quien hace la accion. Sin autenticacion hasta H-25")
+    agente_id: AgenteId | None = Field(
+        default=None,
+        deprecated=True,
+        description="Ignorado: quien hace la accion es el agente de la sesion",
+    )
     nota: str = Field(default="", max_length=1000, description="Queda en el historial")
     estado_esperado: EstadoAlerta | None = Field(
         default=None, description="Si viene y la alerta ya no esta asi, 409 sin escribir"
@@ -185,6 +189,10 @@ class EstadoFuncional(BaseModel):
         gt=0, description="Silencio maximo tolerado antes de declarar una tarea retrasada"
     )
     tareas: list[TareaSupervisada]
+    advertencias: list[str] = Field(
+        default_factory=list,
+        description="Avisos de configuracion que no impiden operar (ej. clave de sesion efimera)",
+    )
 
     @classmethod
     def desde_informe(

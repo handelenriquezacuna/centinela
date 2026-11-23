@@ -38,6 +38,7 @@ from app.api.dependencias import dep_flujo_alertas
 from app.main import crear_aplicacion
 from app.repos.flujo_alertas import CambioAlerta, ProtocoloFlujoAlertas
 from pruebas.dobles.flujo_falso import FlujoAlertasFalso, token
+from pruebas.sesiones import encabezados_de
 
 RUTA = "/api/v1/alertas/flujo"
 REINTENTO_MS = 3000
@@ -310,6 +311,7 @@ async def prueba_la_ruta_sirve_un_flujo_de_eventos() -> None:
     )
 
     async with AsyncClient(
+        headers=encabezados_de(),
         transport=ASGITransport(app=aplicacion), base_url="http://pruebas"
     ) as cliente:
         respuesta = await cliente.get(RUTA)
@@ -343,6 +345,7 @@ async def prueba_la_ruta_acepta_el_ultimo_evento_por_cabecera_y_por_consulta() -
         aplicacion.dependency_overrides[dep_flujo_alertas] = lambda: flujo  # noqa: B023
 
         async with AsyncClient(
+            headers=encabezados_de(),
             transport=ASGITransport(app=aplicacion), base_url="http://pruebas"
         ) as cliente:
             respuesta = await cliente.get(RUTA, **argumentos)

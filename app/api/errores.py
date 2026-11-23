@@ -40,6 +40,8 @@ class CodigoError(StrEnum):
     """Vocabulario cerrado de codigos de error. Agregar uno es cambiar el contrato."""
 
     PARAMETROS_INVALIDOS = "parametros_invalidos"
+    NO_AUTENTICADO = "no_autenticado"
+    PROHIBIDO = "prohibido"
     NO_ENCONTRADO = "no_encontrado"
     CONFLICTO = "conflicto"
     TRANSICION_INVALIDA = "transicion_invalida"
@@ -91,6 +93,8 @@ class ErrorCentinela(Exception):
 # FastAPI por su cuenta (una ruta que no existe, un metodo no permitido).
 CODIGO_POR_ESTADO: dict[int, CodigoError] = {
     status.HTTP_400_BAD_REQUEST: CodigoError.PARAMETROS_INVALIDOS,
+    status.HTTP_401_UNAUTHORIZED: CodigoError.NO_AUTENTICADO,
+    status.HTTP_403_FORBIDDEN: CodigoError.PROHIBIDO,
     status.HTTP_404_NOT_FOUND: CodigoError.NO_ENCONTRADO,
     status.HTTP_409_CONFLICT: CodigoError.CONFLICTO,
     status.HTTP_422_UNPROCESSABLE_CONTENT: CodigoError.PARAMETROS_INVALIDOS,
@@ -227,6 +231,8 @@ def respuestas_documentadas(*estados: int) -> dict[int | str, dict[str, Any]]:
     `HTTPValidationError` cuando en tiempo de ejecucion devuelve `RespuestaError`.
     """
     descripciones = {
+        status.HTTP_401_UNAUTHORIZED: "Sin sesion, o la sesion expiro",
+        status.HTTP_403_FORBIDDEN: "El rol de la sesion no permite esta operacion",
         status.HTTP_404_NOT_FOUND: "Recurso no encontrado",
         status.HTTP_409_CONFLICT: "Conflicto con el estado actual del recurso",
         status.HTTP_422_UNPROCESSABLE_CONTENT: "Parametros invalidos",

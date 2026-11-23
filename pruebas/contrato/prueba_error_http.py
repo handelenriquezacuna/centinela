@@ -13,6 +13,7 @@ from httpx import AsyncClient
 
 from app.api.errores import CodigoError, ErrorCentinela, RespuestaError
 from app.modelos.estados import EstadoAlerta, exigir_transicion
+from pruebas.sesiones import declarar_ruta_de_prueba, encabezados_de
 
 
 def afirmar_forma_de_error(cuerpo: dict) -> dict:
@@ -75,7 +76,7 @@ async def prueba_un_metodo_no_permitido_devuelve_la_forma_unica(
 
 
 @pytest.mark.asyncio
-async def prueba_un_error_inesperado_no_filtra_el_detalle_interno() -> None:
+async def prueba_un_error_inesperado_no_filtra_el_detalle_interno(monkeypatch: pytest.MonkeyPatch) -> None:
     """Un 500 responde JSON con la forma unica, no el HTML de Starlette.
 
     Se monta una ruta que explota a proposito: es la unica forma de ejercitar el
@@ -87,12 +88,14 @@ async def prueba_un_error_inesperado_no_filtra_el_detalle_interno() -> None:
     from app.main import crear_aplicacion
 
     aplicacion: FastAPI = crear_aplicacion()
+    declarar_ruta_de_prueba(monkeypatch, "GET", "/explota")
 
     @aplicacion.get("/explota")
     async def explota() -> None:
         raise RuntimeError("secreto de la base de datos que no debe salir")
 
     async with LifespanManager(aplicacion) as gestionada, AsyncClient(
+        headers=encabezados_de(),
         transport=ASGITransport(app=gestionada.app, raise_app_exceptions=False),
         base_url="http://pruebas",
     ) as cliente_http:
@@ -105,7 +108,7 @@ async def prueba_un_error_inesperado_no_filtra_el_detalle_interno() -> None:
 
 
 @pytest.mark.asyncio
-async def prueba_una_transicion_invalida_sale_como_conflicto() -> None:
+async def prueba_una_transicion_invalida_sale_como_conflicto(monkeypatch: pytest.MonkeyPatch) -> None:
     """La maquina de estados, conectada al contrato HTTP.
 
     Es 409 y no 422: la peticion es valida, lo que no se puede es aplicarla al estado
@@ -117,12 +120,14 @@ async def prueba_una_transicion_invalida_sale_como_conflicto() -> None:
     from app.main import crear_aplicacion
 
     aplicacion: FastAPI = crear_aplicacion()
+    declarar_ruta_de_prueba(monkeypatch, "POST", "/resolver-de-mentira")
 
     @aplicacion.post("/resolver-de-mentira")
     async def resolver() -> None:
         exigir_transicion(EstadoAlerta.NUEVA, EstadoAlerta.CONFIRMADA)
 
     async with LifespanManager(aplicacion) as gestionada, AsyncClient(
+        headers=encabezados_de(),
         transport=ASGITransport(app=gestionada.app, raise_app_exceptions=False),
         base_url="http://pruebas",
     ) as cliente_http:
@@ -135,13 +140,14 @@ async def prueba_una_transicion_invalida_sale_como_conflicto() -> None:
 
 
 @pytest.mark.asyncio
-async def prueba_un_error_de_dominio_respeta_su_estado_y_su_codigo() -> None:
+async def prueba_un_error_de_dominio_respeta_su_estado_y_su_codigo(monkeypatch: pytest.MonkeyPatch) -> None:
     from asgi_lifespan import LifespanManager
     from httpx import ASGITransport
 
     from app.main import crear_aplicacion
 
     aplicacion: FastAPI = crear_aplicacion()
+    declarar_ruta_de_prueba(monkeypatch, "GET", "/no-hay")
 
     @aplicacion.get("/no-hay")
     async def no_hay() -> None:
@@ -152,6 +158,7 @@ async def prueba_un_error_de_dominio_respeta_su_estado_y_su_codigo() -> None:
         )
 
     async with LifespanManager(aplicacion) as gestionada, AsyncClient(
+        headers=encabezados_de(),
         transport=ASGITransport(app=gestionada.app, raise_app_exceptions=False),
         base_url="http://pruebas",
     ) as cliente_http:
@@ -164,7 +171,7 @@ async def prueba_un_error_de_dominio_respeta_su_estado_y_su_codigo() -> None:
 
 
 @pytest.mark.asyncio
-async def prueba_un_fallo_de_validacion_de_mongo_no_es_un_500() -> None:
+async def prueba_un_fallo_de_validacion_de_mongo_no_es_un_500(monkeypatch: pytest.MonkeyPatch) -> None:
     """T-24: el codigo 121 (DocumentValidationFailure) se explica y sugiere el arreglo.
 
     Es el sintoma de una base con validadores viejos. Cualquier otro fallo de Mongo
@@ -177,6 +184,8 @@ async def prueba_un_fallo_de_validacion_de_mongo_no_es_un_500() -> None:
     from app.repos.reglas import FalloDeOperacion
 
     aplicacion: FastAPI = crear_aplicacion()
+    declarar_ruta_de_prueba(monkeypatch, "GET", "/rechazada")
+    declarar_ruta_de_prueba(monkeypatch, "GET", "/otro-fallo")
 
     @aplicacion.get("/rechazada")
     async def rechazada() -> None:
@@ -187,6 +196,7 @@ async def prueba_un_fallo_de_validacion_de_mongo_no_es_un_500() -> None:
         raise FalloDeOperacion("secreto del servidor", 13, {})
 
     async with LifespanManager(aplicacion) as gestionada, AsyncClient(
+        headers=encabezados_de(),
         transport=ASGITransport(app=gestionada.app, raise_app_exceptions=False),
         base_url="http://pruebas",
     ) as cliente_http:

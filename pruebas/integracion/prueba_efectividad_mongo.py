@@ -38,6 +38,7 @@ from app.repos.esquemas import obtener_validadores, recrear_con_validador
 from app.repos.generador import RepoGenerador
 from app.supervision import Supervisor
 from pruebas.conftest import BASE_SEMILLA, saltar_o_fallar
+from pruebas.sesiones import encabezados_de
 
 pytestmark = pytest.mark.mongo
 
@@ -176,6 +177,7 @@ async def prueba_generador_y_d1_dan_un_reporte_coherente(base_efectividad: Any) 
     try:
         aplicacion = crear_aplicacion()
         async with LifespanManager(aplicacion) as gestionada, AsyncClient(
+            headers=encabezados_de(),
             transport=ASGITransport(app=gestionada.app), base_url="http://pruebas"
         ) as http:
             respuesta = await http.get("/api/v1/efectividad")

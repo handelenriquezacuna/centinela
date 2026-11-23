@@ -16,7 +16,8 @@ cambiarlos.
   la politica en cada evento, asi que el cambio rige en la siguiente evaluacion.
 - `POST /reglas/simular` evalua sin escribir: probar un umbral antes de aplicarlo.
 
-Sin autenticacion por ahora: quien puede editar reglas (rol supervisor) es H-25.
+Permisos (H-25): ver reglas y politica es de supervisor y administrador; editarlas, tambien.
+La tabla esta en `app/seguridad/permisos.py`.
 """
 
 from __future__ import annotations
@@ -141,7 +142,7 @@ async def listar_reglas(
         bool | None, Query(description="Solo las activas (true) o las apagadas (false)")
     ] = None,
 ) -> ListaReglas:
-    """Ordenadas por codigo. Sin autenticacion hasta H-25."""
+    """Ordenadas por codigo."""
     documentos = await repo.listar(activa=activa)
     return ListaReglas(
         total=len(documentos),
@@ -187,7 +188,7 @@ async def simular(peticion: PeticionSimulacion, repo: RepoReglasDep) -> Evaluaci
     """La misma funcion `evaluar` que usa el motor, con lo que se le proponga.
 
     Las reglas propuestas se superponen al catalogo de la base por `_id`; la politica
-    propuesta reemplaza a la vigente. No escribe nada. Sin autenticacion hasta H-25.
+    propuesta reemplaza a la vigente. No escribe nada.
     """
     reglas = [Regla.model_validate(d) for d in await repo.listar(activa=None)]
     for propuesta in peticion.reglas or []:
@@ -223,7 +224,7 @@ async def simular(peticion: PeticionSimulacion, repo: RepoReglasDep) -> Evaluaci
     ),
 )
 async def obtener_regla(regla_id: ReglaIdRuta, repo: RepoReglasDep) -> Regla:
-    """Sin autenticacion hasta H-25."""
+    """Una regla por su identificador."""
     documento = await repo.obtener(regla_id)
     if documento is None:
         raise _no_encontrada(regla_id)
@@ -242,8 +243,7 @@ async def obtener_regla(regla_id: ReglaIdRuta, repo: RepoReglasDep) -> Regla:
     ),
 )
 async def crear_regla(nueva: NuevaRegla, repo: RepoReglasDep) -> Regla:
-    """El servidor asigna el siguiente REG-NNN. Codigo repetido: 409. Sin
-    autenticacion hasta H-25."""
+    """El servidor asigna el siguiente REG-NNN. Codigo repetido: 409."""
     _exigir_tipo_y_parametros(nueva.tipo, nueva.parametros)
     documento = {
         **nueva.model_dump(),
@@ -283,8 +283,6 @@ async def editar_regla(
     - Campos que llegan iguales a lo guardado no cuentan; si no cambia nada, se
       devuelve la regla tal cual y no se crea version.
     - Desactivar: `{"activa": false}`.
-
-    Sin autenticacion hasta H-25.
     """
     cambios = edicion.cambios()
     if not cambios:
@@ -409,7 +407,7 @@ def _sin_politica() -> ErrorCentinela:
     ),
 )
 async def obtener_politica(repo: RepoReglasDep) -> PoliticaVigente:
-    """Sin autenticacion hasta H-25."""
+    """La politica vigente."""
     documento = await repo.politica_documento()
     if documento is None:
         raise _sin_politica()
@@ -437,7 +435,7 @@ async def editar_politica(edicion: EdicionPolitica, repo: RepoReglasDep) -> Poli
     - Campos que llegan iguales a lo guardado no cuentan; sin cambios efectivos se
       devuelve la politica tal cual y no se crea version.
 
-    Rige en la siguiente evaluacion de D1. Sin autenticacion hasta H-25.
+    Rige en la siguiente evaluacion de D1.
     """
     cambios = edicion.cambios()
     if not cambios:
