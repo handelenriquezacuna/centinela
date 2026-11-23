@@ -93,6 +93,17 @@ DIAS_SIN_REGLA = 1
 MINUTOS_SIN_REGLA = 1
 
 
+def _hora_de_insercion(cambio: Mapping[str, Any]) -> datetime | None:
+    """Hora de servidor de un evento del change stream, o `None` si no la trae."""
+    hora = cambio.get("wallTime")
+    if isinstance(hora, datetime):
+        return hora if hora.tzinfo is not None else hora.replace(tzinfo=UTC)
+    marca = cambio.get("clusterTime")
+    if marca is not None and hasattr(marca, "as_datetime"):
+        return marca.as_datetime()
+    return None
+
+
 class FlujoInvalidado(TokenDeReanudacionInvalido):
     """El change stream recibio `invalidate`: se borro o renombro `transacciones`.
 
@@ -113,6 +124,11 @@ class EventoTransaccion:
 
     token: Mapping[str, Any] | None
     documento: Mapping[str, Any] | None
+    # Cuando MongoDB inserto la transaccion (hora del servidor, UTC), segun el evento:
+    # `wallTime` (milisegundos) o, si falta, `clusterTime` (segundos). NO es
+    # `Transaccion.fecha`, que es la hora del negocio y puede ser historica. De aqui
+    # sale la latencia de deteccion (H-09).
+    insertada_en: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -222,7 +238,9 @@ class RepoDeteccion:
                         )
                     else:
                         yield EventoTransaccion(
-                            token=cambio["_id"], documento=cambio.get("fullDocument")
+                            token=cambio["_id"],
+                            documento=cambio.get("fullDocument"),
+                            insertada_en=_hora_de_insercion(cambio),
                         )
         except OperationFailure as fallo:
             if desde_token is not None and vueltas == 0:

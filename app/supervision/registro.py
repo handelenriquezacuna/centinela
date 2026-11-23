@@ -32,6 +32,8 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
+from app.supervision.latencia import ResumenLatencia, VentanaLatencia
+
 registro_log = logging.getLogger("centinela.supervision")
 
 # Los disparadores que el sistema promete y que todavia no existen, con la historia
@@ -96,6 +98,8 @@ class _Pulso:
     # Referencias monotonas: para medir el retraso sin depender del reloj de pared.
     registrada_en: float = field(default_factory=time.monotonic)
     ultimo_evento_monotono: float | None = None
+    # Solo las tareas que miden latencia (D1) la tienen; el resto queda en None.
+    latencia: VentanaLatencia | None = None
 
 
 @dataclass(frozen=True)
@@ -110,6 +114,7 @@ class InformeTarea:
     ultimo_error: ErrorRegistrado | None
     historia: str | None
     advertencia: str | None = None
+    latencia: ResumenLatencia | None = None
 
 
 @dataclass(frozen=True)
@@ -189,6 +194,25 @@ class Supervisor:
         pulso.ultimo_evento = datetime.now(UTC)
         pulso.ultimo_evento_monotono = time.monotonic()
 
+    def habilitar_latencia(self, nombre: str) -> None:
+        """La tarea mide latencia: `/estado` la publica desde el arranque, con n = 0."""
+        pulso = self._pulsos.get(nombre)
+        if pulso is not None and pulso.latencia is None:
+            pulso.latencia = VentanaLatencia()
+
+    def registrar_latencia(self, nombre: str, milisegundos: float) -> None:
+        """Una medicion de latencia de la tarea (H-09). Crea la ventana al primer uso.
+
+        La ventana vive en memoria y se pierde al reiniciar: es lo que `/estado` dice
+        de "ahora", no una serie historica.
+        """
+        pulso = self._pulsos.get(nombre)
+        if pulso is None:  # pragma: no cover - solo si alguien mide antes de lanzar
+            return
+        if pulso.latencia is None:
+            pulso.latencia = VentanaLatencia()
+        pulso.latencia.registrar(milisegundos)
+
     def anotar_error(self, nombre: str, fallo: BaseException) -> None:
         """Deja el ultimo error de una tarea sin matarla.
 
@@ -267,6 +291,7 @@ class Supervisor:
             ultimo_error=pulso.ultimo_error,
             historia=pulso.historia,
             advertencia=pulso.advertencia,
+            latencia=pulso.latencia.resumen() if pulso.latencia is not None else None,
         )
 
     def _estado_de(self, pulso: _Pulso, transcurrido: float) -> EstadoTarea:

@@ -21,6 +21,7 @@ Uso:
     python tareas.py usuarios [...]  administra los usuarios de la app (T-41)
     python tareas.py indicadores [...] recalcula indicadores_diarios (H-22)
     python tareas.py pruebas         corre las pruebas
+    python tareas.py resiliencia     failover de D1 con un replica set de 3 nodos en Docker (T-52)
     python tareas.py verificar       instala, prueba y reporta
 
 Con `--dry-run` cualquier tarea imprime lo que haria sin hacerlo.
@@ -772,6 +773,16 @@ def tarea_pruebas(args: argparse.Namespace) -> None:
     correr(orden, dry_run=args.dry_run, env=entorno_app(usuario="centinela_pruebas"))
 
 
+def tarea_resiliencia(args: argparse.Namespace) -> None:
+    """Prueba de failover de D1: levanta 3 nodos propios en Docker, mata al primario (T-52)."""
+    # No usa el cluster del compose ni la base de trabajo: levanta y baja sus propios
+    # contenedores t52f-* en los puertos 27272 a 27274. Solo corre si se pide por nombre.
+    correr(
+        uv("run", "pytest", "-m", "resiliencia", "-s", "-q"),
+        dry_run=args.dry_run,
+    )
+
+
 def tarea_verificar(args: argparse.Namespace) -> None:
     """Lo que se corre antes de pedir revision."""
     tarea_instalar(args)
@@ -792,6 +803,7 @@ TAREAS = {
     "indicadores": tarea_indicadores,
     "usuarios": tarea_usuarios,
     "pruebas": tarea_pruebas,
+    "resiliencia": tarea_resiliencia,
     "verificar": tarea_verificar,
 }
 

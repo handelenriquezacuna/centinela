@@ -920,3 +920,89 @@ y milisegundos del `explain` en `executionStats`.
   (`fecha` sola, `canal` solo, sin filtros) hacen COLLSCAN y cuestan decenas de ms; ver
   la duda de indices en el informe de la historia. La prueba `volumen` imprime el p95 de
   cada consulta.
+
+## Latencia de deteccion, consistencia y failover (T-52)
+
+### Latencia de deteccion medida (H-09)
+
+D1 mide, por cada alerta nueva, los milisegundos entre la insercion de la transaccion y la
+escritura de la alerta. La hora de insercion es la del evento del change stream
+(`wallTime`, o `clusterTime` si faltara), y NO `transacciones.fecha`: esa es la hora del
+negocio y puede ser historica. Se guarda una ventana movil de las ultimas 500 en memoria
+y `GET /estado`, en la tarea `d1_deteccion`, publica:
+
+```json
+"latencia_ms": {"n": 200, "p50": 8.9, "p95": 11.1, "max": 20.7}
+```
+
+- Percentil por rango mas cercano (`ceil(p/100 * n)`), sin interpolar: el valor es siempre
+  una medicion que ocurrio. Sin mediciones, `n = 0` y los demas campos son `null`.
+- Solo se miden alertas nuevas. Un reproceso (el indice unico la rechazo) y una
+  transaccion que no supera el umbral no tienen una escritura que medir.
+- Los dos relojes son el del servidor de Mongo y el del proceso de D1. En una maquina o
+  en un cluster con NTP la diferencia es de milisegundos; un desfase negativo se registra
+  como 0.
+- La ventana se pierde al reiniciar el proceso: dice como esta yendo D1 ahora, no es una
+  serie historica.
+
+Cifra medida en la maquina de desarrollo (macOS, Docker Desktop, Mongo 8 de un nodo, D1
+con los reintentos del YAML, transacciones con tres reglas disparadas):
+
+| Escenario | n | p50 | p95 | max |
+|---|---|---|---|---|
+| 10 transacciones por segundo, 3 corridas de 200 | 200 | 8,9 a 10,0 ms | 11,1 a 15,0 ms | 17,4 a 48,4 ms |
+| Rafaga de 200 insertadas de golpe | 200 | 900,3 ms | 1.434,0 ms | 1.495,8 ms |
+
+Lectura: con trafico de demo (decenas por segundo) la alerta queda escrita en unos 10 ms.
+En una rafaga la latencia crece porque D1 evalua de a una (unos 7 ms por transaccion): la
+transaccion numero 200 espera a las 199 anteriores. No es un umbral prometido; las pruebas
+solo afirman un tope holgado (p95 menor a 5 s) y la forma de la medicion.
+
+### writeConcern y readConcern
+
+El cliente se crea con `w: "majority"`, `wtimeout: 10000` y `readConcern: majority`
+(`app/nucleo/db.py`). Va en el cliente y no operacion por operacion: cubre la alerta y el
+token de D1, las transiciones y la transaccion de escalar sin que cada repositorio lo
+repita, y un `insert_one` nuevo nace protegido. Desde MongoDB 5.0 el valor por omision del
+servidor ya es mayoria, pero es del cluster y no del codigo; escribirlo evita depender de
+como se armo. Costo asumido: sin mayoria de nodos las escrituras no se confirman, que es
+lo correcto para un sistema que no debe prometer una alerta que podria perderse. Si el
+`wtimeout` vence, la escritura pudo haberse aplicado igual; el reintento de D1 es seguro
+porque el indice unico de `alertas.transaccion_id` lo deduplica.
+
+`pruebas/integracion/prueba_consistencia_mongo.py` no mira la configuracion declarada sino
+los comandos que viajan al servidor (monitor de comandos del driver): el `insert` de la
+alerta, el `update` del token, el `findAndModify` de la transicion y, en escalar, el
+`readConcern` del primer comando de la transaccion y el `writeConcern` del
+`commitTransaction`. Un cliente sin configurar sirve de contraste.
+
+### Failover de D1 y compuerta manual
+
+`python tareas.py resiliencia` (o `pytest -m resiliencia -s`) levanta su propio replica set
+de tres nodos en Docker (puertos 27272 a 27274, contenedores `t52f-*`), con D1 corriendo, y:
+
+1. inserta 20 transacciones y espera que D1 las procese;
+2. mata al primario (`docker kill`) mientras siguen entrando 30 transacciones, de a una;
+3. verifica que otro nodo fue elegido y que D1 queda al dia sin errores ni descartes;
+4. detiene D1, inserta 10 mas con D1 abajo, lo reanuda y verifica que las evalua desde el
+   token de `deteccion_estado`;
+5. atrasa el token a la primera fase y reprocesa 40 eventos: el indice unico rechaza cada
+   duplicado y ninguna alerta se reescribe.
+
+Resultado esperado: una alerta por transaccion con riesgo (30 de 60), 0 duplicadas, 0
+perdidas, 0 en `deteccion_estado` como descarte. En la maquina de desarrollo, una corrida
+tarda unos 15 s y la eleccion unos 2,2 s (con `electionTimeoutMillis: 2000`; el valor por
+omision del servidor es 10 s).
+
+Por que D1 no registra errores en la caida: pymongo reintenta la escritura una vez y el change stream
+se reanuda solo con su token interno, de modo que D1 no llega a ver el corte; los reintentos
+con espera progresiva y el descarte quedan para cortes mas largos que `tiempo_espera_seleccion_ms`
+(5 s).
+
+No entra al CI y es una compuerta manual antes de cada hito (avance 1, avance 2, entrega
+final). Razones: necesita Docker con cuatro contenedores propios (tres `mongod` y un ancla de
+red), descarga de imagen y puertos fijos; depende de tiempos de eleccion reales; y no se
+pudo verificar en un runner de GitHub desde aqui. Una prueba que a veces falla sin motivo
+cuesta mas confianza que la que da. `pytest` a secas, `-m mongo` y `-m "not mongo"` la
+deseleccionan (no la saltan, para no contar como omitida en la compuerta de integracion):
+solo corre si se pide por nombre.
