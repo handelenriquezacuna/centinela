@@ -52,10 +52,10 @@
 # una etiqueta. Para actualizar una: `gh api repos/<duenio>/<accion>/git/ref/tags/<tag>`
 # y, si el objeto es de tipo `tag`, desreferenciarlo hasta el commit.
 #
-# Auditoria de dependencias: NO esta como paso. `uv export --format requirements-txt
-# --no-hashes | uvx pip-audit -r /dev/stdin` reporta hoy vulnerabilidades en certifi,
-# dnspython y pymongo; agregarlo bloquearia todo PR por algo que se arregla subiendo
-# versiones en pyproject.toml y uv.lock. Entra cuando corra limpio.
+# Auditoria de dependencias: es una compuerta. `uv export` exporta el lock y pip-audit
+# (version fija) busca vulnerabilidades conocidas en esas versiones; si encuentra una,
+# el paso falla y el PR no se puede fusionar. Para subir pip-audit, cambiar su version
+# fijada en el paso y correr el mismo comando en local antes de empujar.
 #
 # Lo que a proposito NO esta aqui: pruebas de rendimiento y de resiliencia. La
 # resiliencia (que el replica set elija otro primario si el actual cae) necesita
@@ -96,6 +96,16 @@ jobs:
 
       - name: Compuerta -- ruff
         run: uv run ruff check .
+
+      # Auditoria de dependencias: exporta el lock exacto (sin hashes, el mismo formato que
+      # usa el equipo en local) y lo audita con pip-audit en version fija. pipefail hace que
+      # un fallo de uv export tambien corte el paso, no solo un hallazgo de pip-audit.
+      # Sin hallazgos, pip-audit sale con 0; con cualquier vulnerabilidad conocida, sale con 1.
+      - name: Compuerta -- auditoria de dependencias
+        run: |
+          set -euo pipefail
+          uv export --format requirements-txt --no-hashes --frozen \
+            | uvx pip-audit==2.10.1 -r /dev/stdin --disable-pip --no-deps
 
       - name: Levantar Mongo como replica set de un nodo
         run: |
