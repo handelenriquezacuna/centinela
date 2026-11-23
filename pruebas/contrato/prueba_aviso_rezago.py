@@ -68,6 +68,8 @@ async def prueba_estado_publica_el_rezago_de_d1(
     assert fila["rezago"] == {
         "pendientes": 1234,
         "antiguedad_segundos": 95.0,
+        "ritmo_por_segundo": None,
+        "segundos_para_ponerse_al_dia": None,
         "medido_en": "2026-11-23T12:00:00Z",
     }
 
@@ -81,17 +83,39 @@ async def prueba_sin_medicion_el_rezago_es_nulo(cliente: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def prueba_el_aviso_aparece_sobre_el_umbral_con_cantidad_y_antiguedad(
+async def prueba_el_aviso_aparece_sobre_el_umbral_con_cantidad_y_estimado(
     cliente: AsyncClient, supervisor: Supervisor
 ) -> None:
-    supervisor.registrar_rezago(NOMBRE_D1, _umbral() + 1, 125.0, AHORA)
+    """D-52: el analista ve cuanto falta, no la fecha de negocio de la mas vieja."""
+    pendientes = _umbral() + 1
+    supervisor.registrar_rezago(NOMBRE_D1, pendientes + 400, 9e6, AHORA, monotono=100.0)
+    for _ in range(400):  # D1 evalua 400 en 4 s: 100 por segundo
+        supervisor.contar_evaluada(NOMBRE_D1)
+    supervisor.registrar_rezago(NOMBRE_D1, pendientes, 9e6, AHORA, monotono=104.0)
 
     respuesta = await cliente.get("/panel/rezago")
 
     assert respuesta.status_code == 200
     assert "Detección atrasada" in respuesta.text
-    assert f"{_umbral() + 1} transacciones por evaluar" in respuesta.text
-    assert "la mas vieja de hace 2 min" in respuesta.text
+    assert f"{pendientes} transacciones por evaluar" in respuesta.text
+    assert "unos 5 s para ponerse al día" in respuesta.text
+    assert "hace" not in respuesta.text  # nada de la fecha de negocio
+
+    fila = next(
+        t for t in (await cliente.get("/estado")).json()["tareas"] if t["nombre"] == NOMBRE_D1
+    )
+    assert fila["rezago"]["ritmo_por_segundo"] == 100.0
+
+
+@pytest.mark.asyncio
+async def prueba_sin_ritmo_medido_el_aviso_lo_dice(
+    cliente: AsyncClient, supervisor: Supervisor
+) -> None:
+    supervisor.registrar_rezago(NOMBRE_D1, _umbral() + 1, 125.0, AHORA)
+
+    texto = (await cliente.get("/panel/rezago")).text
+
+    assert "todavía sin ritmo medido" in texto
 
 
 @pytest.mark.asyncio

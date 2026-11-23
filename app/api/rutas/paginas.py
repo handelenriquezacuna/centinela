@@ -134,10 +134,10 @@ async def cola(repo: RepoAlertasDep, ajustes: AjustesDep) -> HTMLResponse:
 
 
 def antiguedad_legible(segundos: float | None) -> str:
-    """`125.0` -> `2 min`; el aviso dice hace cuanto es la transaccion mas vieja."""
+    """`125.0` -> `2 min`; el aviso dice cuanto falta para que D1 se ponga al dia."""
     if segundos is None:
         return ""
-    total = int(segundos)
+    total = max(1, int(segundos))
     if total < 60:
         return f"{total} s"
     if total < 3600:
@@ -160,7 +160,7 @@ async def rezago(supervisor: SupervisorDep, ajustes: AjustesDep) -> HTMLResponse
     html = ENTORNO.get_template("paginas/aviso_rezago.html").render(
         atrasada=atrasada,
         pendientes=f"{medida.pendientes:,}".replace(",", " ") if medida else 0,
-        antiguedad=antiguedad_legible(medida.antiguedad_segundos) if medida else "",
+        estimado=antiguedad_legible(medida.segundos_para_ponerse_al_dia) if medida else "",
     )
     return HTMLResponse(html)
 

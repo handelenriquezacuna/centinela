@@ -25,3 +25,26 @@ class ResumenRezago:
     pendientes: int
     antiguedad_segundos: float | None
     medido_en: datetime
+    # Transacciones por segundo que D1 evaluo entre esta medicion y la anterior; `None`
+    # en la primera medicion. Es lo que le sirve al analista: cuanto falta, no la fecha
+    # de negocio de la mas vieja (D-52).
+    ritmo_por_segundo: float | None = None
+
+    @property
+    def segundos_para_ponerse_al_dia(self) -> float | None:
+        """Estimado a ritmo constante. `None` sin ritmo medido o si D1 no avanzo."""
+        if self.pendientes == 0:
+            return 0.0
+        if not self.ritmo_por_segundo:
+            return None
+        return self.pendientes / self.ritmo_por_segundo
+
+
+def ritmo(
+    eventos_antes: int, momento_antes: float, eventos_ahora: int, momento_ahora: float
+) -> float | None:
+    """Eventos por segundo entre dos lecturas de reloj monotono; `None` si no hay intervalo."""
+    intervalo = momento_ahora - momento_antes
+    if intervalo <= 0:
+        return None
+    return max(0, eventos_ahora - eventos_antes) / intervalo

@@ -208,3 +208,17 @@ async def prueba_estado_publica_latencia_ms_solo_en_d1(cliente_con_d1: AsyncClie
 
     assert tareas[NOMBRE_D1]["latencia_ms"] == {"n": 5, "p50": 300.0, "p95": 2000.0, "max": 2000.0}
     assert tareas["otra_tarea"]["latencia_ms"] is None
+
+
+def prueba_ritmo_y_estimado_del_rezago() -> None:
+    """D-52: el estimado sale del ritmo medido, no de la fecha de negocio."""
+    from datetime import UTC, datetime
+
+    from app.supervision.rezago import ResumenRezago, ritmo
+
+    assert ritmo(100, 10.0, 500, 14.0) == 100.0
+    assert ritmo(100, 10.0, 100, 10.0) is None  # sin intervalo
+    ahora = datetime(2026, 11, 23, tzinfo=UTC)
+    assert ResumenRezago(600, None, ahora, 100.0).segundos_para_ponerse_al_dia == 6.0
+    assert ResumenRezago(600, None, ahora, 0.0).segundos_para_ponerse_al_dia is None
+    assert ResumenRezago(0, None, ahora, None).segundos_para_ponerse_al_dia == 0.0

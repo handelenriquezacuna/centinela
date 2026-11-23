@@ -422,6 +422,7 @@ async def _consumir(
                         supervisor.registrar_latencia(nombre, medida)
                 await repo.guardar_token(nombre, vuelta.token, transaccion_id=transaccion_id)
                 hay_token_guardado = True
+                supervisor.contar_evaluada(nombre)
                 registro_log.debug("%s: %s", transaccion_id, resultado or "descartada")
             elif not hay_token_guardado and vuelta.token is not None:
                 # Arranque sin token: se guarda el de la primera vuelta vacia, para que

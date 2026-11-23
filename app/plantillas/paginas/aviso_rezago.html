@@ -2,7 +2,7 @@
 {% if atrasada %}
 <div class="mensaje mensaje-error aviso-rezago">
   <strong>Detección atrasada:</strong>
-  {{ pendientes }} transacciones por evaluar{% if antiguedad %}, la más vieja de hace {{ antiguedad }}{% endif %}.
-  Las alertas de esas transacciones aparecerán cuando D1 se ponga al dia.
+  {{ pendientes }} transacciones por evaluar{% if estimado %}, unos {{ estimado }} para ponerse al día{% else %}; todavía sin ritmo medido{% endif %}.
+  Las alertas de esas transacciones aparecerán cuando D1 se ponga al día.
 </div>
 {% endif %}
