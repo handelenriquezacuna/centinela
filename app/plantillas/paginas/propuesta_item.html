@@ -1,0 +1,10 @@
+<li class="id-corto" id="propuesta-{{ sinpe }}">
+  {{ sinpe }}
+  {% if mensaje %}<span class="mensaje {{ 'mensaje-error' if es_error else 'mensaje-ok' }}" role="status">{{ mensaje }}</span>
+  {% elif puede_gestionar %}
+  <form class="form-inline" method="post" action="/red-mulas/{{ cuenta }}/propuestas/{{ sinpe }}"
+        hx-post="/red-mulas/{{ cuenta }}/propuestas/{{ sinpe }}" hx-target="#propuesta-{{ sinpe }}" hx-swap="outerHTML">
+    <button class="boton boton-primario" type="submit">Agregar a lista de riesgo</button>
+  </form>
+  {% endif %}
+</li>

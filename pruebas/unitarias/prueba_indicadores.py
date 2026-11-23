@@ -22,11 +22,12 @@ from app.repos.indicadores import (
 from app.supervision import Supervisor
 
 
-def prueba_el_pipeline_tiene_las_cinco_etapas_en_orden() -> None:
+def prueba_el_pipeline_tiene_las_seis_etapas_en_orden() -> None:
     pipeline = construir_pipeline(date(2026, 11, 20), date(2026, 11, 22))
 
     assert [next(iter(etapa)) for etapa in pipeline] == [
         "$match",
+        "$addFields",
         "$group",
         "$sort",
         "$project",
@@ -52,13 +53,13 @@ def prueba_el_dia_se_corta_en_hora_de_costa_rica() -> None:
 
     etapas = construir_pipeline(date(2026, 11, 21), date(2026, 11, 21))
     assert etapas[0]["$match"]["fecha_creacion"] == {"$gte": inicio, "$lt": fin}
-    clave = etapas[1]["$group"]["_id"]["$dateToString"]
+    clave = etapas[2]["$group"]["_id"]["$dateToString"]
     assert clave["timezone"] == "-06:00"
     assert clave["format"] == "%Y-%m-%d"
 
 
 def prueba_el_proyecto_solo_emite_lo_que_acepta_el_validador() -> None:
-    proyecto = construir_pipeline(date(2026, 11, 22), date(2026, 11, 22))[3]["$project"]
+    proyecto = construir_pipeline(date(2026, 11, 22), date(2026, 11, 22))[4]["$project"]
 
     assert set(proyecto) == {
         "_id",
@@ -68,6 +69,11 @@ def prueba_el_proyecto_solo_emite_lo_que_acepta_el_validador() -> None:
         "por_estado",
         "por_agente",
         "por_hora",
+        "decision_cantidad",
+        "decision_segundos_total",
+        "monto_protegido_crc",
+        "pendientes",
+        "pendiente_mas_antigua",
         "calculado_en",
         "esquema_version",
     }

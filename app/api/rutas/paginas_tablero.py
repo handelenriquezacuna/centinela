@@ -6,7 +6,8 @@
 - `/red-mulas` y `/red-mulas/{cuenta}`: nodos y aristas de `RepoRedMulas` (el mismo que
   sirve `GET /api/v1/red-mulas/{cuenta}`) como un grafo SVG, con el monto de cada
   transferencia y los minutos entre eslabones, y las propuestas para `listas_riesgo`.
-  Solo muestra: proponer no escribe.
+  Supervisor y administrador ven ademas un boton por propuesta (la agrega a la lista,
+  T-51) y las entradas ya vigentes de la red con "Dar de baja" (D-41).
 """
 
 from __future__ import annotations
@@ -18,8 +19,17 @@ from fastapi import APIRouter, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.api.dependencias import RepoRedMulasPortalDep, RepoTableroDep
+from app.api.errores import ErrorCentinela
 from app.api.rutas.inteligencia import CuentaRuta
+from app.api.rutas.listas_riesgo import (
+    CuentaSinpeRuta,
+    RepoListasRiesgoDep,
+    RiesgoIdRuta,
+    aprobar_propuesta,
+    dar_de_baja,
+)
 from app.api.rutas.paginas import ENTORNO, NAVEGACION
+from app.api.sesion import SesionDep, permite_ruta
 from app.modelos.base import asumir_utc
 from app.repos.red_mulas import (
     SALTOS_MAXIMOS,
@@ -30,6 +40,23 @@ from app.repos.red_mulas import (
 from app.repos.tablero import DIAS_MAXIMOS
 
 enrutador = APIRouter(include_in_schema=False)
+
+
+def tiempo_corto(segundos: float | None) -> str:
+    """90 -> '1 min 30 s'; 3700 -> '1 h 1 min'. Para las cifras del tablero."""
+    if segundos is None:
+        return "-"
+    total = round(segundos)
+    horas, resto = divmod(total, 3600)
+    minutos, seg = divmod(resto, 60)
+    if horas:
+        return f"{horas} h {minutos} min"
+    if minutos:
+        return f"{minutos} min {seg} s"
+    return f"{seg} s"
+
+
+ENTORNO.filters["tiempo_corto"] = tiempo_corto
 
 PERIODOS = (1, 7, 14, 30)
 COMANDO_INDICADORES = "python tareas.py indicadores"
@@ -195,10 +222,15 @@ async def red_mulas_formulario(
     return _pagina("paginas/red_mulas.html", "red_mulas", red=None, grafo=None, cuenta=None)
 
 
+def _puede_gestionar(cuenta: str) -> bool:
+    return permite_ruta(f"/red-mulas/{cuenta}/propuestas/0000-0000", "POST")
+
+
 @enrutador.get("/red-mulas/{cuenta}", response_class=HTMLResponse)
 async def red_mulas_grafo(
     cuenta: CuentaRuta,
     repo: RepoRedMulasPortalDep,
+    listas: RepoListasRiesgoDep,
     desde: Annotated[datetime | None, Query(description="Instante de partida (UTC)")] = None,
     ventana_minutos: Annotated[int, Query(ge=1, le=1440)] = VENTANA_MINUTOS,
     saltos: Annotated[int, Query(ge=1, le=SALTOS_MAXIMOS)] = SALTOS_MAXIMOS,
@@ -220,6 +252,12 @@ async def red_mulas_grafo(
             cuenta=cuenta,
             error=str(fallo),
         )
+    puede = _puede_gestionar(cuenta)
+    entradas: list[dict[str, Any]] = []
+    en_lista = [nodo.cuenta for nodo in red.nodos if nodo.en_lista_riesgo]
+    if puede and en_lista:  # solo quien puede dar de baja necesita verlas
+        por_cuenta = await listas.entradas_de_cuentas(en_lista)
+        entradas = [e for sinpe in en_lista for e in por_cuenta.get(sinpe, [])]
     return _pagina(
         "paginas/red_mulas.html",
         "red_mulas",
@@ -227,4 +265,53 @@ async def red_mulas_grafo(
         grafo=disponer_grafo(red) if red.aristas else None,
         cuenta=cuenta,
         error=None,
+        puede_gestionar=puede,
+        entradas_lista=entradas,
+    )
+
+
+def _fragmento(plantilla: str, estado: int = 200, **contexto: Any) -> HTMLResponse:
+    return HTMLResponse(ENTORNO.get_template(plantilla).render(**contexto), status_code=estado)
+
+
+@enrutador.post("/red-mulas/{cuenta}/propuestas/{propuesta}", response_class=HTMLResponse)
+async def aprobar_desde_red(
+    cuenta: CuentaRuta,
+    propuesta: CuentaSinpeRuta,
+    repo: RepoListasRiesgoDep,
+    sesion: SesionDep,
+) -> HTMLResponse:
+    """Aprueba una propuesta con la misma funcion que la API y devuelve su fila."""
+    resultado = await aprobar_propuesta(repo, cuenta, propuesta, sesion)
+    mensaje = (
+        f"Agregada como {resultado.entrada.riesgo_id}"
+        if resultado.creada
+        else f"Ya estaba vigente como {resultado.entrada.riesgo_id}: no se duplico"
+    )
+    return _fragmento(
+        "paginas/propuesta_item.html", cuenta=cuenta, sinpe=propuesta, mensaje=mensaje, es_error=False
+    )
+
+
+@enrutador.post("/red-mulas/{cuenta}/listas-riesgo/{riesgo_id}/baja", response_class=HTMLResponse)
+async def baja_desde_red(
+    cuenta: CuentaRuta,
+    riesgo_id: RiesgoIdRuta,
+    repo: RepoListasRiesgoDep,
+    sesion: SesionDep,
+) -> HTMLResponse:
+    """Da de baja con la misma funcion que la API y devuelve la fila con el resultado."""
+    try:
+        entrada = await dar_de_baja(repo, riesgo_id, sesion)
+    except ErrorCentinela as fallo:
+        return HTMLResponse(
+            f'<li><span class="mensaje mensaje-error" role="alert">{fallo.mensaje}</span></li>',
+            status_code=fallo.estado_http,
+        )
+    return _fragmento(
+        "paginas/entrada_lista.html",
+        cuenta=cuenta,
+        entrada=entrada,
+        mensaje=f"Dada de baja: {riesgo_id} ya no esta en la lista",
+        es_error=False,
     )

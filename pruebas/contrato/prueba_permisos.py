@@ -37,7 +37,13 @@ from app.seguridad.permisos import (
 )
 from pruebas.sesiones import encabezados_de
 
-EJEMPLOS = {"alerta_id": "ALR-001", "regla_id": "REG-001", "cuenta": "8712-4455"}
+EJEMPLOS = {
+    "alerta_id": "ALR-001",
+    "regla_id": "REG-001",
+    "cuenta": "8712-4455",
+    "propuesta": "6033-9002",
+    "riesgo_id": "RSK-001",
+}
 ROLES = list(RolAgente)
 
 

@@ -1,0 +1,12 @@
+<li id="entrada-{{ entrada['_id'] }}">
+  <span class="id-corto">{{ entrada.cuenta }}</span> &middot; {{ entrada['_id'] }}{% if not entrada.vigente %} (no vigente){% endif %}:
+  {{ entrada.motivo }}, reportada {{ entrada.fecha_reporte | hora_costa_rica }} (hora CR)
+  {% if mensaje %}<span class="mensaje {{ 'mensaje-error' if es_error else 'mensaje-ok' }}" role="status">{{ mensaje }}</span>
+  {% elif puede_gestionar %}
+  <form class="form-inline" method="post" action="/red-mulas/{{ cuenta }}/listas-riesgo/{{ entrada['_id'] }}/baja"
+        hx-post="/red-mulas/{{ cuenta }}/listas-riesgo/{{ entrada['_id'] }}/baja" hx-target="#entrada-{{ entrada['_id'] }}" hx-swap="outerHTML"
+        hx-confirm="Se borra la entrada {{ entrada['_id'] }} de {{ entrada.cuenta }}. Queda registro en el log. Continuar?">
+    <button class="boton" type="submit">Dar de baja</button>
+  </form>
+  {% endif %}
+</li>

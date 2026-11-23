@@ -15,6 +15,12 @@
 {% elif v.delta < 0 %}<span class="variacion-baja">{{ v.delta }}{% if v.porcentaje is not none %} ({{ v.porcentaje }}%){% endif %}</span>
 {% else %}sin cambio{% endif %}
 {% endmacro %}
+{% macro cambio(v, unidad, hay_previo) %}
+{% if not hay_previo or v.delta is none %}sin periodo anterior con que comparar
+{% elif v.delta > 0 %}<span class="variacion-sube">+{{ v.delta }}{{ unidad }}{% if v.porcentaje is not none %} ({{ v.porcentaje }}%){% endif %}</span> contra el periodo anterior
+{% elif v.delta < 0 %}<span class="variacion-baja">{{ v.delta }}{{ unidad }}{% if v.porcentaje is not none %} ({{ v.porcentaje }}%){% endif %}</span> contra el periodo anterior
+{% else %}sin cambio contra el periodo anterior{% endif %}
+{% endmacro %}
 {% block contenido %}
 <link rel="stylesheet" href="/estaticos/tablero.css">
 <div class="titulo-pantalla">
@@ -40,6 +46,29 @@
   ({{ resumen.actual.dias_con_datos }} con datos); anterior: {{ resumen.periodo_previo.desde }} a {{ resumen.periodo_previo.hasta }}
   ({{ resumen.previo.dias_con_datos }} con datos).
 </p>
+
+<section class="tarjeta" aria-label="Indicadores del supervisor" id="kpis">
+  <h2 class="seccion-titulo">Indicadores del supervisor</h2>
+  {% if not resumen.kpi.disponible %}
+  <p class="nota-tecnica" id="kpis-sin-dato">El rollup todavia no trae estos indicadores. Para calcularlos: <code>{{ comando }}</code></p>
+  {% else %}
+  {% set k = resumen.kpi %}{% set hay_previo = resumen.hay_periodo_previo %}
+  <div class="cifras">
+    <div id="kpi-tiempo"><span class="cifra-grande">{% if k.tiempo_decision_s.actual is none %}sin resueltas{% else %}{{ k.tiempo_decision_s.actual | tiempo_corto }}{% endif %}</span>
+      <div>Tiempo hasta la decision (promedio)</div>
+      <div class="nota-tecnica">{% if k.tiempo_decision_s.previo is not none %}anterior: {{ k.tiempo_decision_s.previo | tiempo_corto }}. {% endif %}{{ cambio(k.tiempo_decision_s, ' s', hay_previo) }}</div></div>
+    <div id="kpi-monto"><span class="cifra-grande">{{ k.monto_protegido_crc.actual | colones }}</span>
+      <div>Monto protegido (confirmadas y escaladas)</div>
+      <div class="nota-tecnica">{% if k.monto_protegido_crc.previo is not none %}anterior: {{ k.monto_protegido_crc.previo | colones }}. {% endif %}{{ cambio(k.monto_protegido_crc, '', hay_previo) }}</div></div>
+    <div id="kpi-tasa"><span class="cifra-grande">{% if k.tasa_confirmacion.actual is none %}sin resueltas{% else %}{{ k.tasa_confirmacion.actual }}%{% endif %}</span>
+      <div>Tasa de confirmacion</div>
+      <div class="nota-tecnica">{% if k.tasa_confirmacion.previo is not none %}anterior: {{ k.tasa_confirmacion.previo }}%. {% endif %}{{ cambio(k.tasa_confirmacion, ' pts', hay_previo) }}</div></div>
+    <div id="kpi-pendientes"><span class="cifra-grande">{{ k.pendientes.actual }}</span>
+      <div>Pendientes (nueva o en revision)</div>
+      <div class="nota-tecnica">{% if k.pendiente_mas_antigua %}la mas antigua sin atender: {{ k.pendiente_mas_antigua | hora_costa_rica }} (hora CR), hace {{ k.antiguedad_horas }} h. {% else %}ninguna pendiente. {% endif %}{{ cambio(k.pendientes, '', hay_previo) }}</div></div>
+  </div>
+  {% endif %}
+</section>
 
 <section class="tarjeta" aria-label="Total de alertas">
   <h2 class="seccion-titulo">Total de alertas</h2>

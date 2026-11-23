@@ -24,6 +24,20 @@ El pipeline, en un renglon:
   conteo por severidad, por estado, por agente (`sin_asignar` si no tiene), por hora de
   CR (las 24 claves "00" a "23"), `calculado_en` y `esquema_version`.
   Los enteros salen int32 porque `$sum` de enteros pequenos lo es.
+
+KPIs del supervisor (T-51), todos opcionales en el validador y calculados sobre las
+alertas CREADAS ese dia (dia de CR), con el estado que tienen al correr el pipeline:
+
+- `decision_cantidad` y `decision_segundos_total`: de las alertas con una transicion a un
+  estado terminal (confirmada, descartada o escalada), cuantas son y la suma de segundos
+  entre `fecha_creacion` y la PRIMERA de esas transiciones segun `historial` (no existe
+  un campo fecha_resolucion). Se guarda suma y cuenta, y no el promedio, para que el
+  tablero pueda promediar varios dias ponderando y no promediando promedios.
+- `monto_protegido_crc`: suma de `monto_crc` de las alertas confirmadas o escaladas.
+- `pendientes`: alertas en `nueva` o `en_revision`; `pendiente_mas_antigua`: la
+  `fecha_creacion` de la mas vieja (ausente si no hay pendientes).
+La tasa de confirmacion no se guarda: sale de `por_estado` (confirmadas sobre confirmadas
+mas descartadas), un solo origen para la cifra.
 """
 
 from __future__ import annotations
@@ -47,6 +61,9 @@ SEVERIDADES = ("MEDIA", "ALTA", "CRITICA")
 HORAS = tuple(f"{h:02d}" for h in range(24))
 SIN_ASIGNAR = "sin_asignar"
 ESTADOS = ("nueva", "en_revision", "confirmada", "descartada", "escalada")
+ESTADOS_TERMINALES = ("confirmada", "descartada", "escalada")
+ESTADOS_PROTEGEN = ("confirmada", "escalada")
+ESTADOS_PENDIENTES = ("nueva", "en_revision")
 
 
 def hoy_costa_rica(ahora: datetime | None = None) -> date:
@@ -72,6 +89,48 @@ def _contar(campo: str, valor: str) -> dict[str, Any]:
     return {"$sum": {"$cond": [{"$eq": [f"${campo}", valor]}, 1, 0]}}
 
 
+def _segundos_hasta_decision() -> dict[str, Any]:
+    """Segundos de `fecha_creacion` a la primera transicion terminal del `historial`.
+
+    `null` si la alerta no tiene ninguna (sigue abierta); `$sum` ignora los nulos.
+    Nunca negativo: un reloj atrasado no resta tiempo al promedio.
+    """
+    fechas = {
+        "$map": {
+            "input": {
+                "$filter": {
+                    "input": "$historial",
+                    "cond": {"$in": ["$$this.accion", list(ESTADOS_TERMINALES)]},
+                }
+            },
+            "in": "$$this.fecha",
+        }
+    }
+    return {
+        "$let": {
+            "vars": {"primera": {"$min": fechas}},
+            "in": {
+                "$cond": [
+                    {"$eq": ["$$primera", None]},
+                    None,
+                    {
+                        "$max": [
+                            0,
+                            {
+                                "$dateDiff": {
+                                    "startDate": "$fecha_creacion",
+                                    "endDate": "$$primera",
+                                    "unit": "second",
+                                }
+                            },
+                        ]
+                    },
+                ]
+            },
+        }
+    }
+
+
 def construir_pipeline(desde: date, hasta: date) -> list[dict[str, Any]]:
     """El pipeline de H-22 para el rango. Funcion pura: se prueba sin base de datos."""
     inicio, fin = limites_utc(desde, hasta)
@@ -95,6 +154,16 @@ def construir_pipeline(desde: date, hasta: date) -> list[dict[str, Any]]:
             }
         },
     }
+    grupo["decision_cantidad"] = {"$sum": {"$cond": [{"$ne": ["$_decision_s", None]}, 1, 0]}}
+    grupo["decision_segundos_total"] = {"$sum": "$_decision_s"}
+    grupo["monto_protegido"] = {
+        "$sum": {"$cond": [{"$in": ["$estado", list(ESTADOS_PROTEGEN)]}, "$monto_crc", 0]}
+    }
+    pendiente = {"$in": ["$estado", list(ESTADOS_PENDIENTES)]}
+    grupo["pendientes"] = {"$sum": {"$cond": [pendiente, 1, 0]}}
+    grupo["pendiente_antigua"] = {
+        "$min": {"$cond": [pendiente, "$fecha_creacion", None]}
+    }
     for severidad in SEVERIDADES:
         grupo[f"sev_{severidad}"] = _contar("severidad", severidad)
     for estado in ESTADOS:
@@ -102,6 +171,7 @@ def construir_pipeline(desde: date, hasta: date) -> list[dict[str, Any]]:
 
     return [
         {"$match": {"fecha_creacion": {"$gte": inicio, "$lt": fin}}},
+        {"$addFields": {"_decision_s": _segundos_hasta_decision()}},
         {"$group": grupo},
         {"$sort": {"_id": 1}},
         {
@@ -149,6 +219,13 @@ def construir_pipeline(desde: date, hasta: date) -> list[dict[str, Any]]:
                         }
                     }
                 },
+                "decision_cantidad": "$decision_cantidad",
+                "decision_segundos_total": "$decision_segundos_total",
+                "monto_protegido_crc": "$monto_protegido",
+                "pendientes": "$pendientes",
+                "pendiente_mas_antigua": {
+                    "$cond": [{"$eq": ["$pendiente_antigua", None]}, "$$REMOVE", "$pendiente_antigua"]
+                },
                 "calculado_en": "$$NOW",
                 "esquema_version": {"$literal": ESQUEMA_VERSION_INDICADORES},
             }
@@ -174,6 +251,10 @@ def documento_en_ceros(fecha: str, calculado_en: datetime) -> dict[str, Any]:
         "por_estado": dict.fromkeys(ESTADOS, 0),
         "por_agente": {},
         "por_hora": dict.fromkeys(HORAS, 0),
+        "decision_cantidad": 0,
+        "decision_segundos_total": 0,
+        "monto_protegido_crc": 0,
+        "pendientes": 0,
         "calculado_en": calculado_en,
         "esquema_version": ESQUEMA_VERSION_INDICADORES,
     }

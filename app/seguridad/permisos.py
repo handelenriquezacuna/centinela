@@ -35,6 +35,7 @@ class Permiso(StrEnum):
     TABLERO = "tablero"
     VER_REGLAS = "ver_reglas"
     EDITAR_REGLAS = "editar_reglas"
+    GESTIONAR_LISTAS = "gestionar_listas"  # aprobar propuestas de la red y dar de baja
 
 
 _PERMISOS_AGENTE = frozenset(
@@ -51,7 +52,7 @@ _PERMISOS_AGENTE = frozenset(
 PERMISOS_POR_ROL: dict[RolAgente, frozenset[Permiso]] = {
     RolAgente.AGENTE: _PERMISOS_AGENTE,
     RolAgente.SUPERVISOR: _PERMISOS_AGENTE
-    | {Permiso.TABLERO, Permiso.VER_REGLAS, Permiso.EDITAR_REGLAS},
+    | {Permiso.TABLERO, Permiso.VER_REGLAS, Permiso.EDITAR_REGLAS, Permiso.GESTIONAR_LISTAS},
     RolAgente.ADMINISTRADOR: frozenset(Permiso),
 }
 
@@ -108,6 +109,11 @@ ACCESOS: tuple[Acceso, ...] = (
     _a("GET", "/red-mulas", Permiso.RED_MULAS),
     _a("GET", "/red-mulas/{cuenta}", Permiso.RED_MULAS),
     _a("GET", "/api/v1/red-mulas/{cuenta}", Permiso.RED_MULAS),
+    # Listas de riesgo: solo supervisor y administrador
+    _a("POST", "/api/v1/red-mulas/{cuenta}/propuestas/{propuesta}", Permiso.GESTIONAR_LISTAS),
+    _a("POST", "/red-mulas/{cuenta}/propuestas/{propuesta}", Permiso.GESTIONAR_LISTAS),
+    _a("DELETE", "/api/v1/listas-riesgo/{riesgo_id}", Permiso.GESTIONAR_LISTAS),
+    _a("POST", "/red-mulas/{cuenta}/listas-riesgo/{riesgo_id}/baja", Permiso.GESTIONAR_LISTAS),
     # Tablero
     _a("GET", "/tablero", Permiso.TABLERO),
     _a("GET", "/api/v1/efectividad", Permiso.TABLERO),

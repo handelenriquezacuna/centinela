@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -223,3 +223,94 @@ async def prueba_el_validador_real_acepta_y_rechaza_los_campos_nuevos(
     viejo = {k: v for k, v in doc.items() if k not in ("por_agente", "por_hora")}
     viejo.update(_id="2026-12-02", fecha="2026-12-02")
     await base_indicadores["indicadores_diarios"].insert_one(viejo)
+
+
+def _con_historial(
+    n: int, estado: str, creada: datetime, monto: int, pasos: list[tuple[str, int]]
+) -> dict[str, Any]:
+    """Alerta con el historial dado: `pasos` = (accion, segundos despues de la creacion)."""
+    alerta = _alerta(n, "ALTA", estado, creada)
+    alerta["monto_crc"] = Int64(monto)
+    alerta["historial"] = [
+        {"accion": "nueva", "agente_id": None, "fecha": creada},
+        *[
+            {"accion": accion, "agente_id": "AGT-001", "fecha": creada + timedelta(seconds=seg)}
+            for accion, seg in pasos
+        ],
+    ]
+    return alerta
+
+
+KPI_ALERTAS = [
+    # 25-nov en CR. Decision a los 600 s (la primera terminal; la siguiente no cuenta).
+    _con_historial(
+        101, "confirmada", _utc(25, 10), 100_000,
+        [("en_revision", 60), ("confirmada", 600), ("escalada", 900)],
+    ),
+    _con_historial(102, "descartada", _utc(25, 11), 40_000, [("en_revision", 30), ("descartada", 200)]),
+    _con_historial(103, "escalada", _utc(25, 12), 250_000, [("en_revision", 30), ("escalada", 1000)]),
+    _con_historial(104, "nueva", _utc(25, 14), 70_000, []),
+    _con_historial(105, "en_revision", _utc(25, 8), 90_000, [("en_revision", 120)]),
+]
+
+
+@pytest.mark.asyncio
+async def prueba_los_kpi_del_supervisor_salen_del_historial_y_son_idempotentes(
+    base_indicadores: Any,
+) -> None:
+    await base_indicadores["alertas"].insert_many(KPI_ALERTAS)
+    repo = RepoIndicadores(base_indicadores)
+
+    await repo.recalcular(date(2026, 11, 20), date(2026, 11, 26))
+    primera = await _sin_marca(base_indicadores)
+    await repo.recalcular(date(2026, 11, 20), date(2026, 11, 26))
+    segunda = await _sin_marca(base_indicadores)
+
+    assert primera == segunda  # dos corridas, los mismos documentos
+    dias = {d["_id"]: d for d in primera}
+    dia = dias["2026-11-25"]
+    assert dia["total_alertas"] == 5
+    # Tres con transicion terminal: 600 + 200 + 1000 segundos.
+    assert (dia["decision_cantidad"], dia["decision_segundos_total"]) == (3, 1800)
+    # Confirmada + escalada; la descartada y las abiertas no protegen nada.
+    assert dia["monto_protegido_crc"] == 100_000 + 250_000
+    assert dia["pendientes"] == 2
+    assert dia["pendiente_mas_antigua"].replace(tzinfo=UTC) == _utc(25, 8)
+    # Un dia sin alertas no inventa nada: ceros y sin "mas antigua".
+    vacio = dias["2026-11-26"]
+    assert (vacio["decision_cantidad"], vacio["monto_protegido_crc"], vacio["pendientes"]) == (0, 0, 0)
+    assert "pendiente_mas_antigua" not in vacio
+
+
+@pytest.mark.asyncio
+async def prueba_un_dia_sin_alertas_resueltas_no_tiene_segundos_ni_division(
+    base_indicadores: Any,
+) -> None:
+    repo = RepoIndicadores(base_indicadores)
+    await repo.recalcular(date(2026, 11, 20), date(2026, 11, 20))
+    dia = await base_indicadores["indicadores_diarios"].find_one({"_id": "2026-11-20"})
+
+    # La alerta 1 del dia sigue `nueva`: pendiente, sin decision.
+    assert (dia["decision_cantidad"], dia["decision_segundos_total"]) == (0, 0)
+    assert dia["pendientes"] == 1
+    assert dia["pendiente_mas_antigua"].replace(tzinfo=UTC) == _utc(21, 5, 59)
+
+
+@pytest.mark.asyncio
+async def prueba_el_validador_real_acepta_los_kpi_y_rechaza_valores_invalidos(
+    base_indicadores: Any,
+) -> None:
+    from pymongo.errors import WriteError
+
+    await RepoIndicadores(base_indicadores).recalcular(date(2026, 11, 21), date(2026, 11, 21))
+    doc = await base_indicadores["indicadores_diarios"].find_one({"_id": "2026-11-21"})
+    assert {"decision_cantidad", "monto_protegido_crc", "pendientes"} <= set(doc)
+
+    for campo, valor in (
+        ("monto_protegido_crc", -1),
+        ("pendientes", "dos"),
+        ("pendiente_mas_antigua", "ayer"),
+    ):
+        malo = {**doc, "_id": "2026-12-03", "fecha": "2026-12-03", campo: valor}
+        with pytest.raises(WriteError):
+            await base_indicadores["indicadores_diarios"].insert_one(malo)

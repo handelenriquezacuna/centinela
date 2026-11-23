@@ -980,6 +980,30 @@ recrearColeccion("indicadores_diarios", {
       },
       description: "Opcional (H-22). Alertas del dia por hora de Costa Rica (UTC-6), claves 00 a 23; las 24 siempre presentes"
     },
+    decision_cantidad: {
+      bsonType: ["int", "long"],
+      minimum: 0,
+      description: "Opcional (T-51). Alertas del dia con una transicion a estado terminal (confirmada, descartada, escalada) en su historial"
+    },
+    decision_segundos_total: {
+      bsonType: ["int", "long"],
+      minimum: 0,
+      description: "Opcional (T-51). Suma de segundos de fecha_creacion a la primera transicion terminal; promedio = esto / decision_cantidad (sin dividir si es 0)"
+    },
+    monto_protegido_crc: {
+      bsonType: ["int", "long"],
+      minimum: 0,
+      description: "Opcional (T-51). Suma de monto_crc de las alertas del dia confirmadas o escaladas, colones enteros"
+    },
+    pendientes: {
+      bsonType: ["int", "long"],
+      minimum: 0,
+      description: "Opcional (T-51). Alertas del dia en nueva o en_revision cuando corrio el rollup"
+    },
+    pendiente_mas_antigua: {
+      bsonType: "date",
+      description: "Opcional (T-51). fecha_creacion UTC de la pendiente mas vieja del dia; ausente si no hay pendientes"
+    },
     calculado_en: {
       bsonType: "date",
       description: "ISODate UTC del ultimo calculo del rollup (H-20: 'muestra la marca de tiempo del ultimo calculo'; nunca se recalcula al vuelo en la peticion). Opcional: no esta en CONTRATO-IDS.md, la escribe el pipeline $merge de H-21 cuando corra"

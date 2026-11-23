@@ -40,6 +40,8 @@ def prueba_estan_publicadas_las_rutas_decididas() -> None:
         "/api/v1/politica",
         "/api/v1/efectividad",
         "/api/v1/red-mulas/{cuenta}",
+        "/api/v1/red-mulas/{cuenta}/propuestas/{propuesta}",
+        "/api/v1/listas-riesgo/{riesgo_id}",
     }
 
 
@@ -86,6 +88,23 @@ def prueba_la_edicion_de_regla_publica_solo_los_campos_editables() -> None:
         "version_esperada",
     }
     assert edicion["additionalProperties"] is False
+
+
+def prueba_las_rutas_de_listas_de_riesgo_publican_sus_errores() -> None:
+    """T-51 y D-41: aprobar (POST) y dar de baja (DELETE), con la forma unica del error."""
+    esperado = {
+        "/api/v1/red-mulas/{cuenta}/propuestas/{propuesta}": ("post", {"422"}),
+        "/api/v1/listas-riesgo/{riesgo_id}": ("delete", {"404", "422"}),
+    }
+    for ruta, (metodo, errores) in esperado.items():
+        assert set(ESQUEMA["paths"][ruta]) == {metodo}, ruta
+        respuestas = ESQUEMA["paths"][ruta][metodo]["responses"]
+        for codigo in errores | {"401", "403", "500"}:
+            referencia = respuestas[codigo]["content"]["application/json"]["schema"]["$ref"]
+            assert referencia.endswith("/RespuestaError"), (ruta, codigo)
+    assert "204" in ESQUEMA["paths"]["/api/v1/listas-riesgo/{riesgo_id}"]["delete"]["responses"]
+    aprobar = ESQUEMA["paths"]["/api/v1/red-mulas/{cuenta}/propuestas/{propuesta}"]["post"]
+    assert {"200", "201"} <= set(aprobar["responses"])
 
 
 def prueba_salud_y_estado_son_rutas_distintas() -> None:
