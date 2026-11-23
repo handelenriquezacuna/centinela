@@ -22,6 +22,7 @@ Uso:
     python tareas.py usuarios [...]  administra los usuarios de la app (T-41)
     python tareas.py indicadores [...] recalcula indicadores_diarios (H-22)
     python tareas.py pruebas         corre las pruebas
+    python tareas.py e2e             recorridos con navegador real (Chromium) contra la app (T-58)
     python tareas.py resiliencia     failover de D1 con un replica set de 3 nodos en Docker (T-52)
     python tareas.py verificar       instala, prueba y reporta
 
@@ -847,6 +848,16 @@ def tarea_pruebas(args: argparse.Namespace) -> None:
     correr(orden, dry_run=args.dry_run, env=entorno_app(usuario="centinela_pruebas"))
 
 
+def tarea_e2e(args: argparse.Namespace) -> None:
+    """Pruebas extremo a extremo con navegador real: lo mismo que corre el CI (T-58)."""
+    # Primera vez en la maquina: `uv run playwright install chromium` (el CI usa
+    # --with-deps). La base de la prueba es `antifraude_pruebas_e2e`: se siembra, se usa y
+    # se borra; la de trabajo no se toca. Con auth, entra con centinela_pruebas.
+    entorno = entorno_app(usuario="centinela_pruebas")
+    entorno["CENTINELA_EXIGIR_MONGO"] = "1"
+    correr(uv("run", "pytest", "-m", "e2e", "-rs"), dry_run=args.dry_run, env=entorno)
+
+
 def tarea_resiliencia(args: argparse.Namespace) -> None:
     """Prueba de failover de D1: levanta 3 nodos propios en Docker, mata al primario (T-52)."""
     # No usa el cluster del compose ni la base de trabajo: levanta y baja sus propios
@@ -878,6 +889,7 @@ TAREAS = {
     "indicadores": tarea_indicadores,
     "usuarios": tarea_usuarios,
     "pruebas": tarea_pruebas,
+    "e2e": tarea_e2e,
     "resiliencia": tarea_resiliencia,
     "verificar": tarea_verificar,
 }

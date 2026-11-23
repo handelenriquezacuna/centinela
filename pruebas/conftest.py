@@ -87,21 +87,26 @@ async def _asegurar_semilla(uri: str) -> None:
     _SEMILLA_LISTA.add(uri)
 
 
-def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Las pruebas `resiliencia` solo corren si se piden por nombre (`-m resiliencia`).
+# Marcas que solo corren si se piden por nombre (`-m <marca>`).
+MARCAS_SOLO_POR_NOMBRE = ("resiliencia", "e2e")
 
-    Levantan contenedores de Docker y tardan minutos: no pueden colarse en `pytest`, ni en
-    `-m mongo`, ni en `-m "not mongo"`. Se DESELECCIONAN y no se saltan: un salto cuenta
-    como prueba omitida y la compuerta de integracion exige cero saltos.
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Las pruebas `resiliencia` y `e2e` solo corren si se piden por nombre (`-m e2e`).
+
+    La resiliencia levanta contenedores de Docker y tarda minutos; las e2e levantan un
+    navegador y un servidor. Ninguna puede colarse en `pytest`, ni en `-m mongo`, ni en
+    `-m "not mongo"`. Se DESELECCIONAN y no se saltan: un salto cuenta como prueba
+    omitida y las compuertas exigen cero saltos.
     """
     expresion = config.getoption("-m") or ""
-    if "resiliencia" in expresion and "not resiliencia" not in expresion:
-        return
-    elegidas = [item for item in items if "resiliencia" not in item.keywords]
-    deseleccionadas = [item for item in items if "resiliencia" in item.keywords]
-    if deseleccionadas:
-        config.hook.pytest_deselected(items=deseleccionadas)
-        items[:] = elegidas
+    for marca in MARCAS_SOLO_POR_NOMBRE:
+        if marca in expresion and f"not {marca}" not in expresion:
+            continue
+        deseleccionadas = [item for item in items if marca in item.keywords]
+        if deseleccionadas:
+            config.hook.pytest_deselected(items=deseleccionadas)
+            items[:] = [item for item in items if marca not in item.keywords]
 
 
 @pytest.fixture(autouse=True)

@@ -27,6 +27,10 @@ dev = [
     # crea justamente ahi. Sin esto las pruebas de API corren sin cliente.
     "asgi-lifespan==2.1.0",
     "ruff==0.16.9",
+    # Navegador real para las pruebas e2e (solo Chromium). Los dos fijos: la version de
+    # playwright decide que build de Chromium se descarga (y la llave de cache del CI).
+    "pytest-playwright==0.10.0",
+    "playwright==1.65.2",
 ]
 
 [tool.pytest.ini_options]
@@ -38,6 +42,7 @@ asyncio_mode = "strict"
 markers = [
     "mongo: necesita el replica set rsfraude arriba; se salta si no responde",
     "volumen: prueba de carga larga (100.000 documentos); se corre aparte",
+    "e2e: recorridos con navegador real (Chromium) contra uvicorn y Mongo; solo corren con -m e2e (python tareas.py e2e)",
     "resiliencia: failover con un replica set de tres nodos en Docker; solo corre si se pide con -m resiliencia (python tareas.py resiliencia)",
 ]
 

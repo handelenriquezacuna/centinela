@@ -49,6 +49,7 @@ const BASES_PRUEBAS = [
   "antifraude_pruebas_busqueda_volumen",
   "antifraude_pruebas_d1",
   "antifraude_pruebas_detalle",
+  "antifraude_pruebas_e2e",
   "antifraude_pruebas_efectividad",
   "antifraude_pruebas_explain",
   "antifraude_pruebas_h14",

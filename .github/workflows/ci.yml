@@ -2,8 +2,8 @@
 # push a `dev` (lo que queda en el tronco despues de un merge tambien se prueba).
 #
 # Compuertas, en este orden: ruff, y las pruebas de los cuatro tipos que declara
-# docs/06-plataforma.md (unitarias, contrato, integracion, arquitectura). Si
-# cualquiera falla, el PR no se puede fusionar.
+# docs/06-plataforma.md (unitarias, contrato, integracion, arquitectura) y, al final,
+# los recorridos extremo a extremo con navegador real (T-58). Si cualquiera falla, el PR no se puede fusionar.
 #
 # Sobre "integracion": el repo todavia no tiene una carpeta pruebas/integracion.
 # Las pruebas que ejercen el camino real HTTP -> repo -> MongoDB viven hoy dentro de
@@ -164,6 +164,43 @@ jobs:
           CENTINELA_MONGO__URI: "mongodb://localhost:27018/?replicaSet=rsfraude"
           CENTINELA_EXIGIR_MONGO: "1"
         run: uv run pytest -m mongo -q -rs
+
+      # Pruebas extremo a extremo (T-58, D-51): Chromium real contra un uvicorn real y
+      # este mismo Mongo, en la base propia antifraude_pruebas_e2e. El navegador se cachea
+      # por version de playwright (cada version trae su build de Chromium); `install
+      # --with-deps` corre siempre porque las bibliotecas del sistema no viven en el cache.
+      # Si algo falla, las trazas de Playwright (capturas, DOM y red de cada paso) se suben
+      # como artefacto: docs/06-plataforma.md explica como abrirlas.
+      - name: Version de playwright (llave del cache)
+        id: playwright
+        run: |
+          set -euo pipefail
+          version="$(uv run python -c 'from importlib.metadata import version; print(version("playwright"))')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cachear el navegador de Playwright
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Instalar Chromium
+        run: uv run playwright install --with-deps chromium
+
+      - name: Compuerta -- pruebas extremo a extremo (navegador real)
+        env:
+          CENTINELA_MONGO__URI: "mongodb://localhost:27018/?replicaSet=rsfraude"
+          CENTINELA_EXIGIR_MONGO: "1"
+        run: uv run pytest -m e2e -rs
+
+      - name: Subir las trazas de Playwright si algo fallo
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: trazas-e2e
+          path: pruebas/e2e/trazas/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Apagar Mongo
         if: always()
