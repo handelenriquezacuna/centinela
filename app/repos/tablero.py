@@ -9,6 +9,17 @@ Periodo: los ultimos `dias` dias CON rollup contados hacia atras desde el dia ma
 del que hay datos, y el periodo anterior son los `dias` dias previos a ese. Se ancla en
 el ultimo rollup y no en el reloj para que un rollup viejo no deje el tablero en cero.
 
+KPIs del supervisor (T-51): `decision_cantidad`, `decision_segundos_total`,
+`monto_protegido_crc`, `pendientes` y `pendiente_mas_antigua`, tambien opcionales. Un
+periodo cuyos rollups no los traen muestra `None` (se dice "sin dato"), no un cero: un
+cero inventado se leeria como "no hubo monto protegido".
+  - tiempo hasta la decision = sum(decision_segundos_total) / sum(decision_cantidad);
+    sin alertas resueltas no hay promedio (`None`), no se divide por cero.
+  - tasa de confirmacion = confirmadas / (confirmadas + descartadas) en porcentaje;
+    sin ninguna de las dos, `None`.
+  - monto protegido = sum(monto_protegido_crc); pendientes = sum(pendientes); la mas
+    antigua es el minimo de `pendiente_mas_antigua`.
+
 `por_agente` (agente_id -> cantidad) y `por_hora` ("00".."23", hora de Costa Rica ->
 cantidad) son opcionales: el validador de la semilla todavia no los declara. Si el
 rollup no los trae, el tablero lo dice en vez de inventarlos.
@@ -16,7 +27,7 @@ rollup no los trae, el tablero lo dice en vez de inventarlos.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Protocol
 
 from pymongo.asynchronous.database import AsyncDatabase
@@ -29,6 +40,33 @@ ESTADOS = ("nueva", "en_revision", "confirmada", "descartada", "escalada")
 
 class ProtocoloRepoTablero(Protocol):
     async def leer(self, dias: int) -> dict[str, Any]: ...
+
+
+def _kpis(documentos: list[dict[str, Any]], estado: dict[str, int]) -> dict[str, Any]:
+    """Los KPI de un periodo. Todo `None` si ningun rollup trae los campos nuevos."""
+    con = [d for d in documentos if "monto_protegido_crc" in d]
+    resueltas = estado["confirmada"] + estado["descartada"]
+    tasa = round(estado["confirmada"] * 100 / resueltas, 1) if resueltas else None
+    if not con:
+        return {
+            "disponible": False,
+            "tiempo_decision_s": None,
+            "monto_protegido_crc": None,
+            "tasa_confirmacion": tasa,
+            "pendientes": None,
+            "pendiente_mas_antigua": None,
+        }
+    cantidad = sum(int(d.get("decision_cantidad", 0)) for d in con)
+    segundos = sum(int(d.get("decision_segundos_total", 0)) for d in con)
+    antiguas = [d["pendiente_mas_antigua"] for d in con if d.get("pendiente_mas_antigua")]
+    return {
+        "disponible": True,
+        "tiempo_decision_s": round(segundos / cantidad) if cantidad else None,
+        "monto_protegido_crc": sum(int(d["monto_protegido_crc"]) for d in con),
+        "tasa_confirmacion": tasa,
+        "pendientes": sum(int(d.get("pendientes", 0)) for d in con),
+        "pendiente_mas_antigua": min(antiguas) if antiguas else None,
+    }
 
 
 def _sumar(documentos: list[dict[str, Any]]) -> dict[str, Any]:
@@ -61,6 +99,7 @@ def _sumar(documentos: list[dict[str, Any]]) -> dict[str, Any]:
         if con_horas
         else None,
         "dias_con_datos": len(documentos),
+        "kpi": _kpis(documentos, estado),
     }
 
 
@@ -74,7 +113,29 @@ def _variacion(actual: int, previo: int) -> dict[str, Any]:
     }
 
 
-def resumir(documentos: list[dict[str, Any]], dias: int) -> dict[str, Any]:
+def _comparar(actual: float | None, previo: float | None) -> dict[str, Any]:
+    """Como `_variacion`, pero admite que falte un lado: sin lado, sin delta ni porcentaje."""
+    if actual is None or previo is None:
+        return {"actual": actual, "previo": previo, "delta": None, "porcentaje": None}
+    return {
+        "actual": actual,
+        "previo": previo,
+        "delta": round(actual - previo, 1),
+        "porcentaje": round((actual - previo) * 100 / previo, 1) if previo else None,
+    }
+
+
+def _antiguedad_horas(desde: datetime | None, ahora: datetime) -> float | None:
+    if desde is None:
+        return None
+    if desde.tzinfo is None:  # pymongo devuelve ingenuas (UTC) sin tz_aware
+        desde = desde.replace(tzinfo=UTC)
+    return round(max(0.0, (ahora - desde).total_seconds()) / 3600, 1)
+
+
+def resumir(
+    documentos: list[dict[str, Any]], dias: int, ahora: datetime | None = None
+) -> dict[str, Any]:
     """Suma el periodo actual y el anterior y los compara. Puro: se prueba sin base."""
     if not documentos:
         return {"vacio": True, "dias": dias}
@@ -88,6 +149,18 @@ def resumir(documentos: list[dict[str, Any]], dias: int) -> dict[str, Any]:
         if inicio_previo <= date.fromisoformat(d["fecha"]) < inicio_actual
     ]
     a, p = _sumar(actual), _sumar(previo)
+    ka, kp = a["kpi"], p["kpi"]
+    kpi = {
+        "disponible": ka["disponible"],
+        "tiempo_decision_s": _comparar(ka["tiempo_decision_s"], kp["tiempo_decision_s"]),
+        "monto_protegido_crc": _comparar(ka["monto_protegido_crc"], kp["monto_protegido_crc"]),
+        "tasa_confirmacion": _comparar(ka["tasa_confirmacion"], kp["tasa_confirmacion"]),
+        "pendientes": _comparar(ka["pendientes"], kp["pendientes"]),
+        "pendiente_mas_antigua": ka["pendiente_mas_antigua"],
+        "antiguedad_horas": _antiguedad_horas(
+            ka["pendiente_mas_antigua"], ahora or datetime.now(UTC)
+        ),
+    }
     marcas = [d["calculado_en"] for d in documentos if isinstance(d.get("calculado_en"), datetime)]
     return {
         "vacio": False,
@@ -104,6 +177,7 @@ def resumir(documentos: list[dict[str, Any]], dias: int) -> dict[str, Any]:
         "severidad": {k: _variacion(a["por_severidad"][k], p["por_severidad"][k]) for k in SEVERIDADES},
         "estado": {k: _variacion(a["por_estado"][k], p["por_estado"][k]) for k in ESTADOS},
         "hay_periodo_previo": p["dias_con_datos"] > 0,
+        "kpi": kpi,
     }
 
 

@@ -18,6 +18,7 @@ from app.api.dependencias import (
     dep_repo_reglas,
     dep_repo_tablero,
 )
+from app.api.rutas.listas_riesgo import dep_repo_listas_riesgo
 from app.api.rutas.paginas_tablero import barras_horizontales, columnas_por_hora
 from app.main import crear_aplicacion
 from app.repos.tablero import resumir
@@ -27,6 +28,7 @@ from pruebas.dobles.catalogo_reglas import (
 )
 from pruebas.dobles.repo_detalle_falso import RepoDetalleFalso, alerta_v2
 from pruebas.dobles.repo_tablero_falso import (
+    RepoListasRiesgoFalso,
     RepoRedMulasFalso,
     RepoTableroFalso,
     documentos_con_comparacion,
@@ -43,7 +45,9 @@ async def armar() -> AsyncIterator[Armar]:
     abiertos: list[Any] = []
 
     async def _armar(
-        tablero: RepoTableroFalso | None = None, red: RepoRedMulasFalso | None = None
+        tablero: RepoTableroFalso | None = None,
+        red: RepoRedMulasFalso | None = None,
+        listas: RepoListasRiesgoFalso | None = None,
     ) -> AsyncClient:
         creada = crear_aplicacion()
         alertas = RepoAlertasFalso([alerta_v2()])
@@ -51,6 +55,7 @@ async def armar() -> AsyncIterator[Armar]:
         creada.dependency_overrides[dep_repo_detalle] = lambda: RepoDetalleFalso(alertas.casos)
         creada.dependency_overrides[dep_repo_tablero] = lambda: tablero or RepoTableroFalso()
         creada.dependency_overrides[dep_repo_red_mulas_portal] = lambda: red or RepoRedMulasFalso()
+        creada.dependency_overrides[dep_repo_listas_riesgo] = lambda: listas or RepoListasRiesgoFalso()
         # El detalle lee la politica vigente: sin el doble, la prueba iria a Mongo.
         reglas = RepoReglasFalso(reglas_como_documentos(), politica_como_documento())
         creada.dependency_overrides[dep_repo_reglas] = lambda: reglas

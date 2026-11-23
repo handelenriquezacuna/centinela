@@ -5,6 +5,11 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from app.repos.listas_riesgo import (
+    EntradaNoEncontrada,
+    ResultadoAprobacion,
+    motivo_de_red,
+)
 from app.repos.red_mulas import (
     AristaRed,
     CuentaNoEncontrada,
@@ -112,3 +117,43 @@ def red_de_cuatro_saltos() -> RedMulas:
         aristas=aristas,
         propuestas_lista_riesgo=["6033-9002", "6033-9003", "7000-0001"],
     )
+
+
+class RepoListasRiesgoFalso:
+    """`RepoListasRiesgo` en memoria: las mismas reglas (idempotencia, 404) sin Mongo."""
+
+    def __init__(self, entradas: list[dict[str, Any]] | None = None) -> None:
+        self.entradas = entradas if entradas is not None else []
+        self.bajas: list[tuple[str, str]] = []
+
+    async def entradas_de_cuentas(self, cuentas: list[str]) -> dict[str, list[dict[str, Any]]]:
+        por_cuenta: dict[str, list[dict[str, Any]]] = {}
+        for entrada in self.entradas:
+            if entrada["cuenta"] in cuentas:
+                por_cuenta.setdefault(entrada["cuenta"], []).append(entrada)
+        return por_cuenta
+
+    async def aprobar(
+        self, cuenta: str, *, cuenta_partida: str, agente_id: str, ahora: datetime | None = None
+    ) -> ResultadoAprobacion:
+        for entrada in self.entradas:
+            if entrada["cuenta"] == cuenta and entrada["vigente"]:
+                return ResultadoAprobacion(entrada, creada=False)
+        nueva = {
+            "_id": f"RSK-{len(self.entradas) + 1:03d}",
+            "cuenta": cuenta,
+            "motivo": motivo_de_red(cuenta_partida),
+            "fecha_reporte": ahora or datetime.now(UTC),
+            "vigente": True,
+            "esquema_version": 1,
+            "aprobo": agente_id,
+        }
+        self.entradas.append(nueva)
+        return ResultadoAprobacion({k: v for k, v in nueva.items() if k != "aprobo"}, creada=True)
+
+    async def dar_de_baja(self, riesgo_id: str, *, agente_id: str) -> dict[str, Any]:
+        for posicion, entrada in enumerate(self.entradas):
+            if entrada["_id"] == riesgo_id:
+                self.bajas.append((riesgo_id, agente_id))
+                return self.entradas.pop(posicion)
+        raise EntradaNoEncontrada(f"No existe la entrada {riesgo_id}")

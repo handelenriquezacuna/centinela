@@ -62,12 +62,22 @@
   <h2 class="seccion-titulo">Propuestas para listas_riesgo</h2>
   {% if red.propuestas_lista_riesgo %}
   <ul id="propuestas">
-    {% for sinpe in red.propuestas_lista_riesgo %}<li class="id-corto">{{ sinpe }}</li>{% endfor %}
+    {% for sinpe in red.propuestas_lista_riesgo %}{% include "paginas/propuesta_item.html" %}{% endfor %}
   </ul>
-  <p class="nota-tecnica">Son propuestas: el sistema no escribe en la lista. Agregarlas es decision del agente.</p>
+  <p class="nota-tecnica">Son propuestas: el sistema no escribe en la lista por su cuenta. {% if puede_gestionar %}Agregarlas es decision tuya, con el boton de cada cuenta.{% else %}Agregarlas es decision de un supervisor o administrador.{% endif %}</p>
   {% else %}
   <p id="propuestas-vacias">No hay cuentas por proponer.</p>
   {% endif %}
 </section>
+
+{% if entradas_lista %}
+<section class="tarjeta" aria-label="Entradas en lista de riesgo">
+  <h2 class="seccion-titulo">Entradas en lista de riesgo de esta red</h2>
+  <ul id="entradas-lista">
+    {% for entrada in entradas_lista %}{% include "paginas/entrada_lista.html" %}{% endfor %}
+  </ul>
+  <p class="nota-tecnica">Dar de baja borra la entrada (por ejemplo, una cuenta reportada por error) y deja el rastro en el log.</p>
+</section>
+{% endif %}
 {% endif %}
 {% endblock %}

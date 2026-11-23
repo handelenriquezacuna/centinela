@@ -171,6 +171,11 @@ def prueba_cada_rol_amplia_al_anterior_y_el_administrador_lo_tiene_todo() -> Non
     supervisor = PERMISOS_POR_ROL[RolAgente.SUPERVISOR]
 
     assert agente < supervisor
-    assert supervisor - agente == {Permiso.TABLERO, Permiso.VER_REGLAS, Permiso.EDITAR_REGLAS}
+    assert supervisor - agente == {
+        Permiso.TABLERO,
+        Permiso.VER_REGLAS,
+        Permiso.EDITAR_REGLAS,
+        Permiso.GESTIONAR_LISTAS,
+    }
     assert all(rol_tiene(RolAgente.ADMINISTRADOR, permiso) for permiso in Permiso)
     assert not rol_tiene(RolAgente.AGENTE, Permiso.TABLERO)
