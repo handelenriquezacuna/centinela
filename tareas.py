@@ -39,7 +39,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urlsplit, urlunsplit
 
 RAIZ = Path(__file__).resolve().parent
 COMPOSE = RAIZ / "infra" / "docker-compose.yml"
@@ -178,6 +178,13 @@ def uri_base() -> str:
     """
     if _URI_BASE:
         return _URI_BASE[0]
+    externa = os.environ.get(VARIABLE_URI, "").strip()
+    if externa:
+        # T-53: quien exporta la variable apunta a OTRA base (CI, nodo de prueba).
+        # Los pasos de mongosh deben ir a esa base y nunca al YAML: antes se tomaba
+        # el host del YAML y un agente recreo las colecciones de la base viva.
+        _URI_BASE.append(_sin_credenciales(externa))
+        return _URI_BASE[0]
     entorno = {k: v for k, v in os.environ.items() if k != VARIABLE_URI}
     uri = _salida(
         uv(
@@ -196,6 +203,13 @@ def uri_base() -> str:
         )
     _URI_BASE.append(uri.splitlines()[-1].strip())
     return _URI_BASE[0]
+
+
+def _sin_credenciales(uri: str) -> str:
+    """Quita `usuario:clave@` de una URI; las credenciales se agregan aparte."""
+    partes = urlsplit(uri)
+    netloc = partes.netloc.rsplit("@", 1)[-1]
+    return urlunsplit((partes.scheme, netloc, partes.path, partes.query, partes.fragment))
 
 
 def _con_usuario(uri: str, usuario: str | None) -> str:
@@ -217,6 +231,9 @@ def _con_usuario(uri: str, usuario: str | None) -> str:
 
 def uri_usuario(usuario: str | None = None) -> str:
     """URI del replica set, con las credenciales de `usuario` si estan en el entorno."""
+    externa = os.environ.get(VARIABLE_URI, "").strip()
+    if externa and "@" in urlsplit(externa).netloc:
+        return externa  # ya trae su usuario: se usa tal cual
     return _con_usuario(uri_base(), usuario)
 
 
