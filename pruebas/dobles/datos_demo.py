@@ -86,13 +86,47 @@ CLIENTES = [
         cedula="4-4444-4444",
         fecha_registro=_local(9, 0, dia=4),
     ),
+    # Titulares de las cuentas de la cadena de mulas del caso (UC-04). Son clientes del
+    # banco: la red de mulas solo sigue el dinero entre cuentas con documento en `cuentas`.
+    Cliente(
+        _id="CLI-005",
+        nombre="Titular cuenta mula 1",
+        cedula="5-5555-5555",
+        fecha_registro=_local(9, 0, dia=5),
+    ),
+    Cliente(
+        _id="CLI-006",
+        nombre="Titular cuenta mula 2",
+        cedula="6-6666-6666",
+        fecha_registro=_local(9, 0, dia=6),
+    ),
+    Cliente(
+        _id="CLI-007",
+        nombre="Titular cuenta mula 3",
+        cedula="7-7777-7777",
+        fecha_registro=_local(9, 0, dia=7),
+    ),
+    Cliente(
+        _id="CLI-008",
+        nombre="Titular cuenta mula 4",
+        cedula="8-8888-8888",
+        fecha_registro=_local(9, 0, dia=8),
+    ),
 ]
 
+# La entidad fija el tope SINPE Movil por transferencia (`generador.entidades` del YAML:
+# A 300.000, B 200.000, C 150.000, D 100.000). Ningun monto del demo supera el tope de la
+# entidad de su cuenta de origen; `prueba_demo_montos_bajo_el_tope` lo comprueba.
+# Las cuatro ultimas son la cadena de mulas de UC-04, en el orden del dinero.
 CUENTAS = [
-    Cuenta(_id="CTA-001", cuenta_sinpe="8712-4455", cliente_id="CLI-001"),
-    Cuenta(_id="CTA-002", cuenta_sinpe="6210-3387", cliente_id="CLI-002"),
-    Cuenta(_id="CTA-003", cuenta_sinpe="5544-9021", cliente_id="CLI-003"),
-    Cuenta(_id="CTA-004", cuenta_sinpe="3390-6612", cliente_id="CLI-004"),
+    Cuenta(_id="CTA-001", cuenta_sinpe="8712-4455", cliente_id="CLI-001", entidad="Entidad A"),
+    Cuenta(_id="CTA-002", cuenta_sinpe="6210-3387", cliente_id="CLI-002", entidad="Entidad B"),
+    Cuenta(_id="CTA-003", cuenta_sinpe="5544-9021", cliente_id="CLI-003", entidad="Entidad C"),
+    Cuenta(_id="CTA-004", cuenta_sinpe="3390-6612", cliente_id="CLI-004", entidad="Entidad D"),
+    Cuenta(_id="CTA-005", cuenta_sinpe="6033-9001", cliente_id="CLI-005", entidad="Entidad A"),
+    Cuenta(_id="CTA-006", cuenta_sinpe="7104-2288", cliente_id="CLI-006", entidad="Entidad B"),
+    Cuenta(_id="CTA-007", cuenta_sinpe="8455-1177", cliente_id="CLI-007", entidad="Entidad C"),
+    Cuenta(_id="CTA-008", cuenta_sinpe="6001-3344", cliente_id="CLI-008", entidad="Entidad D"),
 ]
 
 # Los valores de CLI-001 son los ya documentados en docs/02: 47 transferencias,
@@ -185,6 +219,36 @@ TRANSACCIONES = [
         monto_crc=12_750,
         canal=Canal.SINPE_MOVIL,
         fecha=_local(16, 5),
+    ),
+    # La cadena de mulas de UC-04 (D-29): desde 6033-9001, que recibio TXN-001 a las 22:47,
+    # el dinero sigue +4, +9 y +11 minutos despues, cada vez menos (276.000, 185.000 y
+    # 90.000). Cada eslabon sale de la cuenta donde llego el anterior.
+    Transaccion(
+        _id="TXN-005",
+        cuenta_origen="CTA-005",
+        sinpe_origen="6033-9001",
+        cuenta_destino="7104-2288",
+        monto_crc=276_000,
+        canal=Canal.SINPE_MOVIL,
+        fecha=_local(22, 51),
+    ),
+    Transaccion(
+        _id="TXN-006",
+        cuenta_origen="CTA-006",
+        sinpe_origen="7104-2288",
+        cuenta_destino="8455-1177",
+        monto_crc=185_000,
+        canal=Canal.SINPE_MOVIL,
+        fecha=_local(23, 0),
+    ),
+    Transaccion(
+        _id="TXN-007",
+        cuenta_origen="CTA-007",
+        sinpe_origen="8455-1177",
+        cuenta_destino="6001-3344",
+        monto_crc=90_000,
+        canal=Canal.SINPE_MOVIL,
+        fecha=_local(23, 11),
     ),
 ]
 

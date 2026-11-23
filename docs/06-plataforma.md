@@ -455,6 +455,7 @@ levantando solo el replica set. Nadie se encuentra un contenedor nuevo sin pedir
 | `python tareas.py estado` | Estado de los tres nodos |
 | `python tareas.py dev` | La API en el host, con recarga |
 | `python tareas.py datos-demo` | Siembra y carga el conjunto de demo |
+| `python tareas.py demo-reiniciar --si` | Deja la base en el estado de la defensa, conservando las credenciales de login |
 | `python tareas.py pruebas [--tipo ...] [--sin-mongo]` | Las pruebas, por tipo |
 | `python tareas.py verificar` | Instala y prueba: lo que se corre antes de pedir revisión |
 
@@ -462,14 +463,15 @@ levantando solo el replica set. Nadie se encuentra un contenedor nuevo sin pedir
 el equipo trabaja en macOS y en Windows, make no viene en Windows, y un `.sh` habría
 excluido a media clase. Cualquier comando acepta `--dry-run`.
 
-### Orden de la siembra: 01 → 02 → 03, y no otro
+### Orden de la siembra: 01 → 02 → 03 → 05, y no otro
 
 `datos-demo` corre, en este orden:
 
 1. `scripts/semilla/01-colecciones.js` — colecciones con sus validadores
 2. `scripts/semilla/02-indices.js` — índices con nombre
 3. `scripts/semilla/03-catalogos.js` — catálogo de reglas y política de severidad
-4. Los documentos de dominio del caso documentado
+4. `scripts/semilla/05-vistas.js` — las vistas de consulta guardadas (H-24); el `04` es de `asegurar`
+5. Los documentos de dominio del caso documentado
 
 **El orden es obligatorio:** `01` hace drop de las colecciones para recrearlas con su
 validador, así que corrido después del `03` se lleva el catálogo que el `03` acaba de
@@ -482,7 +484,7 @@ garantizar que se separen. Los pesos de las reglas son de quien las diseña (H-0
 
 `.github/workflows/ci.yml` corre en cada PR hacia `dev` o `main` y en cada push a `dev`:
 ruff, `pytest -m "not mongo"` y `pytest -m mongo` contra un replica set de un nodo. Antes
-del paso de Mongo siembra la base `antifraude` con `01 → 02 → 03`, en el mismo orden que
+del paso de Mongo siembra la base `antifraude` con `01 → 02 → 03 → 05`, en el mismo orden que
 `datos-demo`, y corre ese paso con `CENTINELA_EXIGIR_MONGO=1`. Con esa variable, las dos
 razones por las que una prueba de Mongo se saltaba (el replica set no responde, o la base
 no tiene validadores) son **fallas**. La primera corrida del CI salió verde con 26 pruebas
@@ -698,6 +700,40 @@ Tampoco hace `dropDatabase()`, que se llevaría índices y validadores.
 
 Vive en `pruebas/dobles/` porque es un doble de prueba que además sirve de demo, y la
 dirección de las dependencias es **pruebas → app**, nunca al revés.
+
+**La cadena de mulas del caso (C-52).** `TXN-005..007` siguen el dinero desde `6033-9001`:
+₡276.000 a `7104-2288` (+4 min), ₡185.000 a `8455-1177` (+9) y ₡90.000 a `6001-3344` (+11),
+con `sinpe_origen` correcto. Las cuatro cuentas existen en `cuentas` (`CTA-005..008`, con
+sus titulares `CLI-005..008`) y están en `listas_riesgo`, así que
+`/red-mulas/6033-9001?desde=<fecha de TXN-001>` dibuja 3 saltos. Cada cuenta lleva su
+`entidad` y ningún monto del demo supera el tope de esa entidad.
+
+**Reinicio.** `python tareas.py demo-reiniciar --si` siembra 01 a 03 y 05, carga el demo y
+recalcula `indicadores_diarios`. `01-colecciones.js` hace drop de `agentes`, y con ella se
+irían las credenciales de login (H-25): el comando lee antes los agentes con `credencial`
+y los restaura después del demo. Sin `--si` no hace nada. Usa el usuario administrador de
+`.env`, igual que `asegurar`.
+
+## 7c. Vistas de consulta guardadas (H-24, D-42)
+
+Una vista (`db.createView`) es una consulta con nombre guardada en el servidor: se lee
+como una colección y ejecuta su pipeline sobre la de origen en cada lectura, con los
+índices de esa colección. Es el equivalente en Mongo de las consultas y procedimientos
+guardados de una base relacional: la lógica de lectura vive en un solo lugar y el código
+no la repite. `scripts/semilla/05-vistas.js` las crea (drop y create, idempotente) y va
+después de `01` a `03`.
+
+| Vista | Origen | Para qué |
+|---|---|---|
+| `vista_alertas_abiertas` | `alertas` | Cola por atender (`nueva`, `en_revision`) con cliente, cuentas y monto, la más grave primero |
+| `vista_cuentas_en_riesgo` | `alertas` + `listas_riesgo` | Cuentas de destino con su cantidad de alertas, monto recibido y si ya están reportadas |
+| `vista_resumen_por_regla` | `alertas` + `reglas_deteccion` | Alertas por regla disparada, con código y descripción; lee las formas v1 y v2 de `reglas_disparadas` |
+
+Son de solo lectura (insertar en una vista falla) y no guardan datos. Permisos sin
+cambios en `04-usuarios.js`: `centinela_app_rol` tiene `find` sobre todas las colecciones
+de `antifraude` y `centinela_analista` el rol `read`; ambos leen las vistas. El plan de
+`vista_alertas_abiertas` usa índices de `alertas` (`prueba_demo_mongo.py`). Una vista
+queda colgada si se borra su origen y vuelve a funcionar al recrearlo.
 
 ---
 
