@@ -95,7 +95,7 @@ def problemas_del_filtro(filtro: FiltroBusqueda) -> list[tuple[str, str]]:
         problemas.append(("desde", "no puede ser posterior a hasta"))
     if filtro.cuenta is not None and not PATRON_CUENTA.match(filtro.cuenta):
         problemas.append(
-            ("cuenta", "solo letras, digitos y guiones, hasta 32 caracteres")
+            ("cuenta", "solo letras, dígitos y guiones, hasta 32 caracteres")
         )
     return problemas
 

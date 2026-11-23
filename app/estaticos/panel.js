@@ -6,6 +6,9 @@
  * vieja. Luego se ordena por severidad (critica primero); el sort es estable y las
  * filas nuevas entran arriba, asi que dentro de una severidad lo mas reciente queda
  * primero. No hay nada que dependa de la forma de `reglas_disparadas`.
+ *
+ * Cada fila ya trae su enlace al detalle (lo pinta el servidor): sin JavaScript la fila
+ * entera se puede abrir. Aca solo se anuncia lo que llega, en una region aria-live.
  */
 (function () {
   "use strict";
@@ -19,18 +22,21 @@
     return valor === undefined ? 9 : valor;
   }
 
-  // Cada fila lleva al detalle de su alerta. La fila SSE no trae enlace (su plantilla no
-  // es de esta pantalla), asi que el id se envuelve aca, igual para filas iniciales y vivas.
-  function enlazar(cola) {
-    cola.querySelectorAll(".fila-alerta .alerta-id").forEach(function (celda) {
-      if (celda.querySelector("a")) { return; }
-      var id = celda.textContent.trim();
-      var enlace = document.createElement("a");
-      enlace.href = "/detalle/" + encodeURIComponent(id);
-      enlace.textContent = id;
-      celda.textContent = "";
-      celda.appendChild(enlace);
+  // Una fila sin `data-vista` es nueva para esta pantalla: llego por SSE o por una cola recargada.
+  function anunciar(cola) {
+    var nuevas = Array.prototype.filter.call(cola.querySelectorAll(".fila-alerta"), function (f) {
+      return !f.dataset.vista;
     });
+    var aviso = document.getElementById("aviso-nuevas");
+    if (aviso && nuevas.length > 0) {
+      aviso.textContent = nuevas.length === 1
+        ? "Alerta nueva o actualizada: " + nuevas[0].id.replace("alerta-", "")
+        : nuevas.length + " alertas nuevas o actualizadas";
+    }
+  }
+
+  function marcar(cola) {
+    cola.querySelectorAll(".fila-alerta").forEach(function (f) { f.dataset.vista = "1"; });
   }
 
   function ordenar(cola) {
@@ -50,17 +56,18 @@
       .forEach(function (par) { cola.appendChild(par.fila); });
     var vacio = document.getElementById("cola-vacia");
     if (vacio) { vacio.hidden = vigentes.length > 0; }
-    enlazar(cola);
+    marcar(cola);
   }
 
   document.body.addEventListener("htmx:afterSwap", function (evento) {
     var cola = document.getElementById("cola");
     if (cola && (evento.target === cola || cola.contains(evento.target))) {
+      anunciar(cola);
       ordenar(cola);
     }
   });
   var colaInicial = document.getElementById("cola");
-  if (colaInicial) { enlazar(colaInicial); }
+  if (colaInicial) { marcar(colaInicial); }
   document.body.addEventListener("htmx:sseOpen", function () {
     var estado = document.getElementById("estado-canal");
     if (estado) { estado.textContent = "en vivo"; }

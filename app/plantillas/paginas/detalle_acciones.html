@@ -3,8 +3,8 @@
    `oob` agrega la insignia de estado del resumen, que queda fuera de esta seccion. #}
 {% set nombre_agente = nombres.get(alerta['agente_id']) if alerta['agente_id'] else None %}
 {% if oob %}
-<span id="insignia-estado" hx-swap-oob="true" class="insignia insignia-estado es-{{ estado_alerta }}">{{ estado_alerta }}</span>
-<span id="agente-asignado" hx-swap-oob="true">{{ alerta['agente_id'] or 'sin asignar' }}{% if nombre_agente %} ({{ nombre_agente }}){% endif %}</span>
+<span id="insignia-estado" hx-swap-oob="true" class="insignia insignia-estado es-{{ estado_alerta }}">{{ estado_alerta | etiqueta }}</span>
+<span id="agente-asignado" hx-swap-oob="true">{{ alerta['agente_id'] or ('sin_asignar' | etiqueta) }}{% if nombre_agente %} ({{ nombre_agente }}){% endif %}</span>
 {% endif %}
 <div id="acciones">
   <section class="tarjeta" aria-label="Resolver alerta">
@@ -13,27 +13,32 @@
     <div class="mensaje {{ 'mensaje-error' if es_error else 'mensaje-ok' }}" role="{{ 'alert' if es_error else 'status' }}">{{ mensaje }}</div>
     {% endif %}
     {% if caso_id %}
-    <p class="mensaje mensaje-ok" id="caso-creado">Caso abierto: <span class="id-corto">{{ caso_id }}</span> (en investigacion)</p>
+    <p class="mensaje mensaje-ok" id="caso-creado">Caso abierto: <span class="id-corto">{{ caso_id }}</span> (en investigación)</p>
     {% endif %}
     {% if botones %}
     <div id="form-resolver" class="form-regla">
       <input type="hidden" name="estado_esperado" value="{{ estado_alerta }}">
       {% set yo = sesion_actual() %}
-      <p class="nota-tecnica" id="actuas-como">Actuas como <strong>{{ yo.agente_id }}{% if yo and nombres.get(yo.agente_id) %} ({{ nombres.get(yo.agente_id) }}){% endif %}</strong>: tu nombre queda en el historial.</p>
+      <p class="nota-tecnica" id="actuas-como">Actúas como <strong>{{ yo.agente_id }}{% if yo and nombres.get(yo.agente_id) %} ({{ nombres.get(yo.agente_id) }}){% endif %}</strong>: tu nombre queda en el historial.</p>
       <div class="campo">
         <label for="nota-resolucion">Nota (se agrega al historial)</label>
-        <input type="text" id="nota-resolucion" name="nota" maxlength="1000">
+        <input type="text" id="nota-resolucion" name="nota" maxlength="1000"
+               placeholder="Motivo de la decisión (opcional)">
       </div>
     </div>
     <div class="grupo-botones">
-      {% for destino, rotulo, clase in botones %}
-      <button type="button" class="boton {{ clase }}" data-destino="{{ destino }}"
-              hx-post="/detalle/{{ alerta['_id'] }}/transicion" hx-include="#form-resolver"
-              hx-vals='{"destino": "{{ destino }}"}' hx-target="#acciones" hx-swap="outerHTML">{{ rotulo }}</button>
+      {% for destino, rotulo, clase, ayuda, terminal in botones %}
+      <div class="accion-boton">
+        <button type="button" class="boton {{ clase }}" data-destino="{{ destino }}" aria-describedby="ayuda-{{ destino }}"
+                hx-post="/detalle/{{ alerta['_id'] }}/transicion" hx-include="#form-resolver"
+                hx-vals='{"destino": "{{ destino }}"}' hx-target="#acciones" hx-swap="outerHTML"
+                {%- if terminal %} hx-confirm="¿{{ rotulo }}? Esta acción cierra la alerta y no se puede deshacer."{% endif %}>{{ rotulo }}</button>
+        <small id="ayuda-{{ destino }}" class="ayuda-boton">{{ ayuda }}</small>
+      </div>
       {% endfor %}
     </div>
     {% else %}
-    <p class="nota-tecnica">La alerta esta {{ estado_alerta }}: es un estado terminal y no admite mas acciones.</p>
+    <p class="nota-tecnica">La alerta está {{ estado_alerta | etiqueta | lower }}: es un estado terminal y no admite más acciones.</p>
     {% endif %}
   </section>
 
@@ -44,7 +49,7 @@
       <li class="historial-item">
         <div class="cuando">{{ accion['fecha'] | hora_costa_rica }} (hora CR)</div>
         <div class="quien">{% if accion['agente_id'] %}{{ nombres.get(accion['agente_id'], '') }} {{ accion['agente_id'] }}{% else %}Sistema{% endif %}</div>
-        <div>Accion: <strong>{{ accion['accion'] }}</strong></div>
+        <div>Acción: <strong>{{ accion['accion'] | etiqueta }}</strong></div>
         {% if accion['nota'] %}<div class="nota">"{{ accion['nota'] }}"</div>{% endif %}
       </li>
       {% endfor %}

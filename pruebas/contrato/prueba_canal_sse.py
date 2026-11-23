@@ -162,7 +162,7 @@ async def prueba_el_cuerpo_es_html_y_no_json() -> None:
     assert '\\"' not in cable, "el HTML llega verbatim, no serializado como JSON"
     assert "data: \"<div" not in cable, "el cuerpo no puede venir entrecomillado"
     assert f"event: {EVENTO_ALERTA}" in cable
-    assert "CRITICA" in cable and "280 000" in cable and "Maria Rodriguez" in cable
+    assert "Crítica" in cable and "₡280.000" in cable and "Maria Rodriguez" in cable
 
 
 def prueba_el_canal_no_usa_la_variante_json_del_evento() -> None:

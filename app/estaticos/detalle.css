@@ -17,3 +17,22 @@
 .barra-puntaje-corte {
   position: absolute; top: 0; bottom: 0; width: 2px; background: var(--color-texto);
 }
+
+.evidencia {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--color-texto-tenue);
+}
+
+.accion-boton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-width: 14rem;
+}
+
+.ayuda-boton {
+  font-size: 0.8rem;
+  color: var(--color-texto-tenue);
+}

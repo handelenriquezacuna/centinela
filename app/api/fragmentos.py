@@ -20,13 +20,12 @@ por peticion es gasto puro, y el canal emite un fragmento por alerta.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from app.modelos import ZONA_COSTA_RICA
+from app.api.formatos import registrar
 
 # app/api/fragmentos.py -> app/api -> app
 RUTA_PLANTILLAS = Path(__file__).resolve().parents[1] / "plantillas"
@@ -44,22 +43,7 @@ ENTORNO = Environment(
 )
 
 
-def _hora_costa_rica(valor: Any) -> str:
-    """Hora local de Costa Rica para mostrar. La base guarda UTC; el portal traduce."""
-    if not isinstance(valor, datetime):
-        return ""
-    return valor.astimezone(ZONA_COSTA_RICA).strftime("%Y-%m-%d %H:%M")
-
-
-def _colones(valor: Any) -> str:
-    """Colones enteros con separador de miles. Nunca centimos: SINPE no los opera."""
-    if not isinstance(valor, int):
-        return ""
-    return f"{valor:,}".replace(",", " ")
-
-
-ENTORNO.filters["hora_costa_rica"] = _hora_costa_rica
-ENTORNO.filters["colones"] = _colones
+registrar(ENTORNO)
 
 
 def fragmento_alerta(documento: Mapping[str, Any], *, operacion: str) -> str:

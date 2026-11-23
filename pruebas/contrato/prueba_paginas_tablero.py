@@ -92,7 +92,7 @@ async def prueba_tablero_con_datos_compara_contra_el_periodo_anterior(armar: Arm
     assert re.search(r'id="total-previo">10<', html)
     assert "+5 (50.0%)" in html
     # Marca del ultimo calculo en hora de Costa Rica (UTC-6): 21:30 del 19.
-    assert "2026-11-19 21:30" in html
+    assert "19/11/2026 21:30" in html
     # Graficos propios en SVG, uno por dimension, sin CDN.
     assert html.count("<svg") >= 4 and "unpkg" not in html and "cdn." not in html
     assert "AGT-001" in html and "CRITICA" in html and "escalada" in html
@@ -146,7 +146,7 @@ async def prueba_red_de_cuatro_saltos_dibuja_nodos_aristas_y_propuestas(armar: A
     html = respuesta.text
     assert html.count('class="nodo-grupo"') == 5
     assert html.count('class="arista"') == 4
-    for monto in ("750 000 CRC", "740 000 CRC", "720 000 CRC", "700 000 CRC"):
+    for monto in ("₡750.000", "₡740.000", "₡720.000", "₡700.000"):
         assert monto in html
     for minutos in ("12.5 min", "8.0 min", "21.0 min"):
         assert minutos in html

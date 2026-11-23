@@ -4,8 +4,9 @@
 <div class="titulo-pantalla">
   <div>
     <h1>Panel de alertas</h1>
-    <p class="subtitulo">Cola ordenada por severidad (critica primero) y luego por fecha.
-      <span class="estado-canal">Canal: <strong id="estado-canal">conectando</strong></span></p>
+    <p class="subtitulo">Cola ordenada por severidad (crítica primero) y luego por fecha.
+      <span class="estado-canal">Canal: <strong id="estado-canal" aria-live="polite">conectando</strong></span></p>
+    <p id="aviso-nuevas" class="subtitulo" aria-live="polite"></p>
   </div>
   <div class="grupo-botones">
     <button type="button" class="boton boton-secundario"
@@ -16,12 +17,18 @@
 <section class="tarjeta" aria-label="Cola de alertas" hx-ext="sse" sse-connect="/api/v1/alertas/flujo">
   {# El evento `resincronizar` no trae fila: pide la cola entera, que es lo que promete H-17. #}
   <div hx-get="/panel/cola" hx-trigger="sse:resincronizar" hx-target="#cola" hx-swap="innerHTML"></div>
-  <div class="cola-encabezado" aria-hidden="true">
-    <span>Alerta</span><span>Severidad</span><span>Puntaje</span><span>Cliente</span>
-    <span>Cuentas</span><span>Monto</span><span>Creada (hora CR)</span><span>Estado</span>
-  </div>
-  <div id="cola" sse-swap="alerta" hx-swap="afterbegin">
+  <div role="table" aria-label="Cola de alertas">
+    <div role="rowgroup">
+      <div class="cola-encabezado" role="row">
+        <span role="columnheader">Alerta</span><span role="columnheader">Severidad</span>
+        <span role="columnheader">Puntaje</span><span role="columnheader">Cliente</span>
+        <span role="columnheader">Cuentas</span><span role="columnheader">Monto</span>
+        <span role="columnheader">Creada (hora CR)</span><span role="columnheader">Estado</span>
+      </div>
+    </div>
+    <div id="cola" role="rowgroup" sse-swap="alerta" hx-swap="afterbegin">
 {% include "paginas/cola.html" %}
+    </div>
   </div>
   <p id="cola-vacia" class="cola-vacia"{% if alertas %} hidden{% endif %}>No hay alertas en la cola.</p>
 </section>

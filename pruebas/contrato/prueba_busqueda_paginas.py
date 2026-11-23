@@ -117,7 +117,7 @@ async def prueba_un_monto_con_decimales_se_muestra_como_error_y_no_consulta(
 @pytest.mark.asyncio
 async def prueba_depurar_muestra_el_plan(cliente: AsyncClient) -> None:
     respuesta = await cliente.get("/busqueda", params={"depurar": "on"})
-    assert "Plan de ejecucion" in respuesta.text
+    assert "Plan de ejecución" in respuesta.text
 
 
 @pytest.mark.asyncio
@@ -161,3 +161,12 @@ async def prueba_el_csv_con_alerta_incluye_su_estado(cliente: AsyncClient) -> No
     assert [
         (f["transaccion_id"], f["alerta_id"], f["alerta_estado"]) for f in filas
     ] == [("TXN-005", "ALR-002", "confirmada")]
+
+
+@pytest.mark.asyncio
+async def prueba_exportar_csv_solo_aparece_si_hay_resultados(cliente: AsyncClient) -> None:
+    con = await cliente.get("/busqueda")
+    assert "Exportar CSV" in con.text
+    sin = await cliente.get("/busqueda", params={"cuenta": "CTA-999"})
+    assert sin.status_code == 200 and "0 resultados" in sin.text
+    assert "Exportar CSV" not in sin.text

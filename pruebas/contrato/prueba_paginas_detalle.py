@@ -66,20 +66,20 @@ async def prueba_v2_muestra_transaccion_perfil_reglas_y_la_suma(armar: Armar) ->
     respuesta = await http.get("/detalle/ALR-001")
     assert respuesta.status_code == 200
     html = respuesta.text
-    assert "750 000 CRC" in html and "8712-4455 (CTA-001)" in html and "6033-9001" in html
-    assert "2026-10-14 22:47" in html  # hora de Costa Rica, no UTC
-    assert "45 200 CRC" in html and "180 000 CRC" in html and "07:00 - 19:00" in html
-    for fragmento in ("R-01", "REG-001", "monto 750000 supera 10 veces el promedio 45200",
-                      "+35", "+25", "+15", "POL-001", "version 1"):
+    assert "₡750.000" in html and "8712-4455 (CTA-001)" in html and "6033-9001" in html
+    assert "14/10/2026 22:47" in html  # hora de Costa Rica, no UTC
+    assert "₡45.200" in html and "₡180.000" in html and "07:00 - 19:00" in html
+    for fragmento in ("R-01", "REG-001", "Monto 750000 supera 10 veces el promedio 45200",
+                      "+35", "+25", "+15", "POL-001", "versión 1"):
         assert fragmento in html
-    # "no disponible: regla editada" se muestra tal cual.
-    assert "no disponible: regla editada" in html
+    # "no disponible: regla editada" se muestra, con mayuscula inicial.
+    assert "No disponible: regla editada" in html
     assert re.search(r'id="suma-aportes">75<', html)
     assert 'id="puntaje-total">75' in html
     assert "aviso-v1" not in html
     # El corte alcanzado queda marcado: 75 cae en CRITICA (70-100).
     fila = re.search(r'<tr class="corte-alcanzado">\s*<td>(\w+)</td>', html)
-    assert fila is not None and fila.group(1) == "CRITICA"
+    assert fila is not None and fila.group(1) == "Crítica"
 
 
 @pytest.mark.asyncio
@@ -116,7 +116,7 @@ async def prueba_solo_aparecen_los_botones_que_la_maquina_permite(
 async def prueba_el_detalle_dice_quien_actua_y_ya_no_ofrece_elegir(armar: Armar) -> None:
     http, _ = await armar(alerta_v2())
     html = (await http.get("/detalle/ALR-001")).text
-    assert "Actuas como" in html and "AGT-001" in html
+    assert "Actúas como" in html and "AGT-001" in html
     assert "<select" not in html and 'name="agente_id"' not in html
 
 
@@ -161,8 +161,8 @@ async def prueba_tomar_y_escalar_crea_el_caso_y_agrega_historial(armar: Armar) -
     # Recargar la pagina sigue mostrando el caso y el historial completo, en orden.
     html = (await http.get("/detalle/ALR-001")).text
     assert "CAS-001" in html
-    acciones = re.findall(r"Accion: <strong>(\w+)</strong>", html)
-    assert acciones == ["nueva", "en_revision", "escalada"]
+    acciones = re.findall(r"Acción: <strong>([^<]+)</strong>", html)
+    assert acciones == ["Nueva", "En revisión", "Escalada"]
 
 
 @pytest.mark.asyncio
@@ -211,5 +211,76 @@ async def prueba_datos_invalidos_son_422_con_mensaje(armar: Armar) -> None:
 @pytest.mark.asyncio
 async def prueba_el_panel_enlaza_cada_fila_al_detalle(armar: Armar) -> None:
     http, _ = await armar(alerta_v2())
-    js = (await http.get("/estaticos/panel.js")).text
-    assert '"/detalle/"' in js
+    html = (await http.get("/panel")).text
+    # El enlace lo pinta el servidor: la fila es abrible sin JavaScript.
+    assert '<a href="/detalle/ALR-001">ALR-001</a>' in html
+    assert 'role="row"' in html and 'role="columnheader"' in html and 'role="table"' in html
+    assert 'aria-hidden="true"' not in html.split('id="cola"')[0].split("Cola de alertas")[-1]
+    assert html.count('aria-live="polite"') >= 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("malo", ["abc", "ALR-1", "alr-001", "ALR-001x"])
+async def prueba_un_id_mal_formado_es_404_amable_y_no_422(armar: Armar, malo: str) -> None:
+    http, _ = await armar(alerta_v2())
+    respuesta = await http.get(f"/detalle/{malo}")
+    assert respuesta.status_code == 404
+    assert "text/html" in respuesta.headers["content-type"]
+    assert "Volver al panel" in respuesta.text and "No existe la alerta" in respuesta.text
+
+
+@pytest.mark.asyncio
+async def prueba_un_id_bien_formado_que_no_existe_tambien_es_404(armar: Armar) -> None:
+    http, _ = await armar(alerta_v2())
+    respuesta = await http.get("/detalle/ALR-999")
+    assert respuesta.status_code == 404 and "No existe la alerta ALR-999" in respuesta.text
+
+
+@pytest.mark.asyncio
+async def prueba_detalle_sin_id_redirige_al_panel(armar: Armar) -> None:
+    http, _ = await armar(alerta_v2())
+    respuesta = await http.get("/detalle", follow_redirects=False)
+    assert respuesta.status_code in (302, 307)
+    assert respuesta.headers["location"] == "/panel"
+
+
+@pytest.mark.asyncio
+async def prueba_la_explicacion_no_trae_ruido_interno_y_si_la_evidencia(armar: Armar) -> None:
+    alerta = alerta_v2()
+    alerta["reglas_disparadas"][0]["explicacion"] = (
+        "R-01 v1: monto muy alto (aporta 35; explicacion reconstruida por la migracion 001)"
+    )
+    http, _ = await armar(alerta)
+    html = (await http.get("/detalle/ALR-001")).text
+    assert "Monto muy alto" in html
+    assert "R-01 v1:" not in html and "aporta 35" not in html and "migracion 001" not in html
+    # Evidencia calculada con lo que la pagina ya tiene: 750000 / 45200 = 16,6.
+    assert "Evidencia: Monto ₡750.000 contra un promedio de ₡45.200: 16,6x." in html
+    assert "22:47 (hora CR) está fuera del horario habitual 07:00-19:00." in html
+
+
+@pytest.mark.asyncio
+async def prueba_los_cortes_son_los_de_la_politica_usada_o_se_rotulan(armar: Armar) -> None:
+    http, _ = await armar(alerta_v2())
+    html = (await http.get("/detalle/ALR-001")).text
+    assert "son los de la política usada por la alerta" in html
+    # Una politica que ya no esta en la historia: se dice, no se disimula.
+    alerta = alerta_v2()
+    alerta["politica"] = {"politica_id": "POL-001", "version": 9}
+    http, _ = await armar(alerta)
+    html = (await http.get("/detalle/ALR-001")).text
+    assert "no están disponibles: se muestran los de la política vigente" in html
+
+
+@pytest.mark.asyncio
+async def prueba_el_formulario_tiene_ayuda_placeholder_y_confirmacion_en_terminales(
+    armar: Armar,
+) -> None:
+    http, _ = await armar(alerta_v2("en_revision", "AGT-001"))
+    html = (await http.get("/detalle/ALR-001")).text
+    assert 'placeholder="' in html and "H-25" not in html
+    assert html.count("hx-confirm=") == 3  # confirmar, descartar y escalar
+    assert html.count('class="ayuda-boton"') == 3
+    http, _ = await armar(alerta_v2())
+    html = (await http.get("/detalle/ALR-001")).text
+    assert "hx-confirm=" not in html  # tomar no es terminal

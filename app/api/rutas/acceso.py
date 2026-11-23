@@ -32,7 +32,7 @@ from app.seguridad.autenticacion import autenticar
 enrutador = APIRouter(include_in_schema=False)
 enrutador_api = APIRouter(tags=["sesion"])
 
-MENSAJE_CREDENCIALES = "Identificador o contrasena incorrectos"
+MENSAJE_CREDENCIALES = "Identificador o contraseña incorrectos"
 DESTINO_POR_OMISION = "/panel"
 
 
