@@ -15,6 +15,7 @@ Uso:
     python tareas.py instalar        sincroniza dependencias con uv
     python tareas.py dev             corre la API en el host, con recarga
     python tareas.py datos-demo      carga el conjunto de demo
+    python tareas.py demo-reiniciar --si  deja la base en el estado de la defensa
     python tareas.py migrar          corre las migraciones de esquema (H-26)
     python tareas.py validadores     actualiza los validadores sin borrar datos (T-24)
     python tareas.py generar [...]   corre el generador de datos (T-28), con sus banderas
@@ -75,6 +76,7 @@ SCRIPTS_SEMILLA = (
     "01-colecciones.js",  # colecciones y validadores $jsonSchema (H-01)
     "02-indices.js",      # indices con nombre (H-06)
     "03-catalogos.js",    # reglas de deteccion y politica de severidad (H-07)
+    "05-vistas.js",       # vistas de consulta guardadas (H-24); 04 es de `asegurar`
 )
 
 
@@ -679,6 +681,78 @@ def tarea_datos_demo(args: argparse.Namespace) -> None:
         env=entorno_app(),
     )
 
+# Variable por la que viajan los agentes con credencial entre la lectura y la
+# restauracion del reinicio: por el entorno y no por la linea de comandos, para que los
+# hashes no se impriman ni queden en el listado de procesos.
+VARIABLE_AGENTES = "CENTINELA_REINICIO_AGENTES"
+
+LEER_AGENTES_JS = (
+    f'const d = db.getSiblingDB("{BASE_DATOS}");'
+    'print(EJSON.stringify(d.agentes.find({credencial: {$exists: true}}).toArray(),'
+    " {relaxed: false}))"
+)
+RESTAURAR_AGENTES_JS = (
+    f'const d = db.getSiblingDB("{BASE_DATOS}");'
+    f"const agentes = EJSON.parse(process.env.{VARIABLE_AGENTES});"
+    "agentes.forEach(a => d.agentes.replaceOne({_id: a._id}, a, {upsert: true}));"
+    "print(agentes.length + ' agentes con credencial restaurados')"
+)
+
+
+def tarea_demo_reiniciar(args: argparse.Namespace) -> None:
+    """Deja la base en el estado exacto de la defensa (borra datos; pide --si).
+
+    Siembra 01 a 03 y 05, carga el conjunto de demo y recalcula `indicadores_diarios` del
+    dia del demo. 01-colecciones.js hace drop de `agentes`, y con ella se irian las
+    credenciales de login (H-25): se leen ANTES (los agentes que tienen `credencial`) y
+    se restauran DESPUES de cargar el demo, que reemplaza a AGT-001 y AGT-002 por sus
+    documentos sin credencial. Si la lectura falla, no se borra nada.
+
+    Corre con el usuario administrador de `.env`, igual que `asegurar` y `datos-demo`.
+    """
+    if not args.si:
+        raise Fallo(
+            "demo-reiniciar BORRA los datos de la base antifraude y los vuelve a sembrar.\n"
+            "  Se conservan las credenciales de login de los agentes.\n"
+            "  Para seguir: python tareas.py demo-reiniciar --si"
+        )
+    dry = args.dry_run
+
+    print("[1/4] Leyendo las credenciales de login de los agentes...")
+    guardadas = "[]"
+    if not dry:
+        texto = _salida(mongosh("--eval", LEER_AGENTES_JS, usuario="centinela_admin"))
+        guardadas = texto.splitlines()[-1] if texto else ""
+        try:
+            cantidad = len(json.loads(guardadas))
+        except (ValueError, TypeError):
+            raise Fallo(
+                "no se pudieron leer los agentes (base apagada o sin acceso). "
+                "No se borro nada."
+            ) from None
+        print(f"  {cantidad} agentes con credencial")
+
+    print("\n[2/4] Sembrando 01 a 03 y 05, y cargando el demo...")
+    tarea_datos_demo(args)
+
+    print("\n[3/4] Restaurando las credenciales...")
+    correr(
+        mongosh("--eval", RESTAURAR_AGENTES_JS, usuario="centinela_admin"),
+        dry_run=dry,
+        env={**os.environ, VARIABLE_AGENTES: guardadas},
+    )
+
+    print("\n[4/4] Recalculando indicadores del dia del demo...")
+    dia = "2026-09-24" if dry else _salida(
+        uv("run", "python", "-c", "from pruebas.dobles.datos_demo import DIA;print(DIA)")
+    ).splitlines()[-1]
+    correr(
+        uv("run", "python", "-m", "app.deteccion.indicadores", "--desde", dia, "--hasta", dia),
+        dry_run=dry,
+        env=entorno_app(),
+    )
+    print("\nListo. La base quedo como el dia de la defensa.")
+
 
 def tarea_migrar(args: argparse.Namespace) -> None:
     """Corre las migraciones de esquema de scripts/migraciones, en orden.
@@ -797,6 +871,7 @@ TAREAS = {
     "instalar": tarea_instalar,
     "dev": tarea_dev,
     "datos-demo": tarea_datos_demo,
+    "demo-reiniciar": tarea_demo_reiniciar,
     "migrar": tarea_migrar,
     "validadores": tarea_validadores,
     "generar": tarea_generar,
@@ -843,6 +918,12 @@ def construir_analizador() -> argparse.ArgumentParser:
                 action="store_true",
                 help="borra tambien los volumenes (empezar de cero)",
             )
+        if nombre == "demo-reiniciar":
+            sub.add_argument(
+                "--si",
+                action="store_true",
+                help="confirma que se borran los datos y se vuelve a sembrar",
+            )
         if nombre in {"pruebas", "verificar"}:
             sub.add_argument(
                 "--tipo",
@@ -884,6 +965,7 @@ def main(argumentos: list[str] | None = None) -> int:
         ("tipo", "todas"),
         ("sin_mongo", False),
         ("verboso", False),
+        ("si", False),
     ):
         if not hasattr(args, bandera):
             setattr(args, bandera, valor)

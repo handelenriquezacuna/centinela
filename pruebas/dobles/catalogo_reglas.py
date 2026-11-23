@@ -17,7 +17,7 @@ from typing import Any
 
 # (_id, codigo, descripcion, tipo, umbral, parametros, peso, activa)
 _FILAS: list[tuple[str, str, str, str, float, dict[str, int | float], int, bool]] = [
-    ("REG-001", "R-01", "Monto sobre 10x el promedio del cliente", "monto", 10, {}, 35, True),
+    ("REG-001", "R-01", "Monto muy superior al promedio del cliente", "monto", 10, {}, 35, True),
     (
         "REG-002",
         "R-03",

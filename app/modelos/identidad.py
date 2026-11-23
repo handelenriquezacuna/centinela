@@ -46,9 +46,9 @@ class Cuenta(DocumentoBase):
     `cliente_id` es referencia y no documento embebido: una cuenta puede cambiar de
     titular, y el cliente no debe cargar con sus cuentas adentro.
 
-    Una cuenta mula NO tiene documento aqui: viaja como texto en
+    Una cuenta mula de OTRA entidad NO tiene documento aqui: viaja como texto en
     `transacciones.cuenta_destino` y, si se identifica, como entrada en
-    `listas_riesgo`.
+    `listas_riesgo`. Las mulas que son cuentas del banco (la cadena del demo) si lo tienen.
     """
 
     cuenta_id: CuentaId = Field(alias="_id")

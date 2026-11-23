@@ -97,7 +97,7 @@ const reglas = [
   {
     _id: "REG-001",
     codigo: "R-01",
-    descripcion: "Monto sobre 8x el promedio del cliente",
+    descripcion: "Monto muy superior al promedio del cliente",
     tipo: "monto",
     // Veces el `promedio_crc` del perfil del cliente. TXN-001 va 16,6x: dispara.
     // Subirlo a 20 hace que TXN-001 deje de disparar esta regla, y eso es H-07 entera:

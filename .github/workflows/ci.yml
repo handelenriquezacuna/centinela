@@ -139,10 +139,10 @@ jobs:
             done
           '
 
-      - name: Sembrar la base antifraude (01 -> 02 -> 03, el orden de datos-demo)
+      - name: Sembrar la base antifraude (01 -> 02 -> 03 -> 05, el orden de datos-demo)
         run: |
           set -euo pipefail
-          for script in 01-colecciones.js 02-indices.js 03-catalogos.js; do
+          for script in 01-colecciones.js 02-indices.js 03-catalogos.js 05-vistas.js; do
             echo "Sembrando $script..."
             docker exec centinela-mongo mongosh --port 27018 --quiet \
               --file "/semilla/$script"

@@ -111,6 +111,11 @@ async def _d1_corriendo(base: Any) -> AsyncIterator[Supervisor]:
         await supervisor.detener()
 
 
+# El caso y su contraste (TXN-001..004). La cadena de mulas del demo (TXN-005..007) queda
+# fuera: esta prueba mide el caso de 75 puntos, y la cadena tiene sus propias reglas.
+CASO_Y_CONTRASTE = [t for t in TRANSACCIONES if t.transaccion_id <= "TXN-004"]
+
+
 async def _procesada_hasta(base: Any, transaccion_id: str) -> None:
     async def llego() -> bool:
         estado = await base["deteccion_estado"].find_one({"_id": NOMBRE_D1})
@@ -164,7 +169,7 @@ async def _alertas_por_transaccion(base: Any) -> dict[str, int]:
 @pytest.mark.asyncio
 async def prueba_la_transaccion_del_caso_produce_la_alerta_de_75(base_d1: Any) -> None:
     async with _d1_corriendo(base_d1) as supervisor:
-        await _insertar(base_d1, TRANSACCIONES)
+        await _insertar(base_d1, CASO_Y_CONTRASTE)
         await _procesada_hasta(base_d1, "TXN-004")
         fila = supervisor.informe().tarea(NOMBRE_D1)
 
@@ -205,7 +210,7 @@ async def prueba_la_transaccion_del_caso_produce_la_alerta_de_75(base_d1: Any) -
 async def prueba_reanuda_desde_el_token_sin_duplicar_ni_perder(base_d1: Any) -> None:
     # 1. D1 arriba procesa el demo.
     async with _d1_corriendo(base_d1):
-        await _insertar(base_d1, TRANSACCIONES)
+        await _insertar(base_d1, CASO_Y_CONTRASTE)
         await _procesada_hasta(base_d1, "TXN-004")
     token_tras_demo = await base_d1["deteccion_estado"].find_one({"_id": NOMBRE_D1})
 
