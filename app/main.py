@@ -33,6 +33,7 @@ from app.api.errores import registrar_manejadores
 from app.api.rutas import enrutador_v1
 from app.api.rutas import estado as rutas_estado
 from app.api.rutas import paginas as rutas_paginas
+from app.api.rutas import paginas_busqueda as rutas_paginas_busqueda
 from app.api.rutas import paginas_tablero as rutas_paginas_tablero
 from app.api.rutas import salud as rutas_salud
 from app.deteccion.d1 import NOMBRE_D1, d1
@@ -144,6 +145,7 @@ def crear_aplicacion() -> FastAPI:
     aplicacion.include_router(rutas_estado.enrutador)
     aplicacion.include_router(enrutador_v1)
     aplicacion.include_router(rutas_paginas_tablero.enrutador)
+    aplicacion.include_router(rutas_paginas_busqueda.enrutador)
     aplicacion.include_router(rutas_paginas.enrutador)
 
     # Los estaticos se sirven desde el propio proceso: es un monolito y no hay un

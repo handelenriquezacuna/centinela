@@ -11,12 +11,13 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api import PREFIJO_V1
-from app.api.rutas import alertas, inteligencia, reglas, sse
+from app.api.rutas import alertas, inteligencia, reglas, sse, transacciones
 
 enrutador_v1 = APIRouter(prefix=PREFIJO_V1)
 enrutador_v1.include_router(alertas.enrutador)
 enrutador_v1.include_router(sse.enrutador)
 enrutador_v1.include_router(reglas.enrutador)
 enrutador_v1.include_router(inteligencia.enrutador)
+enrutador_v1.include_router(transacciones.enrutador)
 
 __all__ = ["enrutador_v1"]

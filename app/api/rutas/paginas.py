@@ -480,4 +480,3 @@ def _ruta_maqueta(clave: str, titulo: str) -> None:
 
 
 _ruta_maqueta("detalle", "Detalle de alerta")
-_ruta_maqueta("busqueda", "Busqueda")

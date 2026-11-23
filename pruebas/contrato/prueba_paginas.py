@@ -79,7 +79,7 @@ async def cliente(aplicacion: FastAPI) -> Any:
         ("/panel", "Panel de alertas"),
         ("/reglas", "Reglas de deteccion"),
         ("/detalle", "En construccion"),
-        ("/busqueda", "En construccion"),
+        ("/busqueda", "Busqueda forense"),
         ("/tablero", "Tablero de indicadores"),
     ],
 )
