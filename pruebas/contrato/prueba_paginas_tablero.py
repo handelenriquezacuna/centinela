@@ -15,11 +15,16 @@ from app.api.dependencias import (
     dep_repo_alertas,
     dep_repo_detalle,
     dep_repo_red_mulas_portal,
+    dep_repo_reglas,
     dep_repo_tablero,
 )
 from app.api.rutas.paginas_tablero import barras_horizontales, columnas_por_hora
 from app.main import crear_aplicacion
 from app.repos.tablero import resumir
+from pruebas.dobles.catalogo_reglas import (
+    politica_como_documento,
+    reglas_como_documentos,
+)
 from pruebas.dobles.repo_detalle_falso import RepoDetalleFalso, alerta_v2
 from pruebas.dobles.repo_tablero_falso import (
     RepoRedMulasFalso,
@@ -27,7 +32,7 @@ from pruebas.dobles.repo_tablero_falso import (
     documentos_con_comparacion,
     red_de_cuatro_saltos,
 )
-from pruebas.dobles.repos_falsos import RepoAlertasFalso
+from pruebas.dobles.repos_falsos import RepoAlertasFalso, RepoReglasFalso
 from pruebas.sesiones import encabezados_de
 
 Armar = Callable[..., Awaitable[AsyncClient]]
@@ -46,6 +51,9 @@ async def armar() -> AsyncIterator[Armar]:
         creada.dependency_overrides[dep_repo_detalle] = lambda: RepoDetalleFalso(alertas.casos)
         creada.dependency_overrides[dep_repo_tablero] = lambda: tablero or RepoTableroFalso()
         creada.dependency_overrides[dep_repo_red_mulas_portal] = lambda: red or RepoRedMulasFalso()
+        # El detalle lee la politica vigente: sin el doble, la prueba iria a Mongo.
+        reglas = RepoReglasFalso(reglas_como_documentos(), politica_como_documento())
+        creada.dependency_overrides[dep_repo_reglas] = lambda: reglas
         gestor = LifespanManager(creada)
         gestionada = await gestor.__aenter__()
         http = AsyncClient(headers=encabezados_de(), transport=ASGITransport(app=gestionada.app), base_url="http://pruebas")

@@ -13,6 +13,7 @@ ese fallo.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -93,7 +94,7 @@ def prueba_los_nodos_comparten_el_espacio_de_red_del_primero(compose: dict) -> N
 
     publicados = servicios["mongo1"]["ports"]
     for puerto in ("27018:27018", "27019:27019", "27020:27020"):
-        assert puerto in publicados, f"mongo1 no publica {puerto}"
+        assert f"127.0.0.1:{puerto}" in publicados, f"mongo1 no publica {puerto} en 127.0.0.1"
 
 
 def prueba_el_servicio_app_comparte_el_espacio_de_red_de_mongo1(compose: dict) -> None:
@@ -114,7 +115,7 @@ def prueba_el_servicio_app_comparte_el_espacio_de_red_de_mongo1(compose: dict) -
         "network_mode: service:X no puede declarar sus propios ports"
     )
 
-    assert "8000:8000" in servicios["mongo1"]["ports"], (
+    assert "127.0.0.1:8000:8000" in servicios["mongo1"]["ports"], (
         "mongo1 tiene que publicar tambien el 8000 de la API"
     )
 
@@ -147,3 +148,82 @@ def prueba_los_puertos_no_usan_el_27017(compose: dict) -> None:
     publicados = compose["services"]["mongo1"]["ports"]
 
     assert not any("27017" in str(puerto) for puerto in publicados)
+
+
+# ---------------------------------------------------------------------------
+# H-25: autenticacion y secretos
+# ---------------------------------------------------------------------------
+
+BASES_FUERA_DE_ANTIFRAUDE = re.compile(r"antifraude_(?:pruebas[a-z0-9_]*|validadores_tmp)")
+
+
+def prueba_ningun_puerto_se_publica_fuera_de_localhost(compose: dict) -> None:
+    """T-02: Mongo y la API solo escuchan en la interfaz local del anfitrion."""
+    for nodo, servicio in compose["services"].items():
+        for puerto in servicio.get("ports", []):
+            assert str(puerto).startswith("127.0.0.1:"), (
+                f"{nodo} publica {puerto} en todas las interfaces"
+            )
+
+
+def prueba_los_tres_nodos_arrancan_con_el_punto_de_entrada_de_la_autenticacion(
+    compose: dict,
+) -> None:
+    """El keyfile lo agrega `infra/mongo-entrada.sh`, igual en los tres nodos."""
+    for nodo in NODOS:
+        servicio = compose["services"][nodo]
+        assert servicio["entrypoint"] == ["bash", "/entrada/mongo-entrada.sh"]
+        volumenes = " ".join(servicio["volumes"])
+        assert "./secretos:/secretos:ro" in volumenes
+        assert "./mongo-entrada.sh:/entrada/mongo-entrada.sh:ro" in volumenes
+
+    entrada = (RAIZ / "infra" / "mongo-entrada.sh").read_text(encoding="utf-8")
+    assert "--keyFile" in entrada
+    assert "CENTINELA_SIN_AUTH" in entrada
+
+
+def prueba_los_secretos_no_se_versionan() -> None:
+    """.env, el keyfile y todo infra/secretos/ (salvo .gitkeep) estan ignorados."""
+    ignorado = (RAIZ / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert ".env" in ignorado
+    assert "infra/secretos/*" in ignorado
+
+
+def prueba_el_molde_del_entorno_no_trae_valores() -> None:
+    molde = (RAIZ / ".env.example").read_text(encoding="utf-8")
+    claves = [linea for linea in molde.splitlines() if linea and not linea.startswith("#")]
+    assert claves, ".env.example tiene que listar las variables"
+    for linea in claves:
+        nombre, _, valor = linea.partition("=")
+        assert nombre and not valor.strip(), f"{nombre} trae un valor en el molde"
+
+
+def prueba_la_configuracion_versionada_no_trae_credenciales() -> None:
+    """La URI con usuario llega por CENTINELA_MONGO__URI; el YAML no lleva secretos."""
+    from app.nucleo.config import RUTA_RAIZ
+
+    yaml_base = (RUTA_RAIZ / "config" / "centinela.yml").read_text(encoding="utf-8")
+    uri = yaml.safe_load(yaml_base)["mongo"]["uri"]
+    assert "@" not in uri, "la URI del YAML no puede llevar usuario ni contrasena"
+    assert not re.search(r"(?i)(password|contrasena|clave|secret)\s*:", yaml_base)
+
+
+def prueba_los_scripts_de_usuarios_no_traen_contrasenas() -> None:
+    script = (RAIZ / "scripts" / "semilla" / "04-usuarios.js").read_text(encoding="utf-8")
+    assert not re.search(r"pwd:\s*[\"']", script), "una contrasena escrita en el script"
+
+
+def prueba_cada_base_de_pruebas_esta_en_la_lista_del_usuario_de_pruebas() -> None:
+    """centinela_pruebas es dbOwner solo de las bases que lista 04-usuarios.js.
+
+    Si una prueba nueva crea otra base `antifraude_pruebas_*`, con la autenticacion
+    encendida fallaria con "not authorized". Esta prueba lo avisa antes.
+    """
+    script = (RAIZ / "scripts" / "semilla" / "04-usuarios.js").read_text(encoding="utf-8")
+    usadas: set[str] = set()
+    for ruta in [*(RAIZ / "pruebas").rglob("*.py"), *(RAIZ / "scripts").rglob("*.js")]:
+        if ruta.name == "04-usuarios.js" or ruta.name == "prueba_infraestructura.py":
+            continue
+        usadas |= set(BASES_FUERA_DE_ANTIFRAUDE.findall(ruta.read_text(encoding="utf-8")))
+    faltan = {base for base in usadas if f'"{base}"' not in script}
+    assert not faltan, f"agregar a 04-usuarios.js: {sorted(faltan)}"

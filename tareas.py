@@ -8,7 +8,8 @@ dos. Un archivo .sh habria excluido a la mitad del equipo.
 
 Uso:
 
-    python tareas.py arriba          levanta el replica set y lo inicializa
+    python tareas.py arriba          levanta el replica set, lo inicializa y lo asegura
+    python tareas.py asegurar        activa la autenticacion en una base existente (H-25)
     python tareas.py abajo           apaga el replica set
     python tareas.py estado          muestra el estado del replica set
     python tareas.py instalar        sincroniza dependencias con uv
@@ -17,6 +18,7 @@ Uso:
     python tareas.py migrar          corre las migraciones de esquema (H-26)
     python tareas.py validadores     actualiza los validadores sin borrar datos (T-24)
     python tareas.py generar [...]   corre el generador de datos (T-28), con sus banderas
+    python tareas.py usuarios [...]  administra los usuarios de la app (T-41)
     python tareas.py indicadores [...] recalcula indicadores_diarios (H-22)
     python tareas.py pruebas         corre las pruebas
     python tareas.py verificar       instala, prueba y reporta
@@ -27,12 +29,17 @@ Con `--dry-run` cualquier tarea imprime lo que haria sin hacerlo.
 from __future__ import annotations
 
 import argparse
+import base64
+import contextlib
 import json
+import os
+import secrets
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import quote, urlsplit
 
 RAIZ = Path(__file__).resolve().parent
 COMPOSE = RAIZ / "infra" / "docker-compose.yml"
@@ -40,6 +47,24 @@ COMPOSE = RAIZ / "infra" / "docker-compose.yml"
 # El replica set y su script de inicializacion ya existian antes de H-00A. Este
 # lanzador los reusa, no los redefine.
 SCRIPT_INIT = RAIZ / "scripts" / "init-replicaset.js"
+
+# H-25. Usuarios de base de datos, secretos locales y autenticacion.
+SCRIPT_USUARIOS = RAIZ / "scripts" / "semilla" / "04-usuarios.js"
+ARCHIVO_ENV = RAIZ / ".env"
+DIRECTORIO_SECRETOS = RAIZ / "infra" / "secretos"
+KEYFILE = DIRECTORIO_SECRETOS / "keyfile"
+BASE_DATOS = "antifraude"
+VARIABLE_URI = "CENTINELA_MONGO__URI"
+VARIABLE_SIN_AUTH = "CENTINELA_SIN_AUTH"
+VARIABLE_CLAVE_SESION = "CENTINELA_SESION__CLAVE"
+
+# usuario de base de datos -> variable de entorno con su contrasena
+USUARIOS = {
+    "centinela_app": "MONGO_CLAVE_APP",
+    "centinela_analista": "MONGO_CLAVE_ANALISTA",
+    "centinela_admin": "MONGO_CLAVE_ADMIN",
+    "centinela_pruebas": "MONGO_CLAVE_PRUEBAS",
+}
 
 # La siembra de estructura y catalogos, EN ESTE ORDEN y no en otro: 01 hace drop de
 # las colecciones para recrearlas con su validador, asi que correrlo despues del 03 se
@@ -83,13 +108,23 @@ def _buscar(programa: str) -> str:
     return ruta
 
 
-def correr(orden: list[str], *, dry_run: bool = False, permitir_fallo: bool = False) -> int:
-    """Ejecuta un comando mostrandolo antes. Sin shell: los argumentos van tal cual."""
-    print("$ " + " ".join(orden))
+def correr(
+    orden: list[str],
+    *,
+    dry_run: bool = False,
+    permitir_fallo: bool = False,
+    env: dict[str, str] | None = None,
+) -> int:
+    """Ejecuta un comando mostrandolo antes. Sin shell: los argumentos van tal cual.
+
+    Lo que se muestra nunca lleva contrasenas: las URIs con usuario se pasan a mongosh
+    como argumento, asi que se ocultan en la linea impresa.
+    """
+    print("$ " + " ".join(_sin_secretos(parte) for parte in orden))
     if dry_run:
         return 0
 
-    resultado = subprocess.run(orden, cwd=RAIZ, check=False)
+    resultado = subprocess.run(orden, cwd=RAIZ, check=False, env=env)
     if resultado.returncode != 0 and not permitir_fallo:
         raise Fallo(f"el comando termino con codigo {resultado.returncode}")
     return resultado.returncode
@@ -103,13 +138,47 @@ def uv(*argumentos: str) -> list[str]:
     return [_buscar("uv"), *argumentos]
 
 
-def uri_mongo() -> str:
-    """URI del replica set, leida de la configuracion y no escrita aqui.
+def _sin_secretos(texto: str) -> str:
+    """Oculta `usuario:clave@` de una URI para imprimirla."""
+    if "://" not in texto or "@" not in texto:
+        return texto
+    esquema, resto = texto.split("://", 1)
+    if "@" not in resto.split("/", 1)[0]:
+        return texto
+    return f"{esquema}://***@{resto.split('@', 1)[1]}"
+
+
+def cargar_entorno() -> None:
+    """Carga `.env` en el entorno del proceso, sin pisar lo que ya este definido.
+
+    El entorno real le gana al archivo (misma regla que la configuracion). Los valores
+    vacios se ignoran: un `.env` copiado del molde no debe anular nada.
+    """
+    if not ARCHIVO_ENV.is_file():
+        return
+    for linea in ARCHIVO_ENV.read_text(encoding="utf-8").splitlines():
+        linea = linea.strip()
+        if not linea or linea.startswith("#") or "=" not in linea:
+            continue
+        nombre, valor = linea.split("=", 1)
+        if valor.strip():
+            os.environ.setdefault(nombre.strip(), valor.strip())
+
+
+_URI_BASE: list[str] = []
+
+
+def uri_base() -> str:
+    """URI del replica set SIN credenciales, leida de la configuracion y no escrita aqui.
 
     `app/nucleo/config.py` es el unico lugar que lee el YAML, asi que el lanzador se
-    la pregunta en vez de duplicarla. `uv run` sincroniza el entorno solo si hace
-    falta, asi que esto funciona tambien en un checkout limpio.
+    la pregunta en vez de duplicarla. Se pregunta sin `CENTINELA_MONGO__URI` en el
+    entorno: esa variable lleva el usuario (H-25) y aqui se quiere la URI del YAML.
+    `uv run` sincroniza el entorno solo si hace falta.
     """
+    if _URI_BASE:
+        return _URI_BASE[0]
+    entorno = {k: v for k, v in os.environ.items() if k != VARIABLE_URI}
     uri = _salida(
         uv(
             "run",
@@ -117,39 +186,86 @@ def uri_mongo() -> str:
             "-c",
             "from app.nucleo.config import obtener_ajustes;"
             "print(obtener_ajustes().mongo.uri)",
-        )
+        ),
+        env=entorno,
     )
     if not uri:
         raise Fallo(
             "no se pudo leer mongo.uri de la configuracion.\n"
             "Probar primero: python tareas.py instalar"
         )
-    return uri.splitlines()[-1].strip()
+    _URI_BASE.append(uri.splitlines()[-1].strip())
+    return _URI_BASE[0]
 
 
-def uri_directa() -> str:
+def _con_usuario(uri: str, usuario: str | None) -> str:
+    """Agrega `usuario:clave@` y `authSource` a una URI. Sin clave, la deja igual.
+
+    Sin clave en el entorno se trabaja como antes de H-25 (base sin autenticacion),
+    que es lo que hace falta para una base vieja o un nodo de CI.
+    """
+    clave = os.environ.get(USUARIOS[usuario], "") if usuario else ""
+    if not clave:
+        return uri
+    esquema, resto = uri.split("://", 1)
+    separador = "&" if "?" in resto else "?"
+    return (
+        f"{esquema}://{quote(usuario, safe='')}:{quote(clave, safe='')}@{resto}"
+        f"{separador}authSource={BASE_DATOS}"
+    )
+
+
+def uri_usuario(usuario: str | None = None) -> str:
+    """URI del replica set, con las credenciales de `usuario` si estan en el entorno."""
+    return _con_usuario(uri_base(), usuario)
+
+
+def uri_directa(usuario: str | None = None) -> str:
     """URI de conexion directa al primer nodo, sin descubrimiento de replica set.
 
-    Hace falta exactamente para una cosa: `rs.initiate()`. Antes de iniciar el
-    conjunto no hay replica set que descubrir, asi que una URI con
-    `replicaSet=rsfraude` falla con `MongoServerSelectionError` y parece que el
-    clúster no levanto. Para todo lo demas se usa la URI completa.
+    Hace falta para `rs.initiate()`: antes de iniciar el conjunto no hay replica set
+    que descubrir, asi que una URI con `replicaSet=rsfraude` falla con
+    `MongoServerSelectionError` y parece que el cluster no levanto. Tambien para las
+    comprobaciones de acceso y de conteo, que no deben depender de la eleccion.
 
     El host sale de la URI configurada; no se escribe aqui.
     """
-    from urllib.parse import urlsplit
-
-    partes = urlsplit(uri_mongo())
-    primer_nodo = partes.netloc.split(",")[0]
-    return f"mongodb://{primer_nodo}/?directConnection=true"
+    primer_nodo = urlsplit(uri_base()).netloc.split(",")[0]
+    return _con_usuario(
+        f"mongodb://{primer_nodo}/?directConnection=true&serverSelectionTimeoutMS=8000",
+        usuario,
+    )
 
 
 def mongosh_directo(*argumentos: str) -> list[str]:
-    """`mongosh` contra un solo nodo. Solo para inicializar el replica set."""
+    """`mongosh` contra un solo nodo y sin credenciales. Solo para inicializar."""
     return [_buscar("mongosh"), uri_directa(), "--quiet", *argumentos]
 
 
-def mongosh(*argumentos: str) -> list[str]:
+def entorno_app(*, usuario: str = "centinela_app") -> dict[str, str]:
+    """Entorno para los procesos de Python: la URI con usuario va por variable.
+
+    Si el entorno ya trae `CENTINELA_MONGO__URI` (CI, o alguien que apunta a otra
+    base), se respeta. Sin claves, no se agrega nada: base sin autenticacion.
+    """
+    entorno = dict(os.environ)
+    if VARIABLE_URI not in entorno:
+        uri = uri_usuario(usuario)
+        if uri != uri_base():
+            entorno[VARIABLE_URI] = uri
+    return entorno
+
+
+def entorno_compose(*, sin_auth: bool = False) -> dict[str, str]:
+    """Entorno de `docker compose`: el keyfile se agrega salvo en la fase sin auth."""
+    entorno = entorno_app()
+    entorno.pop(VARIABLE_SIN_AUTH, None)
+    if sin_auth:
+        entorno[VARIABLE_SIN_AUTH] = "1"
+    return entorno
+
+
+def mongosh(*argumentos: str, usuario: str | None = None) -> list[str]:
     """`mongosh` DESDE EL HOST, con la URI completa del replica set.
 
     Dos razones para no usar `docker compose exec`, y las dos ya nos costaron tiempo:
@@ -162,14 +278,14 @@ def mongosh(*argumentos: str) -> list[str]:
        lee el archivo de otra persona. Corriendo desde el host con ruta absoluta del
        host, el archivo es siempre el propio.
     """
-    return [_buscar("mongosh"), uri_mongo(), "--quiet", *argumentos]
+    return [_buscar("mongosh"), uri_usuario(usuario), "--quiet", *argumentos]
 
 
-def _salida(orden: list[str]) -> str:
+def _salida(orden: list[str], env: dict[str, str] | None = None) -> str:
     """Ejecuta y devuelve la salida. Cadena vacia si el comando falla."""
     try:
         resultado = subprocess.run(
-            orden, cwd=RAIZ, capture_output=True, text=True, timeout=30, check=False
+            orden, cwd=RAIZ, capture_output=True, text=True, timeout=60, check=False, env=env
         )
     except (subprocess.TimeoutExpired, OSError):
         return ""
@@ -187,7 +303,8 @@ def esperar_primario(segundos: int = 60, dry_run: bool = False) -> bool:
     if dry_run:
         return True
 
-    consulta = 'rs.status().members.some(m => m.stateStr === "PRIMARY")'
+    # `hello` no pide privilegios: sirve con la autenticacion encendida y sin usuario.
+    consulta = "db.hello().isWritablePrimary"
     orden = mongosh("--eval", consulta)  # la URI se resuelve una sola vez
     limite = time.monotonic() + segundos
 
@@ -197,6 +314,165 @@ def esperar_primario(segundos: int = 60, dry_run: bool = False) -> bool:
         time.sleep(2)
 
     return False
+
+
+# ---------------------------------------------------------------------------
+# Secretos y autenticacion (H-25)
+# ---------------------------------------------------------------------------
+
+
+def asegurar_secretos(dry_run: bool = False) -> None:
+    """Crea `.env` y el keyfile la primera vez; no toca lo que ya existe.
+
+    Las contrasenas son aleatorias (`secrets.token_urlsafe`) y no se versionan: .env y
+    infra/secretos/ estan en .gitignore. El keyfile es base64 (lo que mongod exige) y
+    queda con permisos 400.
+    """
+    if not ARCHIVO_ENV.is_file():
+        print("Creando .env con contrasenas aleatorias (no se versiona)...")
+        if not dry_run:
+            lineas = [
+                "# Generado por `python tareas.py arriba`. No se versiona. Para rotar una",
+                "# contrasena: cambiarla aqui y correr `python tareas.py asegurar`.",
+            ]
+            lineas += [f"{variable}={secrets.token_urlsafe(24)}" for variable in USUARIOS.values()]
+            # Clave de firma de la sesion de la app (T-41): minimo 32 caracteres.
+            lineas.append(f"{VARIABLE_CLAVE_SESION}={secrets.token_urlsafe(48)}")
+            ARCHIVO_ENV.write_text("\n".join(lineas) + "\n", encoding="utf-8")
+            with contextlib.suppress(OSError):
+                ARCHIVO_ENV.chmod(0o600)
+    elif VARIABLE_CLAVE_SESION not in ARCHIVO_ENV.read_text(encoding="utf-8"):
+        print("Agregando la clave de sesion a .env...")
+        if not dry_run:
+            with ARCHIVO_ENV.open("a", encoding="utf-8") as archivo:
+                archivo.write(f"{VARIABLE_CLAVE_SESION}={secrets.token_urlsafe(48)}\n")
+    if not KEYFILE.is_file():
+        print("Creando el keyfile del replica set (infra/secretos/keyfile, permisos 400)...")
+        if not dry_run:
+            DIRECTORIO_SECRETOS.mkdir(parents=True, exist_ok=True)
+            contenido = base64.b64encode(secrets.token_bytes(756)).decode("ascii")
+            descriptor = os.open(KEYFILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
+            with os.fdopen(descriptor, "w", encoding="ascii") as archivo:
+                archivo.write(contenido + "\n")
+    if not dry_run:
+        cargar_entorno()
+
+
+def entra(usuario: str) -> bool:
+    """True si `usuario` consigue autenticarse y listar colecciones de antifraude.
+
+    Falla cuando la base no tiene usuarios, cuando no tiene la autenticacion encendida
+    (un nodo sin auth rechaza credenciales que no conoce) o cuando no responde.
+    """
+    if not os.environ.get(USUARIOS[usuario]):
+        return False
+    orden = [
+        _buscar("mongosh"),
+        uri_directa(usuario),
+        "--quiet",
+        "--eval",
+        f'db.getSiblingDB("{BASE_DATOS}").getCollectionNames().length',
+    ]
+    try:
+        resultado = subprocess.run(
+            orden, cwd=RAIZ, capture_output=True, text=True, timeout=60, check=False
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return resultado.returncode == 0
+
+
+def esperar_entrada(usuario: str, segundos: int = 90) -> bool:
+    limite = time.monotonic() + segundos
+    while time.monotonic() < limite:
+        if entra(usuario):
+            return True
+        time.sleep(3)
+    return False
+
+
+CONTEO_JS = (
+    f'const d = db.getSiblingDB("{BASE_DATOS}");'
+    "JSON.stringify(Object.fromEntries(d.getCollectionNames()"
+    '.filter(n => !n.startsWith("system.")).sort()'
+    ".map(n => [n, d.getCollection(n).countDocuments({})])))"
+)
+
+
+def contar_documentos(usuario: str | None) -> dict[str, int] | None:
+    """Documentos por coleccion de antifraude, o None si no se pudo contar."""
+    texto = _salida([_buscar("mongosh"), uri_directa(usuario), "--quiet", "--eval", CONTEO_JS])
+    try:
+        return json.loads(texto.splitlines()[-1])
+    except (ValueError, IndexError):
+        return None
+
+
+def _asegurar(args: argparse.Namespace) -> None:
+    """Activa la autenticacion sobre la base que haya, sin perder documentos.
+
+    1. Cuenta los documentos (con la auth apagada).
+    2. Levanta los nodos SIN keyfile (fase de preparacion; los puertos siguen en
+       127.0.0.1), inicializa el replica set si hace falta y crea roles y usuarios con
+       `04-usuarios.js`.
+    3. Recrea los nodos CON keyfile: desde aqui todo exige usuario y contrasena. Los
+       volumenes no se tocan, asi que los datos son los mismos.
+    4. Comprueba el acceso de los tres usuarios y que el conteo coincide.
+
+    Es idempotente. Si algo falla a medias, volver a correr el comando termina el trabajo.
+    """
+    dry = args.dry_run
+    asegurar_secretos(dry)
+
+    print("\n[1/4] Conteo previo de documentos...")
+    antes = None if dry else contar_documentos(None)
+    if antes is None and not dry:
+        print("  sin datos previos (base nueva o nodos apagados)")
+    elif antes is not None:
+        print(f"  {sum(antes.values())} documentos en {len(antes)} colecciones")
+
+    print("\n[2/4] Nodos sin keyfile, replica set y usuarios...")
+    correr(
+        compose("up", "-d", "--wait", "--force-recreate"),
+        dry_run=dry,
+        env=entorno_compose(sin_auth=True),
+    )
+    correr(mongosh_directo("--file", str(SCRIPT_INIT)), dry_run=dry)
+    if not dry and not esperar_primario():
+        raise Fallo("no aparecio un primario. Ver: python tareas.py estado")
+    claves = {nombre: os.environ.get(variable, "") for nombre, variable in USUARIOS.items()}
+    if not dry and not all(claves.values()):
+        raise Fallo("faltan contrasenas en .env; borrar .env y correr de nuevo asegurar")
+    correr(
+        [_buscar("mongosh"), uri_usuario(), "--quiet", "--file", str(SCRIPT_USUARIOS)],
+        dry_run=dry,
+    )
+
+    print("\n[3/4] Nodos con keyfile: la autenticacion queda encendida...")
+    orden = compose("up", "-d", "--wait", "--force-recreate")
+    # Un reintento: en Docker Desktop el primer montaje de un keyfile recien creado a
+    # veces no lo ve (`install: cannot open /secretos/keyfile`) y el nodo sale con 1.
+    if correr(orden, dry_run=dry, env=entorno_compose(), permitir_fallo=True) != 0:
+        print("El nodo no arranco con el keyfile; un reintento...")
+        time.sleep(5)
+        correr(orden, dry_run=dry, env=entorno_compose())
+    if dry:
+        return
+
+    print("\n[4/4] Comprobacion...")
+    for usuario in ("centinela_admin", "centinela_app", "centinela_analista"):
+        if not esperar_entrada(usuario):
+            raise Fallo(f"{usuario} no consigue entrar. Ver el log: docker logs fraude-mongo1")
+        print(f"  {usuario}: entra")
+    if not esperar_primario():
+        raise Fallo("no aparecio un primario tras activar la autenticacion")
+    despues = contar_documentos("centinela_admin")
+    if antes is not None and despues != antes:
+        raise Fallo(f"el conteo cambio.\n  antes:   {antes}\n  despues: {despues}")
+    if despues is not None:
+        print(f"  {sum(despues.values())} documentos en {len(despues)} colecciones"
+              + ("; igual que antes" if antes is not None else ""))
+    print("\nListo. Desde ahora la base exige usuario. URI de Compass: docs/05-infraestructura.md")
 
 
 # ---------------------------------------------------------------------------
@@ -220,10 +496,15 @@ def tarea_arriba(args: argparse.Namespace) -> None:
     Mongo conecta perezoso, ver `app/main.py`), pero levantarla despues da un primer
     `/salud` limpio en vez de uno que reporta el replica set todavia formandose.
     """
-    correr(compose("up", "-d", "--wait"), dry_run=args.dry_run)
+    asegurar_secretos(args.dry_run)
+    correr(compose("up", "-d", "--wait"), dry_run=args.dry_run, env=entorno_compose())
 
-    print("\nInicializando el replica set (idempotente)...")
-    correr(mongosh_directo("--file", str(SCRIPT_INIT)), dry_run=args.dry_run)
+    # H-25. Si no hay un usuario valido, la base es nueva o es de antes de la
+    # autenticacion: `_asegurar` la inicializa y le crea los usuarios (idempotente).
+    # Si ya los hay, el replica set esta inicializado y solo se espera el primario.
+    if args.dry_run or not entra("centinela_admin"):
+        print("\nLa base no tiene usuarios: se asegura (replica set, usuarios, keyfile)...")
+        _asegurar(args)
 
     print("\nEsperando la eleccion del primario...")
     if not esperar_primario(dry_run=args.dry_run):
@@ -248,6 +529,7 @@ def tarea_arriba(args: argparse.Namespace) -> None:
     correr(
         compose("--profile", "app", "up", "-d", "--build", "--wait", "app"),
         dry_run=args.dry_run,
+        env=entorno_compose(),
     )
     print(
         "\nListo, con la API dentro de Compose. Siguiente paso:\n"
@@ -269,15 +551,36 @@ def tarea_abajo(args: argparse.Namespace) -> None:
     if args.borrar_datos:
         orden.append("-v")
         print("Se borran los volumenes: el replica set habra que inicializarlo de nuevo.")
-    correr(orden, dry_run=args.dry_run)
+    correr(orden, dry_run=args.dry_run, env=entorno_compose())
+
+
+def tarea_asegurar(args: argparse.Namespace) -> None:
+    """Activa la autenticacion (usuarios y keyfile) sobre una base existente (H-25).
+
+    Para la base que corre sin auth y con datos: crea los usuarios, genera el keyfile y
+    reinicia con autenticacion, sin tocar los volumenes. Cuenta los documentos antes y
+    despues. Vuelta atras: docs/05-infraestructura.md. Idempotente: si ya esta
+    asegurada, no hace nada.
+    """
+    asegurar_secretos(args.dry_run)
+    if not args.dry_run and entra("centinela_admin"):
+        print("La base ya exige autenticacion y centinela_admin entra. Nada que hacer.")
+        print("Para rotar contrasenas: cambiarlas en .env y correr `arriba` otra vez.")
+        return
+    _asegurar(args)
 
 
 def tarea_estado(args: argparse.Namespace) -> None:
-    """Un primario y dos secundarios es lo que se espera ver."""
+    """Un primario y dos secundarios es lo que se espera ver.
+
+    Usa `hello`, que no pide privilegios: ningun usuario de Centinela es de clusterMonitor
+    (rs.status() quedaria prohibido con la autenticacion encendida).
+    """
     correr(
         mongosh(
             "--eval",
-            "rs.status().members.map(m => m.name + ' -> ' + m.stateStr).join('\\n')",
+            "const h = db.hello(); h.hosts.map(m => m + ' -> ' + "
+            "(m === h.primary ? 'PRIMARY' : 'SECONDARY')).join('\\n')",
         ),
         dry_run=args.dry_run,
         permitir_fallo=True,
@@ -315,7 +618,7 @@ def tarea_dev(args: argparse.Namespace) -> None:
         f"  documentacion: http://{ajustes.servidor.host}:{ajustes.servidor.puerto}/docs\n"
         f"  salud:         http://{ajustes.servidor.host}:{ajustes.servidor.puerto}/salud\n"
     )
-    correr(orden, dry_run=args.dry_run)
+    correr(orden, dry_run=args.dry_run, env=entorno_app())
 
 
 def tarea_datos_demo(args: argparse.Namespace) -> None:
@@ -349,10 +652,14 @@ def tarea_datos_demo(args: argparse.Namespace) -> None:
     else:
         for ruta in presentes:
             print(f"Sembrando {ruta.name}...")
-            correr(mongosh("--file", str(ruta)), dry_run=args.dry_run)
+            correr(mongosh("--file", str(ruta), usuario="centinela_admin"), dry_run=args.dry_run)
 
     print("Cargando los documentos de dominio del demo...")
-    correr(uv("run", "python", "-m", "pruebas.dobles.datos_demo"), dry_run=args.dry_run)
+    correr(
+        uv("run", "python", "-m", "pruebas.dobles.datos_demo"),
+        dry_run=args.dry_run,
+        env=entorno_app(),
+    )
 
 
 def tarea_migrar(args: argparse.Namespace) -> None:
@@ -369,7 +676,7 @@ def tarea_migrar(args: argparse.Namespace) -> None:
         raise Fallo(f"no hay migraciones en {DIRECTORIO_MIGRACIONES}")
     for ruta in scripts:
         print(f"Migrando con {ruta.name}...", flush=True)
-        correr(mongosh("--file", str(ruta)), dry_run=args.dry_run)
+        correr(mongosh("--file", str(ruta), usuario="centinela_admin"), dry_run=args.dry_run)
 
 
 def tarea_validadores(args: argparse.Namespace) -> None:
@@ -387,6 +694,7 @@ def tarea_validadores(args: argparse.Namespace) -> None:
             f"var RUTA_COLECCIONES={json.dumps(str(directorio / '01-colecciones.js'))}",
             "--file",
             str(directorio / "actualizar-validadores.js"),
+            usuario="centinela_admin",
         ),
         dry_run=args.dry_run,
     )
@@ -398,7 +706,11 @@ def tarea_generar(args: argparse.Namespace) -> None:
     Ejemplo: python tareas.py generar --clientes 50 --transacciones 5000 --semilla 7
     (todas las banderas con `python tareas.py generar --help`).
     """
-    correr(uv("run", "python", "-m", "app.generador", *args.argumentos), dry_run=args.dry_run)
+    correr(
+        uv("run", "python", "-m", "app.generador", *args.argumentos),
+        dry_run=args.dry_run,
+        env=entorno_app(),
+    )
 
 
 def tarea_indicadores(args: argparse.Namespace) -> None:
@@ -409,6 +721,19 @@ def tarea_indicadores(args: argparse.Namespace) -> None:
     correr(
         uv("run", "python", "-m", "app.deteccion.indicadores", *args.argumentos),
         dry_run=args.dry_run,
+        env=entorno_app(),
+    )
+
+
+def tarea_usuarios(args: argparse.Namespace) -> None:
+    """Administra los usuarios de la app (T-41); las banderas pasan tal cual.
+
+    Ejemplo: python tareas.py usuarios --help
+    """
+    correr(
+        uv("run", "python", "-m", "app.seguridad.usuarios", *args.argumentos),
+        dry_run=args.dry_run,
+        env=entorno_app(),
     )
 
 
@@ -425,7 +750,9 @@ def tarea_pruebas(args: argparse.Namespace) -> None:
     else:
         orden.append("-q")
 
-    correr(orden, dry_run=args.dry_run)
+    # Las pruebas escriben en bases propias (antifraude_pruebas*): con auth, entran con
+    # centinela_pruebas, que solo administra esas bases y no toca antifraude.
+    correr(orden, dry_run=args.dry_run, env=entorno_app(usuario="centinela_pruebas"))
 
 
 def tarea_verificar(args: argparse.Namespace) -> None:
@@ -436,6 +763,7 @@ def tarea_verificar(args: argparse.Namespace) -> None:
 
 TAREAS = {
     "arriba": tarea_arriba,
+    "asegurar": tarea_asegurar,
     "abajo": tarea_abajo,
     "estado": tarea_estado,
     "instalar": tarea_instalar,
@@ -445,6 +773,7 @@ TAREAS = {
     "validadores": tarea_validadores,
     "generar": tarea_generar,
     "indicadores": tarea_indicadores,
+    "usuarios": tarea_usuarios,
     "pruebas": tarea_pruebas,
     "verificar": tarea_verificar,
 }
@@ -509,7 +838,7 @@ def main(argumentos: list[str] | None = None) -> int:
     # Todo lo que sigue a `generar` es del generador (incluidas sus banderas y --help):
     # argparse no sabe repartir banderas desconocidas a un subcomando, asi que se corta aca.
     pasadas: list[str] = []
-    for pasante in ("generar", "indicadores"):
+    for pasante in ("generar", "indicadores", "usuarios"):
         if pasante not in argumentos:
             continue
         corte = argumentos.index(pasante) + 1
@@ -530,6 +859,7 @@ def main(argumentos: list[str] | None = None) -> int:
         if not hasattr(args, bandera):
             setattr(args, bandera, valor)
 
+    cargar_entorno()
     try:
         args.funcion(args)
     except Fallo as fallo:
