@@ -1042,3 +1042,37 @@ pudo verificar en un runner de GitHub desde aqui. Una prueba que a veces falla s
 cuesta mas confianza que la que da. `pytest` a secas, `-m mongo` y `-m "not mongo"` la
 deseleccionan (no la saltan, para no contar como omitida en la compuerta de integracion):
 solo corre si se pide por nombre.
+
+## Pruebas extremo a extremo con navegador (T-58, D-51)
+
+`pruebas/e2e/` maneja un Chromium real (pytest-playwright) contra un `uvicorn` real que lee
+de la base `antifraude_pruebas_e2e`. Cada recorrido es el de una persona: entrar, ver llegar
+una alerta sola por SSE, tomarla y confirmarla, mirar la red de mulas y comprobar que el
+rol manda. Los selectores son por rol y etiqueta accesible (o un `data-*`), no por texto de
+presentacion, para que sobrevivan a cambios de formato de montos, fechas y tildes.
+
+Como correrlas:
+
+```
+uv run playwright install chromium      # una vez por maquina (en Linux, con --with-deps)
+python tareas.py e2e                    # o: pytest -m e2e -rs
+```
+
+Necesitan el replica set arriba y `mongosh` en el PATH. Corren solo con `-m e2e`: el
+resto de las compuertas las deseleccionan (igual que `resiliencia`), asi que nunca
+aparecen como saltadas. Con `CENTINELA_EXIGIR_MONGO=1` (lo pone `tareas.py e2e` y el CI) la
+falta de Mongo es una falla, no un salto. Siembra, servidor y base se crean y se borran
+solos; la base de trabajo `antifraude` no se toca.
+
+Leer una traza: cuando una prueba falla, `pruebas/e2e/trazas/` (ignorada por git) guarda un
+`.zip` con capturas, el DOM de cada paso, la red y la consola. En el CI se sube como
+artefacto `trazas-e2e`; se descarga y se abre con:
+
+```
+uv run playwright show-trace pruebas/e2e/trazas/<prueba>.zip
+```
+
+El visor muestra la linea de tiempo de acciones; al pulsar una se ve la pagina tal como
+estaba (antes y despues), con la accion que fallo marcada, y las pestanas Red y Consola
+dicen si el servidor respondio mal o el navegador lanzo un error. Si el servidor no llega a
+arrancar, el registro del `uvicorn` se imprime en el reporte de pytest.

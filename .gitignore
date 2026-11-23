@@ -42,3 +42,6 @@ docs/Arquitectura de Centinela.html
 # versiona: es el unico lugar donde el equipo los puede leer.
 .claude/
 CLAUDE.md
+
+# Trazas de Playwright de las pruebas e2e (solo se guardan cuando una falla)
+pruebas/e2e/trazas/
