@@ -23,7 +23,7 @@ import pytest
 from app.deteccion.d1 import NOMBRE_D1, alerta_id_para, d1, espera_progresiva
 from app.modelos import EstadoAlerta, Severidad
 from app.nucleo.config import AjustesDeteccion
-from app.repos.deteccion import EventoTransaccion, ProtocoloRepoDeteccion
+from app.repos.deteccion import EventoTransaccion, ProtocoloRepoDeteccion, RezagoMedido
 from app.supervision import InformeTarea, Supervisor
 from pruebas.dobles.datos_demo import TRANSACCIONES
 from pruebas.dobles.repo_deteccion_falso import RepoDeteccionFalso, token
@@ -303,3 +303,54 @@ async def prueba_con_reglas_la_advertencia_se_limpia() -> None:
 
     assert fila.estado == EstadoTarea.CORRIENDO
     assert fila.advertencia is None
+
+
+# ---------------------------------------------------------------------------
+# Rezago (T-57)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def prueba_d1_publica_el_rezago_medido_con_su_antiguedad() -> None:
+    repo = RepoDeteccionFalso([_evento(1, "TXN-001")])
+    repo.rezago = RezagoMedido(pendientes=1200, mas_vieja=datetime(2026, 9, 25, 4, 45, 5, tzinfo=UTC))
+
+    informe = await _correr(repo)
+
+    assert informe.rezago is not None
+    assert informe.rezago.pendientes == 1200
+    assert informe.rezago.antiguedad_segundos == 120.0
+    assert informe.rezago.medido_en == AHORA
+
+
+@pytest.mark.asyncio
+async def prueba_sin_pendientes_no_hay_antiguedad() -> None:
+    repo = RepoDeteccionFalso([_evento(1, "TXN-001")])
+
+    informe = await _correr(repo)
+
+    assert informe.rezago is not None
+    assert informe.rezago.pendientes == 0
+    assert informe.rezago.antiguedad_segundos is None
+
+
+@pytest.mark.asyncio
+async def prueba_la_medicion_se_espacia_por_el_intervalo_configurado() -> None:
+    """Cuatro eventos seguidos, un solo intervalo de 2 s: se mide una vez, no cuatro."""
+    repo = RepoDeteccionFalso([_evento(n, "TXN-002") for n in range(1, 5)])
+
+    await _correr(repo)
+
+    assert repo.mediciones_rezago == 1
+
+
+@pytest.mark.asyncio
+async def prueba_una_medicion_que_falla_no_detiene_la_deteccion() -> None:
+    repo = RepoDeteccionFalso([_evento(1, "TXN-001"), _evento(2, "TXN-002")])
+    repo.fallar_rezago = True
+
+    informe = await _correr(repo)
+
+    assert repo.bitacora == ["alerta:TXN-001", "token:TXN-001", "token:TXN-002"]
+    assert informe.rezago is None
+    assert informe.ultimo_error is None

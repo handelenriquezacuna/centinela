@@ -33,6 +33,7 @@ from enum import StrEnum
 from typing import Any
 
 from app.supervision.latencia import ResumenLatencia, VentanaLatencia
+from app.supervision.rezago import ResumenRezago, ritmo
 
 registro_log = logging.getLogger("centinela.supervision")
 
@@ -100,6 +101,13 @@ class _Pulso:
     ultimo_evento_monotono: float | None = None
     # Solo las tareas que miden latencia (D1) la tienen; el resto queda en None.
     latencia: VentanaLatencia | None = None
+    # Solo D1: ultima medicion de transacciones sin evaluar (T-57).
+    rezago: ResumenRezago | None = None
+    # Solo D1: transacciones evaluadas (sin contar las vueltas vacias del cursor, que
+    # `eventos_procesados` si cuenta) y la referencia (evaluadas, reloj monotono) de la
+    # medicion de rezago anterior, para el ritmo.
+    evaluadas: int = 0
+    rezago_referencia: tuple[int, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -115,6 +123,7 @@ class InformeTarea:
     historia: str | None
     advertencia: str | None = None
     latencia: ResumenLatencia | None = None
+    rezago: ResumenRezago | None = None
 
 
 @dataclass(frozen=True)
@@ -200,6 +209,12 @@ class Supervisor:
         if pulso is not None and pulso.latencia is None:
             pulso.latencia = VentanaLatencia()
 
+    def contar_evaluada(self, nombre: str) -> None:
+        """Una transaccion evaluada por D1; de aqui sale el ritmo del rezago (D-52)."""
+        pulso = self._pulsos.get(nombre)
+        if pulso is not None:
+            pulso.evaluadas += 1
+
     def registrar_latencia(self, nombre: str, milisegundos: float) -> None:
         """Una medicion de latencia de la tarea (H-09). Crea la ventana al primer uso.
 
@@ -212,6 +227,38 @@ class Supervisor:
         if pulso.latencia is None:
             pulso.latencia = VentanaLatencia()
         pulso.latencia.registrar(milisegundos)
+
+    def registrar_rezago(
+        self,
+        nombre: str,
+        pendientes: int,
+        antiguedad_segundos: float | None,
+        medido_en: datetime,
+        *,
+        monotono: float | None = None,
+    ) -> None:
+        """Ultima medicion del rezago de la tarea (T-57). Reemplaza a la anterior.
+
+        El ritmo sale de cuantas transacciones evaluo la tarea desde la medicion anterior.
+        `monotono` es para las pruebas; por omision, `time.monotonic()`.
+        """
+        pulso = self._pulsos.get(nombre)
+        if pulso is None:  # pragma: no cover - solo si alguien mide antes de lanzar
+            return
+        ahora = time.monotonic() if monotono is None else monotono
+        anterior = pulso.rezago_referencia
+        medido_ritmo = (
+            ritmo(anterior[0], anterior[1], pulso.evaluadas, ahora)
+            if anterior is not None
+            else None
+        )
+        pulso.rezago_referencia = (pulso.evaluadas, ahora)
+        pulso.rezago = ResumenRezago(
+            pendientes=pendientes,
+            antiguedad_segundos=antiguedad_segundos,
+            medido_en=medido_en,
+            ritmo_por_segundo=medido_ritmo,
+        )
 
     def anotar_error(self, nombre: str, fallo: BaseException) -> None:
         """Deja el ultimo error de una tarea sin matarla.
@@ -292,6 +339,7 @@ class Supervisor:
             historia=pulso.historia,
             advertencia=pulso.advertencia,
             latencia=pulso.latencia.resumen() if pulso.latencia is not None else None,
+            rezago=pulso.rezago,
         )
 
     def _estado_de(self, pulso: _Pulso, transcurrido: float) -> EstadoTarea:

@@ -47,6 +47,7 @@ const BASES_PRUEBAS = [
   "antifraude_pruebas",
   "antifraude_pruebas_busqueda",
   "antifraude_pruebas_busqueda_volumen",
+  "antifraude_pruebas_carga",
   "antifraude_pruebas_d1",
   "antifraude_pruebas_detalle",
   "antifraude_pruebas_e2e",
@@ -58,6 +59,7 @@ const BASES_PRUEBAS = [
   "antifraude_pruebas_migracion_002",
   "antifraude_pruebas_red_mulas",
   "antifraude_pruebas_listas_riesgo",
+  "antifraude_pruebas_rezago_volumen",
   "antifraude_pruebas_semilla",
   "antifraude_pruebas_validadores",
   BASE_TEMPORAL_VALIDADORES, // tambien la usan las pruebas de `tareas.py validadores`

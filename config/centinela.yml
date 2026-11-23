@@ -70,6 +70,11 @@ deteccion:
   reintentos: 3
   espera_inicial_segundos: 0.5
   espera_maxima_segundos: 10
+  # Rezago de D1 (T-57): transacciones insertadas que D1 todavia no evaluo. Cada
+  # cuantos segundos se mide, y desde cuantas el panel muestra "Deteccion atrasada".
+  # Es operacion, no una regla de negocio: no decide que es fraude.
+  rezago_intervalo_segundos: 2
+  rezago_aviso_desde: 500
 
 # Disparador D3 (H-22): recalcula los indicadores del dia actual en indicadores_diarios.
 indicadores:

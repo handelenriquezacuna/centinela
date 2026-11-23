@@ -95,6 +95,7 @@ async def prueba_cada_tarea_publica_evento_retraso_y_error(
         "historia",
         "advertencia",
         "latencia_ms",
+        "rezago",
     }
     assert fila["estado"] == "corriendo"
     assert fila["eventos_procesados"] == 1

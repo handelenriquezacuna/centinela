@@ -104,6 +104,27 @@ def _hora_de_insercion(cambio: Mapping[str, Any]) -> datetime | None:
     return None
 
 
+def filtro_pendientes(ultima_transaccion_id: str) -> dict[str, Any]:
+    """Transacciones posteriores a la ultima que D1 termino: `_id` mayor.
+
+    Los identificadores `TXN-NNNNNN` se asignan en orden cronologico y de insercion (el
+    generador y el contrato de ids), de modo que el orden por `_id` es el orden en que
+    D1 las recibe. El indice por `_id` ya existe: contar es recorrer claves, sin leer un
+    solo documento (`totalDocsExamined` 0), y la mas vieja es leer una (`nReturned` 1,
+    `totalDocsExamined` 1). El orden lexicografico es el numerico mientras el numero
+    tenga el mismo ancho (seis digitos del contrato).
+    """
+    return {"_id": {"$gt": ultima_transaccion_id}}
+
+
+@dataclass(frozen=True)
+class RezagoMedido:
+    """Transacciones sin evaluar y `fecha` (UTC) de la mas vieja; `None` sin pendientes."""
+
+    pendientes: int
+    mas_vieja: datetime | None
+
+
 class FlujoInvalidado(TokenDeReanudacionInvalido):
     """El change stream recibio `invalidate`: se borro o renombro `transacciones`.
 
@@ -161,6 +182,8 @@ class ProtocoloRepoDeteccion(Protocol):
     async def insertar_alerta(self, alerta: Alerta) -> bool: ...
 
     async def leer_token(self, disparador: str) -> Mapping[str, Any] | None: ...
+
+    async def medir_rezago(self, disparador: str) -> RezagoMedido: ...
 
     async def guardar_token(
         self,
@@ -424,6 +447,31 @@ class RepoDeteccion:
     async def leer_token(self, disparador: str) -> Mapping[str, Any] | None:
         documento = await self._estado.find_one({"_id": disparador, "clase": "reanudacion"})
         return documento["token_reanudacion"] if documento is not None else None
+
+    async def medir_rezago(self, disparador: str) -> RezagoMedido:
+        """Cuantas transacciones hay sin evaluar y desde cuando (T-57).
+
+        Sin `ultima_transaccion_id` en el estado (D1 nunca proceso una) no hay punto de
+        referencia y se informa 0: D1 arranca "desde ahora" y no evalua lo anterior.
+        Dos consultas por indice de `_id`, ver `filtro_pendientes`.
+        """
+        estado = await self._estado.find_one(
+            {"_id": disparador, "clase": "reanudacion"}, {"ultima_transaccion_id": 1}
+        )
+        ultima = estado.get("ultima_transaccion_id") if estado is not None else None
+        if ultima is None:
+            return RezagoMedido(pendientes=0, mas_vieja=None)
+        filtro = filtro_pendientes(ultima)
+        pendientes = await self._transacciones.count_documents(filtro)
+        if pendientes == 0:
+            return RezagoMedido(pendientes=0, mas_vieja=None)
+        primera = await self._transacciones.find_one(
+            filtro, {"fecha": 1}, sort=[("_id", 1)]
+        )
+        fecha = primera["fecha"] if primera is not None else None
+        if isinstance(fecha, datetime):
+            fecha = fecha.replace(tzinfo=UTC) if fecha.tzinfo is None else fecha.astimezone(UTC)
+        return RezagoMedido(pendientes=pendientes, mas_vieja=fecha)
 
     async def guardar_token(
         self,

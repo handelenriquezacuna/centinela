@@ -65,3 +65,19 @@ def prueba_sin_variable_se_usa_el_yaml(tareas, monkeypatch):
     monkeypatch.setattr(tareas, "_salida", lambda *_a, **_k: yaml)
     assert tareas.uri_base() == yaml
     assert "localhost:27018" in tareas.uri_directa()
+
+
+def prueba_cargar_respeta_la_variable_y_pasa_el_archivo(tareas, monkeypatch):
+    """T-57: `cargar` corre con `entorno_app()`, asi que el proceso hijo ve la URI exportada."""
+    monkeypatch.setenv(tareas.VARIABLE_URI, NODO_PRUEBA)
+    llamadas = []
+    monkeypatch.setattr(
+        tareas, "correr", lambda orden, **k: llamadas.append((orden, k.get("env")))
+    )
+
+    codigo = tareas.main(["cargar", "--archivo", "x.jsonl"])
+
+    assert codigo == 0
+    (orden, entorno), = llamadas
+    assert orden[-5:] == ["python", "-m", "app.carga", "--archivo", "x.jsonl"]
+    assert entorno[tareas.VARIABLE_URI] == NODO_PRUEBA

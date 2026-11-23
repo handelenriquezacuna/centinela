@@ -31,6 +31,11 @@ El contrato, y por que cada pieza:
   las alertas nuevas: un reproceso o una transaccion sin alerta no tienen una escritura
   que medir. Los dos relojes son el del servidor de Mongo y el de este proceso; en
   produccion se asume sincronizados (NTP) y un desfase negativo se registra como 0.
+- **Rezago medido** (T-57). Cada `rezago_intervalo_segundos`, y despues de guardar el
+  token, D1 pregunta cuantas transacciones hay posteriores a la ultima que termino y la
+  antiguedad de la mas vieja (consulta por indice de `_id`, en `app/repos/`). `/estado`
+  lo publica y el panel avisa si pasa el umbral. Es la unica forma de ver que D1, que
+  evalua de a una, se esta quedando atras ante una carga por lotes.
 - **Latido por vuelta**, con o sin evento. `/estado` mide el retraso desde el ultimo
   latido: un D1 sano sin trafico late cada `espera_cursor_ms`; uno atascado deja de
   latir y pasa a `retrasada`.
@@ -47,6 +52,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable, Mapping
 from contextlib import aclosing
 from dataclasses import dataclass
@@ -341,6 +347,44 @@ class _Vigilancia:
     """Fallos seguidos de apertura: la base de la espera progresiva al reabrir."""
 
     fallos_seguidos: int = 0
+    # Reloj monotono de la ultima medicion de rezago; `None` = todavia no se midio.
+    rezago_medido_en: float | None = None
+
+
+async def _medir_rezago(
+    repo: ProtocoloRepoDeteccion,
+    supervisor: Supervisor,
+    *,
+    nombre: str,
+    ajustes: AjustesDeteccion,
+    reloj: Reloj,
+    vigilancia: _Vigilancia,
+) -> None:
+    """Mide el rezago (T-57) como mucho cada `rezago_intervalo_segundos`.
+
+    Se llama despues de guardar el token, asi que la cifra incluye todo lo ya
+    terminado. Una falla de la medicion no es una falla de D1: se registra y se sigue,
+    la cifra anterior queda con su `medido_en` viejo.
+    """
+    ahora_monotono = time.monotonic()
+    anterior = vigilancia.rezago_medido_en
+    if anterior is not None and ahora_monotono - anterior < ajustes.rezago_intervalo_segundos:
+        return
+    vigilancia.rezago_medido_en = ahora_monotono
+    try:
+        medido = await repo.medir_rezago(nombre)
+    except asyncio.CancelledError:
+        raise
+    except Exception as fallo:  # noqa: BLE001 - medir no puede detener la deteccion
+        registro_log.warning("%s: no se pudo medir el rezago (%s)", nombre, fallo)
+        return
+    ahora = reloj()
+    antiguedad = (
+        max(0.0, round((ahora - medido.mas_vieja).total_seconds(), 1))
+        if medido.mas_vieja is not None
+        else None
+    )
+    supervisor.registrar_rezago(nombre, medido.pendientes, antiguedad, ahora)
 
 
 async def _consumir(
@@ -378,6 +422,7 @@ async def _consumir(
                         supervisor.registrar_latencia(nombre, medida)
                 await repo.guardar_token(nombre, vuelta.token, transaccion_id=transaccion_id)
                 hay_token_guardado = True
+                supervisor.contar_evaluada(nombre)
                 registro_log.debug("%s: %s", transaccion_id, resultado or "descartada")
             elif not hay_token_guardado and vuelta.token is not None:
                 # Arranque sin token: se guarda el de la primera vuelta vacia, para que
@@ -388,6 +433,14 @@ async def _consumir(
                 hay_token_guardado = True
             vigilancia.fallos_seguidos = 0
             supervisor.latir(nombre)
+            await _medir_rezago(
+                repo,
+                supervisor,
+                nombre=nombre,
+                ajustes=ajustes,
+                reloj=reloj,
+                vigilancia=vigilancia,
+            )
 
 
 async def d1(

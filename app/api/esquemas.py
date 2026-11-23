@@ -147,6 +147,35 @@ class LatenciaMs(BaseModel):
     max: float | None = None
 
 
+class RezagoTarea(BaseModel):
+    """Trabajo que a la tarea le falta por hacer (T-57), para D1: transacciones sin evaluar.
+
+    `antiguedad_segundos` se mide contra `fecha` (hora del NEGOCIO) de la transaccion mas
+    vieja sin evaluar, no contra la hora de insercion; es nulo si no hay pendientes. Lo
+    que sirve para operar es `segundos_para_ponerse_al_dia`, que sale del ritmo medido
+    de D1 (D-52). `medido_en` dice cuando se tomo la cifra: si deja de renovarse, D1
+    esta atascado y `estado` lo dira.
+    """
+
+    pendientes: int = Field(ge=0, description="Transacciones insertadas y todavia sin evaluar")
+    antiguedad_segundos: float | None = Field(
+        default=None,
+        description=(
+            "Antiguedad de la mas vieja sin evaluar segun su fecha de negocio; "
+            "nulo sin pendientes"
+        ),
+    )
+    ritmo_por_segundo: float | None = Field(
+        default=None,
+        description="Transacciones evaluadas por segundo desde la medicion anterior",
+    )
+    segundos_para_ponerse_al_dia: float | None = Field(
+        default=None,
+        description="Estimado a ritmo constante; nulo sin ritmo medido o si D1 no avanza",
+    )
+    medido_en: datetime = Field(description="Cuando se tomo la medicion, en UTC")
+
+
 class TareaSupervisada(BaseModel):
     """Una tarea de fondo tal como la publica `/estado`.
 
@@ -183,6 +212,13 @@ class TareaSupervisada(BaseModel):
     latencia_ms: LatenciaMs | None = Field(
         default=None,
         description="Solo D1: latencia de deteccion medida (H-09); nulo en las demas tareas",
+    )
+    rezago: RezagoTarea | None = Field(
+        default=None,
+        description=(
+            "Solo D1: transacciones sin evaluar y antiguedad de la mas vieja (T-57); "
+            "nulo en las demas tareas y antes de la primera medicion"
+        ),
     )
 
 
@@ -246,6 +282,17 @@ class EstadoFuncional(BaseModel):
             ),
             historia=fila.historia,
             advertencia=fila.advertencia,
+            rezago=(
+                RezagoTarea(
+                    pendientes=fila.rezago.pendientes,
+                    antiguedad_segundos=fila.rezago.antiguedad_segundos,
+                    ritmo_por_segundo=fila.rezago.ritmo_por_segundo,
+                    segundos_para_ponerse_al_dia=fila.rezago.segundos_para_ponerse_al_dia,
+                    medido_en=fila.rezago.medido_en,
+                )
+                if fila.rezago is not None
+                else None
+            ),
             latencia_ms=(
                 LatenciaMs(
                     n=fila.latencia.n,
