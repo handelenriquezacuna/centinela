@@ -8,27 +8,38 @@
   transferencia y los minutos entre eslabones, y las propuestas para `listas_riesgo`.
   Supervisor y administrador ven ademas un boton por propuesta (la agrega a la lista,
   T-51) y las entradas ya vigentes de la red con "Dar de baja" (D-41).
+- El Sankey del recorrido (T-55) sale de `app/api/sankey.py`. `GET /red-mulas/{cuenta}/sankey`
+  es el fragmento que usa el detalle de la alerta; `POST /red-mulas/{cuenta}/mulas/{objetivo}`
+  marca una cuenta del recorrido como mula (motivo obligatorio) y devuelve el Sankey de nuevo.
 """
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Annotated, Any
+from urllib.parse import parse_qs, urlencode
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import ValidationError
 
-from app.api.dependencias import RepoRedMulasPortalDep, RepoTableroDep
+from app.api.dependencias import RepoDetalleDep, RepoRedMulasPortalDep, RepoTableroDep
 from app.api.errores import ErrorCentinela
 from app.api.rutas.inteligencia import CuentaRuta
 from app.api.rutas.listas_riesgo import (
+    MOTIVO_MAX,
+    MOTIVO_MIN,
     CuentaSinpeRuta,
+    MarcaMula,
     RepoListasRiesgoDep,
     RiesgoIdRuta,
     aprobar_propuesta,
     dar_de_baja,
+    marcar_mula,
 )
 from app.api.rutas.paginas import ENTORNO, NAVEGACION
+from app.api.sankey import Victima, disponer_sankey
 from app.api.sesion import SesionDep, permite_ruta
 from app.modelos.base import asumir_utc
 from app.repos.red_mulas import (
@@ -36,6 +47,7 @@ from app.repos.red_mulas import (
     VENTANA_MINUTOS,
     CuentaNoEncontrada,
     RedMulas,
+    RepoRedMulas,
 )
 from app.repos.tablero import DIAS_MAXIMOS
 
@@ -263,11 +275,103 @@ async def red_mulas_grafo(
         "red_mulas",
         red=red,
         grafo=disponer_grafo(red) if red.aristas else None,
-        cuenta=cuenta,
         error=None,
-        puede_gestionar=puede,
         entradas_lista=entradas,
+        **_contexto_sankey(red, cuenta),
     )
+
+
+ID_TRANSACCION = re.compile(r"^TXN-\d{3,}$")
+
+
+async def _victima_de(
+    repo: RepoDetalleDep, transaccion_id: str | None
+) -> Victima | None:
+    """La victima de la transaccion de partida, si hay una y existe (D-54)."""
+    if not transaccion_id or not ID_TRANSACCION.match(transaccion_id):
+        return None
+    contexto = await repo.contexto(transaccion_id)
+    transaccion, cliente = contexto["transaccion"], contexto["cliente"]
+    if transaccion is None or cliente is None:
+        return None
+    return Victima(
+        nombre=cliente["nombre"],
+        cuenta=transaccion.get("sinpe_origen") or transaccion["cuenta_origen"],
+        transaccion_id=transaccion["_id"],
+        monto_crc=int(transaccion["monto_crc"]),
+        fecha=transaccion["fecha"],
+    )
+
+
+def _contexto_sankey(
+    red: RedMulas,
+    cuenta: str,
+    victima: Victima | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    """Lo que necesita `paginas/sankey.html`. `consulta` repite los parametros de la red
+    en los formularios, para que al marcar se vuelva a dibujar la misma red."""
+    consulta = {"ventana_minutos": red.ventana_minutos, "saltos": red.saltos_maximos}
+    if red.desde is not None:
+        consulta["desde"] = red.desde.isoformat()
+    if victima is not None:
+        consulta["transaccion"] = victima.transaccion_id
+    return {
+        "sankey": disponer_sankey(red, victima),
+        "consulta": urlencode(consulta),
+        "puede_gestionar": _puede_gestionar(cuenta),
+        "cuenta": cuenta,
+        "mensaje": None,
+        "es_error": False,
+        "cuenta_mensaje": None,
+        "motivo_previo": "",
+        **extra,
+    }
+
+
+async def _red(
+    repo: RepoRedMulas,
+    cuenta: str,
+    desde: datetime | None,
+    ventana_minutos: int,
+    saltos: int,
+) -> RedMulas:
+    return await repo.recorrer(
+        cuenta,
+        desde=asumir_utc(desde) if desde is not None else None,
+        ventana_minutos=ventana_minutos,
+        saltos=saltos,
+    )
+
+
+def _sin_recorrido(mensaje: str, estado: int) -> HTMLResponse:
+    return HTMLResponse(
+        f'<div id="sankey"><p class="nota-tecnica" id="sankey-vacio">{mensaje}</p></div>',
+        status_code=estado,
+    )
+
+
+@enrutador.get("/red-mulas/{cuenta}/sankey", response_class=HTMLResponse)
+async def red_mulas_sankey(
+    cuenta: CuentaRuta,
+    repo: RepoRedMulasPortalDep,
+    repo_detalle: RepoDetalleDep,
+    desde: Annotated[datetime | None, Query(description="Instante de partida (UTC)")] = None,
+    ventana_minutos: Annotated[int, Query(ge=1, le=1440)] = VENTANA_MINUTOS,
+    saltos: Annotated[int, Query(ge=1, le=SALTOS_MAXIMOS)] = SALTOS_MAXIMOS,
+    transaccion: Annotated[
+        str | None, Query(description="Transaccion de partida: su cliente es la victima")
+    ] = None,
+) -> HTMLResponse:
+    """El Sankey solo, como fragmento: el detalle de la alerta lo pide al cargar."""
+    try:
+        red = await _red(repo, cuenta, desde, ventana_minutos, saltos)
+    except CuentaNoEncontrada as fallo:
+        return _sin_recorrido(str(fallo), 404)
+    if not red.aristas:
+        return _sin_recorrido("Esta cuenta no tiene salidas registradas en la ventana.", 200)
+    victima = await _victima_de(repo_detalle, transaccion)
+    return _fragmento("paginas/sankey.html", **_contexto_sankey(red, cuenta, victima))
 
 
 def _fragmento(plantilla: str, estado: int = 200, **contexto: Any) -> HTMLResponse:
@@ -290,6 +394,65 @@ async def aprobar_desde_red(
     )
     return _fragmento(
         "paginas/propuesta_item.html", cuenta=cuenta, sinpe=propuesta, mensaje=mensaje, es_error=False
+    )
+
+
+@enrutador.post("/red-mulas/{cuenta}/mulas/{objetivo}", response_class=HTMLResponse)
+async def marcar_desde_sankey(
+    cuenta: CuentaRuta,
+    objetivo: CuentaSinpeRuta,
+    peticion: Request,
+    repo_red: RepoRedMulasPortalDep,
+    repo_detalle: RepoDetalleDep,
+    repo: RepoListasRiesgoDep,
+    sesion: SesionDep,
+    desde: Annotated[datetime | None, Query(description="Instante de partida (UTC)")] = None,
+    ventana_minutos: Annotated[int, Query(ge=1, le=1440)] = VENTANA_MINUTOS,
+    saltos: Annotated[int, Query(ge=1, le=SALTOS_MAXIMOS)] = SALTOS_MAXIMOS,
+    transaccion: Annotated[str | None, Query()] = None,
+) -> HTMLResponse:
+    """Marca `objetivo` como mula con la misma funcion que la API y dibuja el Sankey otra vez.
+
+    Sin motivo (o fuera de 5 a 200 caracteres) responde 422 con el Sankey y el aviso, sin
+    escribir. Quien marca sale de la sesion.
+    """
+    cuerpo = parse_qs((await peticion.body()).decode("utf-8"), keep_blank_values=True)
+    motivo = cuerpo.get("motivo", [""])[0]
+    mensaje: str
+    estado = 200
+    es_error = False
+    try:
+        marca = MarcaMula(cuenta=objetivo, motivo=motivo)
+        resultado = await marcar_mula(repo, marca, sesion)
+        mensaje = (
+            f"La cuenta {objetivo} quedó en lista de riesgo ({resultado.entrada.riesgo_id})."
+            if resultado.creada
+            else f"La cuenta {objetivo} ya estaba en lista de riesgo ({resultado.entrada.riesgo_id})."
+        )
+    except ValidationError:
+        estado, es_error = 422, True
+        mensaje = (
+            f"El motivo es obligatorio: entre {MOTIVO_MIN} y {MOTIVO_MAX} caracteres. "
+            f"No se marcó la cuenta {objetivo}."
+        )
+    try:
+        red = await _red(repo_red, cuenta, desde, ventana_minutos, saltos)
+    except CuentaNoEncontrada as fallo:
+        return _sin_recorrido(str(fallo), 404)
+    if not red.aristas:
+        return _sin_recorrido("Esta cuenta no tiene salidas registradas en la ventana.", estado)
+    return _fragmento(
+        "paginas/sankey.html",
+        estado=estado,
+        **_contexto_sankey(
+            red,
+            cuenta,
+            await _victima_de(repo_detalle, transaccion),
+            mensaje=mensaje,
+            es_error=es_error,
+            cuenta_mensaje=objetivo if es_error else None,
+            motivo_previo=motivo.strip() if es_error else "",
+        ),
     )
 
 

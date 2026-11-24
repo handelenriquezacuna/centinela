@@ -4,6 +4,9 @@
   `listas_riesgo` como vigente, con el motivo "red de mulas desde <cuenta>" y la fecha de
   ahora. Idempotente: si ya hay una entrada vigente de esa cuenta responde 200 con la que
   existe y no escribe; si la crea responde 201. Quien aprobo es la sesion.
+- `POST /listas-riesgo` (T-55): marca una cuenta como mula con un motivo OBLIGATORIO que
+  escribe quien la marca (5 a 200 caracteres). Misma idempotencia: 201 si la creo, 200 si
+  ya estaba vigente. Lo usa el boton "Marcar como mula" del Sankey.
 - `DELETE /listas-riesgo/{riesgo_id}`: baja real (D-41), 204. 404 si no existe.
 
 Las dos son solo para supervisor y administrador (tabla de `app/seguridad/permisos.py`).
@@ -15,6 +18,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Response, status
+from pydantic import ConfigDict, Field, StringConstraints
 
 from app.api.dependencias import BaseDep
 from app.api.errores import CodigoError, ErrorCentinela, respuestas_documentadas
@@ -41,6 +45,21 @@ RiesgoIdRuta = Annotated[
 ]
 
 
+MOTIVO_MIN, MOTIVO_MAX = 5, 200
+MotivoMarca = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=MOTIVO_MIN, max_length=MOTIVO_MAX)
+]
+
+
+class MarcaMula(ModeloCentinela):
+    """Marcar una cuenta como mula. Quien la marca sale de la sesion, no del cuerpo."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    cuenta: str = Field(pattern=r"^\d{4}-\d{4}$", description="Numero SINPE, 6033-9002")
+    motivo: MotivoMarca = Field(description="Por que se marca; queda en la lista y en la auditoria")
+
+
 class ResultadoAprobacion(ModeloCentinela):
     """La entrada vigente y si esta llamada la creo o ya estaba."""
 
@@ -54,6 +73,15 @@ async def aprobar_propuesta(
     resultado = await repo.aprobar(
         propuesta, cuenta_partida=cuenta_partida, agente_id=sesion.agente_id
     )
+    return ResultadoAprobacion(
+        creada=resultado.creada, entrada=EntradaListaRiesgo.model_validate(resultado.entrada)
+    )
+
+
+async def marcar_mula(
+    repo: RepoListasRiesgo, marca: MarcaMula, sesion: Sesion
+) -> ResultadoAprobacion:
+    resultado = await repo.marcar(marca.cuenta, motivo=marca.motivo, agente_id=sesion.agente_id)
     return ResultadoAprobacion(
         creada=resultado.creada, entrada=EntradaListaRiesgo.model_validate(resultado.entrada)
     )
@@ -88,6 +116,28 @@ async def aprobar(
     respuesta: Response,
 ) -> ResultadoAprobacion:
     resultado = await aprobar_propuesta(repo, cuenta, propuesta, sesion)
+    if not resultado.creada:
+        respuesta.status_code = status.HTTP_200_OK
+    return resultado
+
+
+@enrutador.post(
+    "/listas-riesgo",
+    response_model=ResultadoAprobacion,
+    status_code=status.HTTP_201_CREATED,
+    summary="Marca una cuenta como mula con un motivo y la agrega a listas_riesgo",
+    responses={
+        **respuestas_documentadas(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, status.HTTP_500_INTERNAL_SERVER_ERROR
+        ),
+        status.HTTP_200_OK: {"description": "Ya estaba vigente: no se escribio nada"},
+    },
+)
+async def marcar(
+    marca: MarcaMula, repo: RepoListasRiesgoDep, sesion: SesionDep, respuesta: Response
+) -> ResultadoAprobacion:
+    """El rastro (quien y por que) queda en el log `centinela.auditoria`."""
+    resultado = await marcar_mula(repo, marca, sesion)
     if not resultado.creada:
         respuesta.status_code = status.HTTP_200_OK
     return resultado

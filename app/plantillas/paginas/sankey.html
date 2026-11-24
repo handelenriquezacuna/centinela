@@ -1,0 +1,53 @@
+{# El Sankey del recorrido del dinero (T-55). La geometria viene calculada de app/api/sankey.py. #}
+<div id="sankey" class="sankey-contenedor" data-saltos="{{ sankey.saltos }}" data-transferencias="{{ sankey.transferencias }}">
+  {% if mensaje %}<div class="mensaje {{ 'mensaje-error' if es_error else 'mensaje-ok' }}" role="{{ 'alert' if es_error else 'status' }}" id="sankey-mensaje">{{ mensaje }}</div>{% endif %}
+  <div class="grafo-contenedor">
+    <svg class="grafico sankey" id="sankey-svg" width="{{ sankey.ancho }}" height="{{ sankey.alto }}" viewBox="0 0 {{ sankey.ancho }} {{ sankey.alto }}" role="img" aria-label="{{ sankey.resumen }}">
+      <defs>
+        <pattern id="patron-lista" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#fee2e2"></rect><line x1="0" y1="0" x2="0" y2="6" stroke="#b91c1c" stroke-width="3"></line></pattern>
+      </defs>
+      {% for b in sankey.bandas %}
+      <g class="sankey-banda-grupo">
+        <path class="sankey-banda" d="{{ b.d }}" data-salto="{{ b.salto }}" data-monto="{{ b.monto_crc }}" data-grosor="{{ b.grosor }}"><title>{{ b.monto_crc | colones }} de {{ b.origen }} a {{ b.destino }}, {{ b.fecha | hora_costa_rica }} (hora CR)</title></path>
+        <text class="sankey-monto" x="{{ b.tx }}" y="{{ b.ty }}">{{ b.monto_crc | colones }}</text>
+      </g>
+      {% endfor %}
+      {% for n in sankey.nodos %}
+      <g class="sankey-nodo{% if n.victima %} sankey-nodo-victima{% endif %}{% if n.en_lista %} sankey-nodo-lista{% endif %}{% if n.externa %} sankey-nodo-externa{% endif %}" data-cuenta="{{ n.cuenta }}" data-columna="{{ n.columna }}" data-en-lista="{{ 'si' if n.en_lista else 'no' }}"{% if n.victima %} data-victima="si"{% endif %}>
+        {% if n.victima %}<title>Víctima: {{ n.nombre }}</title>{% endif %}
+        <rect x="{{ n.x }}" y="{{ n.y }}" width="{{ n.ancho }}" height="{{ n.alto }}" rx="3"{% if n.en_lista %} fill="url(#patron-lista)"{% endif %}></rect>
+        {% if n.victima %}<text class="sankey-nombre" x="{{ n.x }}" y="{{ n.y - 36 }}">{{ n.nombre | truncate(28, True, '…') }}</text>{% endif %}
+        <text class="sankey-cuenta" x="{{ n.x }}" y="{{ n.y - 22 }}">{{ n.cuenta }}</text>
+        <text class="sankey-estado" x="{{ n.x }}" y="{{ n.y - 8 }}">
+          {% if n.victima %}Víctima{% elif n.en_lista %}<tspan aria-hidden="true">&#9888; </tspan>En lista de riesgo{% elif n.inicio %}Partida{% elif n.externa %}Cuenta externa{% else %}Sin marca{% endif %}
+        </text>
+      </g>
+      {% endfor %}
+    </svg>
+  </div>
+  <p class="nota-tecnica">El grosor de cada banda es proporcional a los colones que pasaron de una cuenta a la siguiente. La columna azul es la víctima. Las cuentas con trama diagonal y la etiqueta "En lista de riesgo" ya tienen una entrada vigente.</p>
+
+  <h3 class="seccion-titulo">Cuentas del recorrido</h3>
+  <ul class="sankey-cuentas" id="sankey-cuentas">
+    {% for c in sankey.cuentas %}
+    <li data-cuenta="{{ c.cuenta }}" data-en-lista="{{ 'si' if c.en_lista else 'no' }}"{% if c.victima %} data-victima="si"{% endif %}>
+      <span class="id-corto">{{ c.cuenta }}</span>
+      {% if c.victima %}
+      <span class="insignia">Víctima: {{ c.nombre }}</span>
+      {% elif c.en_lista %}
+      <span class="insignia es-critica">En lista de riesgo</span>
+      {% elif puede_gestionar %}
+      <form class="form-inline form-marca" method="post" action="/red-mulas/{{ cuenta }}/mulas/{{ c.cuenta }}?{{ consulta }}"
+            hx-post="/red-mulas/{{ cuenta }}/mulas/{{ c.cuenta }}?{{ consulta }}" hx-target="#sankey" hx-swap="outerHTML"
+            hx-confirm="Se marca la cuenta {{ c.cuenta }} como mula y las próximas transferencias hacia ella sumarán la regla R-07. Queda registro de quién lo hizo. ¿Continuar?">
+        <label class="visualmente-oculto" for="motivo-{{ c.cuenta }}">Motivo para marcar {{ c.cuenta }}</label>
+        <input id="motivo-{{ c.cuenta }}" name="motivo" type="text" required minlength="5" maxlength="200" placeholder="Motivo (obligatorio)"{% if cuenta_mensaje == c.cuenta and motivo_previo %} value="{{ motivo_previo }}"{% endif %}>
+        <button class="boton boton-primario" type="submit">Marcar como mula</button>
+      </form>
+      {% else %}
+      <span class="nota-tecnica">Sin marca</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</div>

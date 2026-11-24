@@ -57,6 +57,8 @@ documento en `listas_riesgo`.
 | `RSK-003` | `8455-1177` | Tercer salto |
 | `RSK-004` | `6001-3344` | Cuarto salto |
 
+Nota (D-55): la semilla del portal deja solo `RSK-001` vigente; `RSK-002` a `RSK-004` son las propuestas de la red que un supervisor marca desde el Sankey.
+
 ## TXN — transacciones (la de UC-02, más 2-3 normales de relleno)
 
 | _id | cuenta_origen | cuenta_destino | monto | hora |

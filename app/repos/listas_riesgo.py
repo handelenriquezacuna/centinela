@@ -14,6 +14,9 @@ las agrega aqui. La entrada sigue el validador de `01-colecciones.js`: `_id` `RS
   generador usan cuatro cifras (`RSK-0001`) y el generador las borra al regenerar: las de
   tres cifras no se tocan.
 
+Marcar (T-55): el mismo alta, pero con un motivo libre que escribe el supervisor desde el
+Sankey. Comparte `_alta` con aprobar: misma idempotencia, mismo `_id`, mismo rastro.
+
 Dar de baja (D-41): `delete_one` real, porque el enunciado exige eliminacion. El caso de
 negocio es una cuenta reportada por error. Antes de borrar se deja rastro en el log
 `centinela.auditoria` con el documento completo y quien lo borro. NO se crea una
@@ -86,8 +89,23 @@ class RepoListasRiesgo:
         self, cuenta: str, *, cuenta_partida: str, agente_id: str, ahora: datetime | None = None
     ) -> ResultadoAprobacion:
         """Agrega `cuenta` como vigente si no lo esta. Idempotente."""
+        return await self._alta(
+            cuenta, motivo_de_red(cuenta_partida), agente_id=agente_id, via="red", ahora=ahora
+        )
+
+    async def marcar(
+        self, cuenta: str, *, motivo: str, agente_id: str, ahora: datetime | None = None
+    ) -> ResultadoAprobacion:
+        """Marca `cuenta` como mula con un motivo libre (T-55). Misma idempotencia que `aprobar`.
+
+        Quien la marco y el motivo quedan en el log `centinela.auditoria` (`via=marca`).
+        """
+        return await self._alta(cuenta, motivo, agente_id=agente_id, via="marca", ahora=ahora)
+
+    async def _alta(
+        self, cuenta: str, motivo: str, *, agente_id: str, via: str, ahora: datetime | None
+    ) -> ResultadoAprobacion:
         ahora = ahora or datetime.now(UTC)
-        motivo = motivo_de_red(cuenta_partida)
         for _ in range(INTENTOS_ID):
             nuevo_id = await self._siguiente_id()
             documento = {
@@ -125,19 +143,20 @@ class RepoListasRiesgo:
                     {"$set": {"motivo": motivo, "fecha_reporte": ahora, "vigente": True}},
                 )
                 registro_auditoria.info(
-                    "lista_riesgo_reactivada id=%s cuenta=%s motivo=%r aprobo=%s",
-                    existente["_id"], cuenta, motivo, agente_id,
+                    "lista_riesgo_reactivada id=%s cuenta=%s motivo=%r aprobo=%s via=%s",
+                    existente["_id"], cuenta, motivo, agente_id, via,
                 )
                 return ResultadoAprobacion(reactivada, creada=True)
             if resultado.upserted_id is None:
                 existente = await self.vigente_de(cuenta)
                 return ResultadoAprobacion(existente or documento, creada=False)
             registro_auditoria.info(
-                "lista_riesgo_alta id=%s cuenta=%s motivo=%r aprobo=%s",
+                "lista_riesgo_alta id=%s cuenta=%s motivo=%r aprobo=%s via=%s",
                 nuevo_id,
                 cuenta,
                 motivo,
                 agente_id,
+                via,
             )
             return ResultadoAprobacion(documento, creada=True)
         raise RuntimeError("no se pudo asignar un identificador RSK libre")

@@ -67,15 +67,26 @@ def documentos_con_comparacion() -> list[dict[str, Any]]:
 
 
 class RepoRedMulasFalso:
-    def __init__(self, red: RedMulas | None = None) -> None:
+    """Si recibe `listas` (un `RepoListasRiesgoFalso`), la marca de lista de riesgo de cada
+    nodo sale de sus entradas vigentes: marcar una cuenta se ve en la red que sigue."""
+
+    def __init__(self, red: RedMulas | None = None, listas: Any = None) -> None:
         self.red = red
+        self.listas = listas
         self.pedidos: list[dict[str, Any]] = []
 
     async def recorrer(self, cuenta: str, **opciones: Any) -> RedMulas:
         self.pedidos.append({"cuenta": cuenta, **opciones})
         if self.red is None:
             raise CuentaNoEncontrada(f"la cuenta {cuenta} no existe")
-        return self.red
+        if self.listas is None:
+            return self.red
+        vigentes = {e["cuenta"] for e in self.listas.entradas if e["vigente"]}
+        nodos = [
+            nodo.model_copy(update={"en_lista_riesgo": nodo.cuenta in vigentes})
+            for nodo in self.red.nodos
+        ]
+        return self.red.model_copy(update={"nodos": nodos})
 
 
 def red_de_cuatro_saltos() -> RedMulas:
@@ -143,6 +154,24 @@ class RepoListasRiesgoFalso:
             "_id": f"RSK-{len(self.entradas) + 1:03d}",
             "cuenta": cuenta,
             "motivo": motivo_de_red(cuenta_partida),
+            "fecha_reporte": ahora or datetime.now(UTC),
+            "vigente": True,
+            "esquema_version": 1,
+            "aprobo": agente_id,
+        }
+        self.entradas.append(nueva)
+        return ResultadoAprobacion({k: v for k, v in nueva.items() if k != "aprobo"}, creada=True)
+
+    async def marcar(
+        self, cuenta: str, *, motivo: str, agente_id: str, ahora: datetime | None = None
+    ) -> ResultadoAprobacion:
+        for entrada in self.entradas:
+            if entrada["cuenta"] == cuenta and entrada["vigente"]:
+                return ResultadoAprobacion(entrada, creada=False)
+        nueva = {
+            "_id": f"RSK-{len(self.entradas) + 1:03d}",
+            "cuenta": cuenta,
+            "motivo": motivo,
             "fecha_reporte": ahora or datetime.now(UTC),
             "vigente": True,
             "esquema_version": 1,
