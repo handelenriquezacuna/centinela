@@ -144,3 +144,272 @@ export interface ElementoTransaccion {
   alerta_id: string | null;
   alerta_estado: EstadoAlerta | null;
 }
+
+/* ---------- Tablero (GET /api/v1/tablero, GET /api/v1/efectividad) ---------- */
+
+export interface VariacionConteo {
+  actual: number;
+  previo: number;
+  delta: number;
+  porcentaje: number | null;
+}
+
+/** Un indicador del periodo contra el anterior; sin dato en un lado, `delta` y `porcentaje` son nulos. */
+export interface Comparacion {
+  actual: number | null;
+  previo: number | null;
+  delta: number | null;
+  porcentaje: number | null;
+}
+
+export interface KpiPeriodo {
+  disponible: boolean;
+  tiempo_decision_s: number | null;
+  monto_protegido_crc: number | null;
+  tasa_confirmacion: number | null;
+  pendientes: number | null;
+  pendiente_mas_antigua: string | null;
+}
+
+export interface TotalesPeriodo {
+  total: number;
+  por_severidad: Record<string, number>;
+  por_estado: Record<string, number>;
+  por_agente: Record<string, number> | null;
+  por_hora: Record<string, number> | null;
+  dias_con_datos: number;
+  kpi: KpiPeriodo;
+}
+
+export interface KpiTablero {
+  disponible: boolean;
+  tiempo_decision_s: Comparacion;
+  monto_protegido_crc: Comparacion;
+  tasa_confirmacion: Comparacion;
+  pendientes: Comparacion;
+  pendiente_mas_antigua: string | null;
+  antiguedad_horas: number | null;
+}
+
+export interface RangoFechas {
+  desde: string;
+  hasta: string;
+}
+
+export interface ResumenVacio {
+  vacio: true;
+  dias: number;
+}
+
+export interface ResumenTablero {
+  vacio: false;
+  dias: number;
+  periodo_actual: RangoFechas;
+  periodo_previo: RangoFechas;
+  calculado_en: string | null;
+  actual: TotalesPeriodo;
+  previo: TotalesPeriodo;
+  total: VariacionConteo;
+  severidad: Record<string, VariacionConteo>;
+  estado: Record<string, VariacionConteo>;
+  hay_periodo_previo: boolean;
+  kpi: KpiTablero;
+}
+
+export interface FilaBarra {
+  y: number;
+  rotulo: string;
+  valor: number;
+  clase: string;
+  ancho: number;
+}
+
+export interface GraficoBarras {
+  ancho: number;
+  alto: number;
+  etiqueta: number;
+  filas: FilaBarra[];
+}
+
+export interface ColumnaHora {
+  x: number;
+  y: number;
+  alto: number;
+  hora: string;
+  valor: number;
+}
+
+export interface GraficoColumnas {
+  ancho: number;
+  alto: number;
+  base: number;
+  paso: number;
+  columnas: ColumnaHora[];
+}
+
+export interface GraficosTablero {
+  estado: GraficoBarras;
+  severidad: GraficoBarras;
+  agente: GraficoBarras | null;
+  hora: GraficoColumnas | null;
+}
+
+export interface RespuestaTablero {
+  dias: number;
+  periodos: number[];
+  comando_recalculo: string;
+  resumen: ResumenVacio | ResumenTablero;
+  graficos: GraficosTablero | null;
+}
+
+export interface MetricasPatron {
+  patron: string;
+  fraudes: number;
+  detectados: number;
+  perdidos: number;
+  exhaustividad: number | null;
+  episodios: number;
+  episodios_detectados: number;
+}
+
+export interface ReporteEfectividad {
+  transacciones_etiquetadas: number;
+  fraudes: number;
+  legitimas: number;
+  detectados: number;
+  perdidos: number;
+  falsos_positivos: number;
+  verdaderos_negativos: number;
+  alertas_totales: number;
+  alertas_sin_etiqueta: number;
+  precision: number | null;
+  exhaustividad: number | null;
+  por_patron: MetricasPatron[];
+}
+
+/* ---------- Reglas y politica (/api/v1/reglas, /api/v1/politica) ---------- */
+
+export type ParametrosRegla = Record<string, number>;
+
+export interface VersionAnteriorRegla {
+  codigo: string;
+  descripcion: string;
+  tipo: string;
+  umbral: number | null;
+  parametros: ParametrosRegla;
+  peso: number;
+  activa: boolean;
+  version: number;
+  esquema_version: number;
+  reemplazada_en: string;
+}
+
+export interface Regla {
+  _id: string;
+  codigo: string;
+  descripcion: string;
+  tipo: string;
+  umbral: number | null;
+  parametros: ParametrosRegla;
+  peso: number;
+  activa: boolean;
+  version: number | null;
+  esquema_version: number;
+  versiones_anteriores: VersionAnteriorRegla[];
+}
+
+export interface ListaReglas {
+  total: number;
+  elementos: Regla[];
+}
+
+export interface TipoSoportado {
+  tipo: string;
+  umbral: string;
+  parametros: { nombre: string; descripcion: string }[];
+  evaluable: boolean;
+}
+
+export interface ListaTipos {
+  elementos: TipoSoportado[];
+}
+
+/** Cuerpo de PATCH /api/v1/reglas/{id}: solo lo que cambia, mas `version_esperada`. */
+export interface EdicionRegla {
+  descripcion?: string;
+  umbral?: number;
+  parametros?: ParametrosRegla;
+  peso?: number;
+  activa?: boolean;
+  version_esperada?: number;
+}
+
+export interface NuevaRegla {
+  codigo: string;
+  descripcion: string;
+  tipo: string;
+  umbral: number;
+  parametros: ParametrosRegla;
+  peso: number;
+  activa: boolean;
+}
+
+export interface CorteSeveridad {
+  severidad: Severidad;
+  puntaje_minimo: number;
+  puntaje_maximo: number;
+}
+
+export interface VersionAnteriorPolitica {
+  version: number;
+  umbral_alerta: number;
+  puntaje_maximo: number;
+  cortes_severidad: CorteSeveridad[];
+  vigente_desde: string | null;
+  reemplazada_en: string;
+}
+
+export interface PoliticaVigente {
+  _id: string;
+  descripcion: string;
+  version: number;
+  umbral_alerta: number;
+  puntaje_maximo: number;
+  cortes_severidad: CorteSeveridad[];
+  vigente_desde: string | null;
+  versiones_anteriores: VersionAnteriorPolitica[];
+}
+
+export interface EdicionPolitica {
+  umbral_alerta?: number;
+  puntaje_maximo?: number;
+  cortes_severidad?: CorteSeveridad[];
+  version_esperada?: number;
+}
+
+export interface ReglaDisparada {
+  codigo: string;
+  regla_id: string;
+  version: number;
+  peso: number;
+  explicacion: string;
+}
+
+export interface ReglaNoEvaluada {
+  codigo: string;
+  regla_id: string;
+  version: number | null;
+  motivo: string;
+}
+
+/** Respuesta de POST /api/v1/reglas/simular. */
+export interface Evaluacion {
+  transaccion_id: string;
+  puntaje: number;
+  severidad: Severidad | null;
+  genera_alerta: boolean;
+  politica_id: string;
+  politica_version: number;
+  reglas_disparadas: ReglaDisparada[];
+  reglas_no_evaluadas: ReglaNoEvaluada[];
+}

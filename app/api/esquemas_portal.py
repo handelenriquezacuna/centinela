@@ -13,13 +13,14 @@ funciones puras (`app/api/detalle.py`, `app/api/casos.py`, `app/api/sankey.py`,
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from datetime import datetime
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 from app.api.esquemas import Pagina
 from app.modelos.alertas import Alerta, RolAgente
-from app.modelos.base import MarcaTiempoUTC, ModeloCentinela
+from app.modelos.base import FechaDia, MarcaTiempoUTC, ModeloCentinela, asumir_utc
 from app.modelos.estados import EstadoAlerta, Severidad
 from app.modelos.transaccional import EntradaListaRiesgo
 from app.repos.red_mulas import RedMulas
@@ -239,20 +240,167 @@ class AvisoRezago(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _asumir_utc(valor: datetime) -> datetime:
+    """pymongo devuelve fechas sin zona (UTC): se publican con zona, no ambiguas."""
+    return asumir_utc(valor)
+
+
+FechaUTC = Annotated[datetime, AfterValidator(_asumir_utc), Field(description="ISODate en UTC")]
+
+
+class VariacionConteo(BaseModel):
+    """Un conteo del periodo contra el anterior. Sin base de comparacion no hay porcentaje."""
+
+    actual: int
+    previo: int
+    delta: int
+    porcentaje: float | None = None
+
+
+class ComparacionEntera(BaseModel):
+    """Un indicador entero (segundos, colones, pendientes) del periodo contra el anterior.
+
+    Falta un lado cuando el rollup no trae el dato: entonces `delta` y `porcentaje` son nulos.
+    """
+
+    actual: int | None = None
+    previo: int | None = None
+    delta: int | None = None
+    porcentaje: float | None = None
+
+
+class ComparacionDecimal(BaseModel):
+    """Como `ComparacionEntera`, para un porcentaje (la tasa de confirmacion)."""
+
+    actual: float | None = None
+    previo: float | None = None
+    delta: float | None = None
+    porcentaje: float | None = None
+
+
+class KpiPeriodo(BaseModel):
+    """Los KPI de un solo periodo. Todo nulo si el rollup no trae los campos nuevos."""
+
+    disponible: bool
+    tiempo_decision_s: int | None = None
+    monto_protegido_crc: int | None = None
+    tasa_confirmacion: float | None = None
+    pendientes: int | None = None
+    pendiente_mas_antigua: FechaUTC | None = None
+
+
+class TotalesPeriodo(BaseModel):
+    """La suma de los rollups de un periodo."""
+
+    total: int
+    por_severidad: dict[str, int]
+    por_estado: dict[str, int]
+    por_agente: dict[str, int] | None = Field(
+        default=None, description="Nulo si el rollup no trae el desglose por agente"
+    )
+    por_hora: dict[str, int] | None = Field(
+        default=None, description="'00'..'23' en hora de Costa Rica; nulo si el rollup no lo trae"
+    )
+    dias_con_datos: int
+    kpi: KpiPeriodo
+
+
+class KpiTablero(BaseModel):
+    """Los KPI del supervisor: periodo actual contra el anterior."""
+
+    disponible: bool
+    tiempo_decision_s: ComparacionEntera
+    monto_protegido_crc: ComparacionEntera
+    tasa_confirmacion: ComparacionDecimal
+    pendientes: ComparacionEntera
+    pendiente_mas_antigua: FechaUTC | None = None
+    antiguedad_horas: float | None = None
+
+
+class RangoFechas(BaseModel):
+    desde: FechaDia
+    hasta: FechaDia
+
+
+class ResumenVacio(BaseModel):
+    """No hay `indicadores_diarios`: el tablero dice que falta y el comando."""
+
+    vacio: Literal[True]
+    dias: int
+
+
+class ResumenTablero(BaseModel):
+    """`app/repos/tablero.resumir` con datos: el periodo y el anterior, ya sumados."""
+
+    vacio: Literal[False]
+    dias: int
+    periodo_actual: RangoFechas
+    periodo_previo: RangoFechas
+    calculado_en: FechaUTC | None = None
+    actual: TotalesPeriodo
+    previo: TotalesPeriodo
+    total: VariacionConteo
+    severidad: dict[str, VariacionConteo]
+    estado: dict[str, VariacionConteo]
+    hay_periodo_previo: bool
+    kpi: KpiTablero
+
+
+class FilaBarra(BaseModel):
+    y: int
+    rotulo: str
+    valor: int
+    clase: str = Field(description="Clase CSS de la barra: barra-nueva, barra-critica...")
+    ancho: int = Field(ge=0, description="Pixeles; una barra con valor > 0 nunca desaparece")
+
+
+class GraficoBarras(BaseModel):
+    """Barras horizontales: la geometria la calcula el servidor, la SPA solo la dibuja."""
+
+    ancho: int
+    alto: int
+    etiqueta: int = Field(description="Ancho reservado al rotulo de cada fila")
+    filas: list[FilaBarra]
+
+
+class ColumnaHora(BaseModel):
+    x: int
+    y: int
+    alto: int
+    hora: str = Field(examples=["07"])
+    valor: int
+
+
+class GraficoColumnas(BaseModel):
+    """Una columna por hora de Costa Rica."""
+
+    ancho: int
+    alto: int
+    base: int
+    paso: int
+    columnas: list[ColumnaHora]
+
+
+class GraficosTablero(BaseModel):
+    estado: GraficoBarras
+    severidad: GraficoBarras
+    agente: GraficoBarras | None = None
+    hora: GraficoColumnas | None = None
+
+
 class RespuestaTablero(BaseModel):
     """El rollup del periodo y la geometria de sus graficos, ya calculada.
 
-    `resumen` es la salida de `app/repos/tablero.resumir` tal cual (con `vacio: true` si
-    no hay `indicadores_diarios`); `graficos` es la de `app/api/graficos.graficos_tablero`.
-    Se publican como objetos abiertos en esta fase: la fase 2 los tipa al migrar la
-    pantalla.
+    `resumen` es la salida de `app/repos/tablero.resumir` (con `vacio: true` si no hay
+    `indicadores_diarios`); `graficos` es la de `app/api/graficos.graficos_tablero`. Los
+    numeros son los mismos que dibuja la pagina HTMX; la SPA no recalcula nada.
     """
 
     dias: int = Field(ge=1)
     periodos: list[int]
     comando_recalculo: str = Field(examples=["python tareas.py indicadores"])
-    resumen: dict[str, Any]
-    graficos: dict[str, Any] | None = None
+    resumen: ResumenVacio | ResumenTablero = Field(discriminator="vacio")
+    graficos: GraficosTablero | None = None
 
 
 # ---------------------------------------------------------------------------

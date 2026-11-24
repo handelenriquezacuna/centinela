@@ -1,0 +1,54 @@
+{
+  "transaccion": {
+    "esquema_version": 1,
+    "_id": "TXN-001",
+    "cuenta_origen": "CTA-001",
+    "cuenta_destino": "6033-9001",
+    "sinpe_origen": "8712-4455",
+    "monto_crc": 280000,
+    "moneda": "CRC",
+    "canal": "sinpe_movil",
+    "fecha": "2026-09-25T04:47:00Z",
+    "simulacion": null
+  },
+  "contexto": {
+    "perfil": {
+      "esquema_version": 1,
+      "_id": "CLI-001",
+      "promedio_crc": 25000,
+      "maximo_crc": 100000,
+      "desviacion_crc": null,
+      "num_transferencias": 47,
+      "horario_habitual": {
+        "inicio": "07:00",
+        "fin": "19:00"
+      },
+      "destinos_frecuentes": [
+        "6210-3387",
+        "5544-9021",
+        "3390-6612"
+      ],
+      "calculado_en": null
+    },
+    "dias_historial": 90,
+    "destinos_conocidos": {
+      "6210-3387": 12,
+      "5544-9021": 8
+    },
+    "entradas_lista_riesgo": [
+      {
+        "esquema_version": 1,
+        "_id": "RSK-001",
+        "cuenta": "6033-9001",
+        "motivo": "Primer salto de una cadena de fragmentacion",
+        "fecha_reporte": "2026-09-25T05:10:00Z",
+        "vigente": true
+      }
+    ],
+    "ventana_origen": {
+      "ventana_minutos": 30,
+      "cantidad": 1,
+      "monto_acumulado_crc": 280000
+    }
+  }
+}

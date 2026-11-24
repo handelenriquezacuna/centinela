@@ -47,3 +47,12 @@ export function casoDestino(cuenta: string, alertas: AlertaDeCaso[], campos: Par
     ...campos,
   };
 }
+
+export const SESION_SUPERVISOR: SesionActual = {
+  ...SESION_AGENTE,
+  agente_id: "AGT-902",
+  rol: "supervisor",
+  permisos: [...SESION_AGENTE.permisos, "tablero", "ver_reglas", "editar_reglas"],
+  navegacion: [...SESION_AGENTE.navegacion, { ruta: "/tablero", rotulo: "Tablero" }, { ruta: "/reglas", rotulo: "Reglas" }],
+  paginas: [...SESION_AGENTE.paginas, "/tablero", "/reglas"],
+};
