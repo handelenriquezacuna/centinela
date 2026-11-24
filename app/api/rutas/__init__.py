@@ -16,6 +16,7 @@ from app.api.rutas import (
     acceso,
     alertas,
     inteligencia,
+    lecturas,
     listas_riesgo,
     reglas,
     sse,
@@ -33,6 +34,7 @@ enrutador_v1.include_router(alertas.enrutador)
 enrutador_v1.include_router(sse.enrutador)
 enrutador_v1.include_router(reglas.enrutador)
 enrutador_v1.include_router(inteligencia.enrutador)
+enrutador_v1.include_router(lecturas.enrutador)
 enrutador_v1.include_router(listas_riesgo.enrutador)
 enrutador_v1.include_router(transacciones.enrutador)
 

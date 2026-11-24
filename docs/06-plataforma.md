@@ -280,6 +280,7 @@ app/
     paginacion.py      acotado de limite
     dependencias.py    inyeccion de ajustes, base y repositorios
     rutas/             salud, alertas
+frontend/              SPA React + TypeScript (Vite); su build va a app/estaticos/spa/ (T-61)
 config/centinela.yml   tecnico, sin secretos, sin numeros de negocio
 infra/                 docker-compose.yml y .env.ejemplo
 pruebas/
@@ -454,6 +455,8 @@ levantando solo el replica set. Nadie se encuentra un contenedor nuevo sin pedir
 | `python tareas.py abajo [--borrar-datos]` | Lo apaga. Con la bandera, borra también los volúmenes |
 | `python tareas.py estado` | Estado de los tres nodos |
 | `python tareas.py dev` | La API en el host, con recarga |
+| `python tareas.py dev --front` | Lo mismo, más Vite en `http://127.0.0.1:8173` con recarga de la SPA y proxy a la API (T-61) |
+| `python tareas.py front` | `npm ci` y `npm run build` de `frontend/`: deja la SPA en `app/estaticos/spa/` (T-61) |
 | `python tareas.py datos-demo` | Siembra y carga el conjunto de demo |
 | `python tareas.py demo-reiniciar --si` | Deja la base en el estado de la defensa, conservando las credenciales de login |
 | `python tareas.py pruebas [--tipo ...] [--sin-mongo]` | Las pruebas, por tipo |
@@ -483,7 +486,9 @@ garantizar que se separen. Los pesos de las reglas son de quien las diseña (H-0
 ### CI: una prueba de Mongo saltada no cuenta como verde
 
 `.github/workflows/ci.yml` corre en cada PR hacia `dev` o `main` y en cada push a `dev`:
-ruff, `pytest -m "not mongo"` y `pytest -m mongo` contra un replica set de un nodo. Antes
+ruff, las compuertas del frontend (T-61: `npm ci`, lint, typecheck, Vitest,
+`npm audit --audit-level=high` y el build, antes de las e2e), `pytest -m "not mongo"` y
+`pytest -m mongo` contra un replica set de un nodo. Antes
 del paso de Mongo siembra la base `antifraude` con `01 → 02 → 03 → 05`, en el mismo orden que
 `datos-demo`, y corre ese paso con `CENTINELA_EXIGIR_MONGO=1`. Con esa variable, las dos
 razones por las que una prueba de Mongo se saltaba (el replica set no responde, o la base
@@ -622,7 +627,7 @@ maquinaria, no más.
 | Identificador del evento | El token de reanudación del Change Stream. Es lo que el navegador devuelve en `Last-Event-ID` |
 | Reconexión | Se reabre con `resumeAfter` y ese token, **con el mismo pipeline y las mismas opciones**: cambiarlos al reanudar da comportamiento impredecible |
 | Token inservible | Si el oplog ya rodó, Mongo responde `ChangeStreamHistoryLost`. El canal emite un evento `resincronizar` y el panel vuelve a pedir su cola a `/api/v1/alertas` |
-| Formato | `ServerSentEvent(raw_data=...)`, **no `data`**: el panel inserta HTML con HTMX, y `data` se serializa como JSON, así que llegaría entrecomillado. Son mutuamente excluyentes |
+| Formato | Fragmento HTML de la fila, escrito tal cual con `ServerSentEvent(data=...)` (nunca `JSONServerSentEvent`, que lo entrecomillaría). La SPA usa el canal hermano `GET /api/v1/alertas/eventos`, con el mismo contrato y cuerpo JSON: ver "Portal SPA React (T-61)" |
 | Cliente | htmx más la extensión `htmx-ext-sse`, vendorizada como archivo aparte en `app/estaticos/`. **No viene en el núcleo de htmx**, y agrega su propia reconexión con espera progresiva sobre la del navegador |
 
 **Lo que se promete, dicho con precisión.** `Last-Event-ID` lo manda el navegador solo,
@@ -823,6 +828,165 @@ vendorizados (`app/estaticos/PROCEDENCIA.md`). Arrancar con `uvicorn app.main:ap
 La fila del panel es la misma plantilla (`sse/fila_alerta.html`) para la carga inicial y
 para cada evento SSE. El formulario de reglas reutiliza el handler de `PATCH
 /api/v1/reglas/{id}`. Sin autenticacion hasta H-25: la cabecera lo avisa ("modo local").
+
+## Portal SPA React (T-61)
+
+Decisiones D-60 a D-63. La línea del stack queda así (es la que va en `CLAUDE.md`, que no
+se versiona):
+
+> **Portal:** SPA React + TypeScript (Vite) servida por FastAPI; tiempo real por SSE con
+> eventos JSON leyendo el change stream de alertas. NO Next.js, NO WebSocket, NO bus en
+> memoria.
+
+Un solo proceso, como siempre: `uvicorn app.main:app`. Node solo se usa para construir;
+en ejecución FastAPI sirve el `index.html` y los archivos del build.
+
+### Las dos interfaces mientras dure la migración: `portal.interfaz`
+
+| Valor | Rutas de página (`/`, `/login`, `/panel`, `/detalle`, `/detalle/{alerta_id}`, `/busqueda`, `/red-mulas`, `/red-mulas/{cuenta}`, `/tablero`, `/reglas`) |
+|---|---|
+| `htmx` (por omisión en esta fase) | Las páginas Jinja de siempre |
+| `spa` | El `index.html` de `app/estaticos/spa/`; React Router dibuja la pantalla. Sin build, 503 con la instrucción `python tareas.py front` |
+
+Con `spa` el router de la SPA (`app/api/rutas/spa.py`) se registra antes que las páginas
+HTMX y gana en las mismas rutas; los fragmentos y formularios HTMX (`/panel/cola`,
+`/panel/lote`, `POST /login`, ...) siguen vivos. Las rutas de página tienen el mismo
+permiso con las dos interfaces: el guardia corre antes, así que sin sesión redirige a
+`/login?siguiente=...` y con un rol sin permiso devuelve el `index.html` con 403 (la SPA
+muestra "Acceso denegado"). Se cambia con `CENTINELA_PORTAL__INTERFAZ=spa` o en
+`config/centinela.local.yml`. Cuando la fase 2 tenga paridad con las e2e, el valor por
+omisión pasa a `spa` y la rama HTMX se borra.
+
+### Correr, construir y probar
+
+| Para | Comando |
+|---|---|
+| Instalar y construir (lo que corre el CI) | `python tareas.py front` (equivale a `npm --prefix frontend ci && npm --prefix frontend run build`) |
+| Desarrollar con recarga | `python tareas.py dev --front` y abrir `http://127.0.0.1:8173/panel`. Vite manda `/api`, `/estado`, `/salud` y `/estaticos` a la API (`CENTINELA_API`, por omisión `http://127.0.0.1:8000`) |
+| Servir el build desde FastAPI | `CENTINELA_PORTAL__INTERFAZ=spa python tareas.py dev` y abrir `http://127.0.0.1:8000/panel` |
+| Compuertas del frontend | En `frontend/`: `npm run lint`, `npm run typecheck`, `npm test` (Vitest), `npm audit --audit-level=high`, `npm run build` |
+| La e2e de la SPA | `python tareas.py e2e` (incluye `pruebas/e2e/prueba_spa_panel.py`; necesita el build) |
+
+- Node **26.8.1**, fijado en `frontend/.nvmrc` y en `engines` (con `engine-strict`), la
+  misma versión en local y en el CI (`actions/setup-node` lee el `.nvmrc`). Versiones
+  exactas en `package.json` (`save-exact`) y `package-lock.json` versionado; `npm ci`
+  instala solo lo del lock. `pruebas/arquitectura/prueba_frontend.py` lo verifica.
+- TypeScript estricto (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`).
+  ESLint mínimo: lo recomendado de JS y TS y las reglas de hooks de React.
+- El build (`app/estaticos/spa/`) no se versiona. La regla de "nada desde un CDN" se aplica
+  a su fuente (`frontend/src`, `frontend/index.html`); la de emojis también.
+- La e2e de la SPA corre contra un segundo `uvicorn` (`servidor_spa`) sobre la misma base
+  `antifraude_pruebas_e2e` con `portal.interfaz: spa`. Los dos procesos corren D1; el
+  índice único de `alertas.transaccion_id` mantiene una alerta por transacción.
+
+### Árbol de `frontend/src`
+
+```
+main.tsx, App.tsx      raiz y rutas (cada pantalla declara su plantilla de permisos)
+api/cliente.ts         UNICO lugar que llama a la API: cookie, forma del error, aviso de 401
+api/sesion.ts          entrar, quien soy, salir
+api/tipos.ts           espejo de los esquemas publicados en /openapi.json
+tiempo-real/           EventSource sobre el canal JSON
+formatos.ts            colones y hora de Costa Rica (casos compartidos con Python)
+destino.ts             regla anti redireccion abierta (casos compartidos con Python)
+casos.ts               orden y reemplazo de cuentas destino en la lista
+componentes/, paginas/ marco, guardia de sesion, login, panel y las pendientes de fase 2
+```
+
+### Sesión de la SPA
+
+| Ruta | Hace |
+|---|---|
+| `POST /api/v1/sesion` | Igual que antes (devuelve el token para `Authorization: Bearer`) y **además** deja la cookie de `/login`: HttpOnly, SameSite=Strict, `Secure` según `sesion.cookie_segura`. La SPA descarta el cuerpo; nunca guarda el token (ni `localStorage` ni memoria) |
+| `GET /api/v1/sesion` | `{agente_id, rol, expira, permisos, navegacion, paginas}`. `paginas` son las plantillas de página que el rol puede abrir, sacadas de la tabla de permisos: la SPA guarda cada pantalla con esa lista y no copia la tabla |
+| `DELETE /api/v1/sesion` | Borra la cookie, 204. Pública e idempotente, como `/salir` |
+
+Un 401 de cualquier petición deja la sesión en nulo y la SPA vuelve a
+`/login?siguiente=<ruta>`; al entrar, `destinoSeguro` (`frontend/src/destino.ts`) aplica la
+misma regla que `destino_seguro` de Python. Los casos de las dos están en
+`frontend/src/destino.casos.json` y los verifican pytest y Vitest.
+
+### Formatos de Costa Rica en la SPA
+
+`frontend/src/formatos.ts` es el equivalente de `app/api/formatos.py`: `₡750.000` solo para
+enteros (un monto con decimales no se formatea: se ve vacío en vez de redondearse),
+`DD/MM/AAAA HH:MM` en `America/Costa_Rica`, coma decimal y las mismas etiquetas con tilde.
+Los casos de `frontend/src/formatos.casos.json` los verifican
+`pruebas/contrato/prueba_formatos_compartidos.py` y `frontend/src/formatos.test.ts`.
+
+### Lecturas JSON para las pantallas
+
+Todas bajo `/api/v1`, en `app/api/rutas/lecturas.py`, con su permiso en la tabla y su
+esquema en OpenAPI (`app/api/esquemas_portal.py`). Ninguna calcula nada nuevo: usan las
+mismas funciones puras que la página HTMX.
+
+| Ruta | Permiso | Devuelve | Comparte con HTMX |
+|---|---|---|---|
+| `GET /alertas/{alerta_id}/detalle` | detalle | Alerta, transacción (sin `simulacion`), cliente, perfil, cada regla con aporte, acumulado y evidencia, cortes con el alcanzado, política (`usada`/`vigente`/`ninguna`), acciones que permite la máquina, caso y nombres de agentes | `app/api/detalle.py` |
+| `GET /casos-destino[?limite=&desplazamiento=]` | panel | Página de cuentas destino con alertas abiertas: totales, víctimas, monto entero, severidad y puntaje máximos, reglas repetidas, alertas (`_id`), sugerencia y acciones de lote | `app/api/casos.py`, `RepoCasosDestino` |
+| `GET /casos-destino/{cuenta}` | panel | Un caso; 404 si ya no tiene abiertas | idem |
+| `GET /deteccion/rezago` | panel | `{atrasada, pendientes, aviso_desde, segundos_para_ponerse_al_dia, estimado, medido_en}`; no consulta la base | `antiguedad_legible` |
+| `GET /tablero?dias=` | tablero | `resumen` de `indicadores_diarios` y la geometría de sus gráficos (objetos abiertos en esta fase) | `app/repos/tablero.py`, `app/api/graficos.py` |
+| `GET /red-mulas/{cuenta}/sankey?transaccion=&desde=&ventana_minutos=&saltos=` | red_mulas | Disposición del Sankey: nodos, bandas (trazado SVG y grosor entero proporcional a los colones), columnas, víctima en la columna 0 si viene `transaccion`; `sankey: null` con `motivo` si no hay salidas | `app/api/sankey.py` |
+| `GET /red-mulas/{cuenta}/grafo?...` | red_mulas | La red, la posición de nodos y aristas, y las entradas de `listas_riesgo` solo para quien puede darlas de baja | `app/api/graficos.disponer_grafo` |
+
+Lo que ya existía y la SPA usa tal cual: `GET /alertas`, `POST /alertas/{id}/transiciones`,
+`POST /alertas/transiciones` (lote), `GET /transacciones`, `/busqueda/exportar.csv`,
+`/reglas`, `/politica`, `/efectividad`, `GET /red-mulas/{cuenta}`, `POST /listas-riesgo`,
+`DELETE /listas-riesgo/{id}` y `POST /red-mulas/{cuenta}/propuestas/{propuesta}`.
+
+### Canal SSE JSON: `GET /api/v1/alertas/eventos` (contrato compartido)
+
+Es el mismo canal que `/api/v1/alertas/flujo`: el mismo bucle (`eventos_de_alertas`), el
+mismo change stream de `alertas`, los mismos nombres de evento, el mismo `id` (token de
+reanudación en base64url), la misma reanudación por `Last-Event-ID` (o `?ultimo_evento=`
+para `curl`) y el mismo `resincronizar`. Cambia solo el cuerpo, que es una línea de JSON.
+Lo cambia el arquitecto, con su prueba (`pruebas/contrato/prueba_canal_json.py` y
+`pruebas/integracion/prueba_lecturas_mongo.py`).
+
+```
+: canal de alertas abierto (reanudado=no)
+retry: 3000
+
+event: alerta
+id: eyJfZGF0YSI6IjgyNjc...
+data: {"formato":1,"operacion":"insert","alerta":{"_id":"ALR-101","esquema_version":2,"transaccion_id":"TXN-101","puntaje":75,"severidad":"CRITICA","estado":"nueva","monto_crc":280000,"fecha_creacion":"2026-09-25T04:00:00Z",...}}
+
+event: resincronizar
+id:
+data: {"formato":1,"motivo":"el token de reanudacion ya no sirve (ChangeStreamHistoryLost)"}
+```
+
+| Campo | Contrato |
+|---|---|
+| `formato` | `1`. Sube si el cuerpo cambia de forma incompatible; la SPA ignora un formato que no conoce |
+| `operacion` | `insert` (alerta nueva), `update` o `replace` (la misma alerta cambió: una transición). La SPA reemplaza por `_id` |
+| `alerta` | La alerta completa, con la misma forma que cada elemento de `GET /api/v1/alertas` (Pydantic en modo JSON, por alias): dinero entero, fechas UTC |
+| `motivo` | Solo en `resincronizar`: por qué el token ya no sirve. La SPA vuelve a pedir su lista |
+| `id` vacío | En `resincronizar`, para que el navegador no reenvíe el token muerto |
+
+Un documento que no cumple el modelo `Alerta` se omite del canal con un aviso en el
+registro: no corta la conexión. La SPA, por cada `alerta`, pide de nuevo solo el caso de su
+cuenta destino (`GET /api/v1/casos-destino/{cuenta}`); ante `resincronizar` o una
+reconexión, la lista completa. Lo que se promete es lo mismo que en el canal HTML:
+reconstruir el estado de la cola, no repetir cada evento.
+
+### Pantallas de la fase 2
+
+La fase 1 deja migradas el login y el panel por cuenta destino (con su prueba Vitest y la
+e2e `prueba_spa_panel.py`). Las demás rutas de la SPA muestran "Pantalla todavía no
+migrada" con el endpoint que van a leer:
+
+| Pantalla | Endpoint | E2E HTMX que la cubre hoy |
+|---|---|---|
+| Panel por alerta (vista "Por alerta" y atajos `j`/`k`/`x`) | `GET /api/v1/alertas` + canal JSON | `prueba_tiempo_real.py` |
+| Detalle de alerta y resolución | `GET /api/v1/alertas/{id}/detalle`, `POST /api/v1/alertas/{id}/transiciones` | `prueba_detalle.py` |
+| Sankey del detalle y marcar mula | `GET /api/v1/red-mulas/{cuenta}/sankey`, `POST /api/v1/listas-riesgo` | `prueba_sankey.py` |
+| Red de mulas | `GET /api/v1/red-mulas/{cuenta}/grafo`, propuestas y baja | `prueba_red_mulas.py` |
+| Búsqueda forense y CSV | `GET /api/v1/transacciones`, `/busqueda/exportar.csv` | (contrato) |
+| Tablero | `GET /api/v1/tablero`, `GET /api/v1/efectividad` | (contrato) |
+| Reglas y política | `/api/v1/reglas`, `/api/v1/reglas/tipos`, `/api/v1/politica` | (contrato) |
+| Lote en la vista por cuenta destino (ya en la SPA; falta su e2e) | `POST /api/v1/alertas/transiciones` | `prueba_casos.py` |
 
 
 ## Politica por API y validadores sin re-sembrar (T-20, T-24, T-28)

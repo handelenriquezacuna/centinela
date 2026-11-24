@@ -1,0 +1,43 @@
+{
+  "_nota": "Casos compartidos: los verifica frontend/src/formatos.test.ts contra formatos.ts y pruebas/contrato/prueba_formatos_compartidos.py contra app/api/formatos.py. Las dos interfaces formatean igual.",
+  "colones": [
+    { "entrada": 750000, "salida": "₡750.000" },
+    { "entrada": 280000, "salida": "₡280.000" },
+    { "entrada": 1234567, "salida": "₡1.234.567" },
+    { "entrada": 100, "salida": "₡100" },
+    { "entrada": 0, "salida": "₡0" },
+    { "entrada": -45200, "salida": "-₡45.200" },
+    { "entrada": 1500.5, "salida": "" },
+    { "entrada": "750000", "salida": "" },
+    { "entrada": null, "salida": "" }
+  ],
+  "hora_costa_rica": [
+    { "entrada": "2026-10-15T04:47:00Z", "salida": "14/10/2026 22:47" },
+    { "entrada": "2026-09-25T04:47:00+00:00", "salida": "24/09/2026 22:47" },
+    { "entrada": "2026-01-01T05:59:00Z", "salida": "31/12/2025 23:59" },
+    { "entrada": "2026-01-01T06:00:00Z", "salida": "01/01/2026 00:00" },
+    { "entrada": "2026-11-23T18:04:11.123Z", "salida": "23/11/2026 12:04" },
+    { "entrada": "no es fecha", "salida": "" },
+    { "entrada": null, "salida": "" }
+  ],
+  "decimal": [
+    { "entrada": 11.24, "salida": "11,2" },
+    { "entrada": 3, "salida": "3,0" },
+    { "entrada": 16.59, "salida": "16,6" }
+  ],
+  "porcentaje": [
+    { "entrada": 12.5, "salida": "12,5%" },
+    { "entrada": 71.8, "salida": "71,8%" },
+    { "entrada": null, "salida": "" }
+  ],
+  "etiqueta": [
+    { "entrada": "en_revision", "salida": "En revisión" },
+    { "entrada": "nueva", "salida": "Nueva" },
+    { "entrada": "CRITICA", "salida": "Crítica" },
+    { "entrada": "sin_asignar", "salida": "Sin asignar" },
+    { "entrada": "sinpe_movil", "salida": "SINPE Móvil" },
+    { "entrada": "cuenta_mula", "salida": "Cuenta mula" },
+    { "entrada": "", "salida": "" },
+    { "entrada": null, "salida": "" }
+  ]
+}

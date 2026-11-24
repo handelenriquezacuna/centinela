@@ -11,8 +11,9 @@ Donde viaja el token: cabecera `Authorization: Bearer ...` (API) o cookie HttpOn
 Respuestas ante el fallo:
 
 - API (`/api/...`, `/estado`, `/openapi.json`): 401 o 403 con la forma unica del error.
-- Portal: 401 -> redireccion a `/login` (en una peticion HTMX, 401 con `HX-Redirect`);
-  403 -> pagina de acceso denegado.
+- Portal: 401 -> redireccion a `/login?siguiente=...` (en una peticion HTMX, 401 con
+  `HX-Redirect`); 403 -> pagina de acceso denegado (con `portal.interfaz: spa`, el
+  `index.html` de la SPA con estado 403, y la SPA dibuja la pantalla).
 """
 
 from __future__ import annotations
@@ -137,6 +138,11 @@ async def manejar_prohibido(peticion: Request, fallo: AccesoProhibido) -> Respon
                 f'<div class="mensaje mensaje-error" role="alert">{mensaje}</div>',
                 status_code=status.HTTP_403_FORBIDDEN,
             )
+        if getattr(peticion.app.state, "interfaz", "htmx") == "spa":
+            # La SPA dibuja su pantalla de acceso denegado; el 403 queda en la respuesta.
+            from app.api.rutas.spa import respuesta_spa
+
+            return respuesta_spa(status.HTTP_403_FORBIDDEN)
         from app.api.rutas.paginas import pagina_prohibida
 
         return pagina_prohibida(mensaje)

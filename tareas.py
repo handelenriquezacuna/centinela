@@ -14,6 +14,8 @@ Uso:
     python tareas.py estado          muestra el estado del replica set
     python tareas.py instalar        sincroniza dependencias con uv
     python tareas.py dev             corre la API en el host, con recarga
+    python tareas.py dev --front     lo mismo, mas Vite con recarga de la SPA en :8173 (T-61)
+    python tareas.py front           instala (npm ci) y construye la SPA en app/estaticos/spa (T-61)
     python tareas.py datos-demo      carga el conjunto de demo
     python tareas.py demo-reiniciar --si  deja la base en el estado de la defensa
     python tareas.py migrar          corre las migraciones de esquema (H-26)
@@ -108,7 +110,8 @@ def _buscar(programa: str) -> str:
         raise Fallo(
             f"no se encontro '{programa}' en el PATH.\n"
             f"  uv:     https://docs.astral.sh/uv/getting-started/installation/\n"
-            f"  docker: Docker Desktop"
+            f"  docker: Docker Desktop\n"
+            f"  npm:    Node.js, la version de frontend/.nvmrc"
         )
     return ruta
 
@@ -614,11 +617,34 @@ def tarea_instalar(args: argparse.Namespace) -> None:
     correr(uv("sync"), dry_run=args.dry_run)
 
 
+FRONTEND = RAIZ / "frontend"
+PUERTO_VITE = 8173
+
+
+def npm(*argumentos: str) -> list[str]:
+    """`npm` sobre `frontend/` sin cambiar de carpeta (`--prefix`)."""
+    return [_buscar("npm"), "--prefix", str(FRONTEND), *argumentos]
+
+
+def tarea_front(args: argparse.Namespace) -> None:
+    """Instala las dependencias exactas del lock (npm ci) y construye la SPA (T-61).
+
+    El build queda en app/estaticos/spa/ (ignorada por git) y lo sirve FastAPI cuando
+    `portal.interfaz` es `spa`. Es lo mismo que corre el CI antes de las e2e.
+    """
+    correr(npm("ci"), dry_run=args.dry_run)
+    correr(npm("run", "build"), dry_run=args.dry_run)
+
+
 def tarea_dev(args: argparse.Namespace) -> None:
     """Modalidad de arranque A: Mongo en Compose, Python en el host con recarga.
 
     Un solo worker a proposito: la deteccion tiene que estar activa exactamente una
     vez. Dos workers escuchando el mismo change stream crean la alerta dos veces.
+
+    Con `--front` levanta ademas Vite en http://127.0.0.1:8173 con recarga en caliente de
+    la SPA; Vite manda la API, el SSE y los estaticos a esta misma API (proxy, mismo
+    origen para el navegador, la cookie viaja sola). Al salir se apagan los dos.
     """
     from app.nucleo.config import obtener_ajustes  # import tardio: no es stdlib
 
@@ -640,7 +666,28 @@ def tarea_dev(args: argparse.Namespace) -> None:
         f"  documentacion: http://{ajustes.servidor.host}:{ajustes.servidor.puerto}/docs\n"
         f"  salud:         http://{ajustes.servidor.host}:{ajustes.servidor.puerto}/salud\n"
     )
-    correr(orden, dry_run=args.dry_run, env=entorno_app())
+    if not args.front:
+        correr(orden, dry_run=args.dry_run, env=entorno_app())
+        return
+
+    vite = npm("run", "dev")
+    entorno_vite = {
+        **os.environ,
+        "CENTINELA_API": f"http://{ajustes.servidor.host}:{ajustes.servidor.puerto}",
+    }
+    print(f"SPA (Vite) en http://127.0.0.1:{PUERTO_VITE}\n$ " + " ".join(vite))
+    if args.dry_run:
+        correr(orden, dry_run=True)
+        return
+    proceso_vite = subprocess.Popen(vite, cwd=RAIZ, env=entorno_vite)
+    try:
+        correr(orden, env=entorno_app())
+    finally:
+        proceso_vite.terminate()
+        try:
+            proceso_vite.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proceso_vite.kill()
 
 
 def tarea_datos_demo(args: argparse.Namespace) -> None:
@@ -896,6 +943,7 @@ TAREAS = {
     "estado": tarea_estado,
     "instalar": tarea_instalar,
     "dev": tarea_dev,
+    "front": tarea_front,
     "datos-demo": tarea_datos_demo,
     "demo-reiniciar": tarea_demo_reiniciar,
     "migrar": tarea_migrar,
@@ -939,6 +987,12 @@ def construir_analizador() -> argparse.ArgumentParser:
                     "tambien levanta el servicio 'app' (la API en un contenedor, "
                     "modalidad de arranque B)"
                 ),
+            )
+        if nombre == "dev":
+            sub.add_argument(
+                "--front",
+                action="store_true",
+                help="tambien levanta Vite con recarga de la SPA (proxy a esta API)",
             )
         if nombre == "abajo":
             sub.add_argument(
@@ -994,6 +1048,7 @@ def main(argumentos: list[str] | None = None) -> int:
         ("sin_mongo", False),
         ("verboso", False),
         ("si", False),
+        ("front", False),
     ):
         if not hasattr(args, bandera):
             setattr(args, bandera, valor)

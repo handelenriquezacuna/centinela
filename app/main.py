@@ -38,6 +38,7 @@ from app.api.rutas import paginas_busqueda as rutas_paginas_busqueda
 from app.api.rutas import paginas_casos as rutas_paginas_casos
 from app.api.rutas import paginas_tablero as rutas_paginas_tablero
 from app.api.rutas import salud as rutas_salud
+from app.api.rutas import spa as rutas_spa
 from app.api.sesion import guardia, registrar_manejadores_sesion
 from app.deteccion.d1 import NOMBRE_D1, d1
 from app.deteccion.d3 import NOMBRE_D3, d3
@@ -141,8 +142,18 @@ async def ciclo_vida(aplicacion: FastAPI) -> AsyncIterator[None]:
         registro.info("Centinela abajo, cliente de Mongo cerrado")
 
 
-def crear_aplicacion() -> FastAPI:
-    """Construye la aplicacion. Es una funcion para poder armarla en una prueba."""
+def crear_aplicacion(interfaz: str | None = None) -> FastAPI:
+    """Construye la aplicacion. Es una funcion para poder armarla en una prueba.
+
+    `interfaz` es `portal.interfaz` (`htmx` o `spa`, T-61); por omision la de los ajustes.
+    Con `spa`, el router de la SPA se registra ANTES que las paginas HTMX: para una misma
+    ruta gana el primero registrado, asi que `/panel` devuelve el `index.html` de la SPA y
+    los fragmentos HTMX (`/panel/cola`, formularios) siguen vivos mientras dure la
+    migracion. La fase 2 retira la rama HTMX.
+    """
+    # `Ajustes()` y no `obtener_ajustes()`: construir la app no debe memorizar los ajustes
+    # que despues lee el lifespan (una prueba cambia el entorno entre una cosa y la otra).
+    elegida = interfaz or Ajustes().portal.interfaz
     aplicacion = FastAPI(
         title="Centinela",
         version=VERSION,
@@ -158,8 +169,11 @@ def crear_aplicacion() -> FastAPI:
         redoc_url=None,
     )
 
+    aplicacion.state.interfaz = elegida
     registrar_manejadores(aplicacion)
     registrar_manejadores_sesion(aplicacion)
+    if elegida == "spa":
+        aplicacion.include_router(rutas_spa.enrutador)
     aplicacion.include_router(rutas_acceso.enrutador)
     aplicacion.include_router(rutas_salud.enrutador)
     aplicacion.include_router(rutas_estado.enrutador)

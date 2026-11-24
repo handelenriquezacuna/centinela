@@ -31,7 +31,13 @@ def prueba_estan_publicadas_las_rutas_decididas() -> None:
         "/api/v1/sesion",
         "/api/v1/alertas",
         "/api/v1/alertas/flujo",
+        "/api/v1/alertas/eventos",
+        "/api/v1/alertas/{alerta_id}/detalle",
         "/api/v1/alertas/{alerta_id}/transiciones",
+        "/api/v1/casos-destino",
+        "/api/v1/casos-destino/{cuenta}",
+        "/api/v1/deteccion/rezago",
+        "/api/v1/tablero",
         "/api/v1/alertas/transiciones",
         "/api/v1/transacciones",
         "/api/v1/reglas",
@@ -41,10 +47,68 @@ def prueba_estan_publicadas_las_rutas_decididas() -> None:
         "/api/v1/politica",
         "/api/v1/efectividad",
         "/api/v1/red-mulas/{cuenta}",
+        "/api/v1/red-mulas/{cuenta}/sankey",
+        "/api/v1/red-mulas/{cuenta}/grafo",
         "/api/v1/red-mulas/{cuenta}/propuestas/{propuesta}",
         "/api/v1/listas-riesgo",
         "/api/v1/listas-riesgo/{riesgo_id}",
     }
+
+
+def prueba_las_lecturas_del_portal_publican_su_esquema_y_sus_errores() -> None:
+    """T-61: cada lectura que pide la SPA publica su respuesta y sus errores con
+    `RespuestaError` (un cliente generado desde el esquema lee el error igual en todas)."""
+    esperado = {
+        "/api/v1/alertas/{alerta_id}/detalle": ("DetalleAlerta", {"404", "422"}),
+        "/api/v1/casos-destino": ("PaginaCasosDestino", {"422"}),
+        "/api/v1/casos-destino/{cuenta}": ("CasoDestinoRespuesta", {"404", "422"}),
+        "/api/v1/deteccion/rezago": ("AvisoRezago", set()),
+        "/api/v1/tablero": ("RespuestaTablero", {"422"}),
+        "/api/v1/red-mulas/{cuenta}/sankey": ("RespuestaSankey", {"404", "422"}),
+        "/api/v1/red-mulas/{cuenta}/grafo": ("RespuestaGrafo", {"404", "422"}),
+    }
+    for ruta, (modelo, errores) in esperado.items():
+        assert set(ESQUEMA["paths"][ruta]) == {"get"}, ruta
+        respuestas = ESQUEMA["paths"][ruta]["get"]["responses"]
+        ok = respuestas["200"]["content"]["application/json"]["schema"]["$ref"]
+        assert ok.endswith(f"/{modelo}"), ruta
+        for codigo in errores | {"401", "403"}:
+            referencia = respuestas[codigo]["content"]["application/json"]["schema"]["$ref"]
+            assert referencia.endswith("/RespuestaError"), (ruta, codigo)
+
+
+def prueba_el_dinero_de_las_lecturas_del_portal_es_entero() -> None:
+    """Ningun `*_crc` de las respuestas nuevas se publica como numero flotante."""
+    esquemas = ESQUEMA["components"]["schemas"]
+    for nombre in (
+        "CasoDestinoRespuesta",
+        "AlertaDeCaso",
+        "BandaSankey",
+        "AristaGrafo",
+        "TransaccionDetalle",
+        "PerfilDetalle",
+    ):
+        for campo, definicion in esquemas[nombre]["properties"].items():
+            if not campo.endswith("_crc"):
+                continue
+            tipos = {d.get("type") for d in definicion.get("anyOf", [definicion])}
+            assert "number" not in tipos and "integer" in tipos, (nombre, campo)
+
+
+def prueba_la_sesion_publica_entrar_consultar_y_salir() -> None:
+    ruta = ESQUEMA["paths"]["/api/v1/sesion"]
+    assert set(ruta) == {"get", "post", "delete"}
+    assert ruta["get"]["responses"]["200"]["content"]["application/json"]["schema"][
+        "$ref"
+    ].endswith("/SesionActual")
+    assert "204" in ruta["delete"]["responses"]
+
+
+def prueba_el_canal_json_se_publica_como_flujo_de_eventos() -> None:
+    ruta = ESQUEMA["paths"]["/api/v1/alertas/eventos"]["get"]
+    assert "text/event-stream" in ruta["responses"]["200"]["content"]
+    nombres = {p["name"] for p in ruta["parameters"]}
+    assert nombres == {"Last-Event-ID", "ultimo_evento"}
 
 
 def prueba_la_ruta_de_transiciones_publica_sus_errores() -> None:

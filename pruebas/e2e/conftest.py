@@ -11,6 +11,8 @@ Orden de la sesion, y no otro:
    Todo ANTES de arrancar el servidor: D1 empieza desde "ahora" y no debe procesar el demo.
 2. Se arranca `uvicorn` en un puerto libre, como subproceso, con la URI y la base de la
    prueba por variables de entorno (la unica forma de moverlas: `app/nucleo/config.py`).
+   Las pruebas de la SPA (T-61) piden ademas `servidor_spa`: otro `uvicorn` sobre la misma
+   base con `portal.interfaz: spa`, mientras convivan las dos interfaces.
 3. Se espera a que D1 haya abierto su change stream (aparece su token en
    `deteccion_estado`); una insercion anterior se perderia.
 
@@ -36,6 +38,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Awaitable, Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -162,19 +165,16 @@ def _esperar_d1(segundos: int = 30) -> None:
     raise RuntimeError("D1 no abrio su change stream a tiempo")
 
 
-@pytest.fixture(scope="session")
-def servidor_e2e() -> Iterator[str]:
-    """URL base del `uvicorn` de la prueba, con la base sembrada y D1 escuchando."""
-    uri = _uri()
-    _sembrar(uri)
-    con_base(_cargar_agentes_y_demo, uri)
-
+@contextmanager
+def _uvicorn(uri: str, *, interfaz: str) -> Iterator[str]:
+    """Un `uvicorn` real en un puerto libre, con la base de la prueba y la interfaz pedida."""
     puerto = _puerto_libre()
     entorno = {
         **os.environ,
         "CENTINELA_MONGO__URI": uri,
         "CENTINELA_MONGO__BASE": BASE_E2E,
         "CENTINELA_SESION__CLAVE": CLAVE_DE_PRUEBAS,
+        "CENTINELA_PORTAL__INTERFAZ": interfaz,
     }
     with tempfile.TemporaryFile() as registro:
         proceso = subprocess.Popen(
@@ -202,7 +202,39 @@ def servidor_e2e() -> Iterator[str]:
                 proceso.wait(timeout=15)
             except subprocess.TimeoutExpired:
                 proceso.kill()
-            con_base(_borrar_base, uri)
+
+
+@pytest.fixture(scope="session")
+def servidor_e2e() -> Iterator[str]:
+    """URL base del `uvicorn` de la prueba, con la base sembrada y D1 escuchando."""
+    uri = _uri()
+    _sembrar(uri)
+    con_base(_cargar_agentes_y_demo, uri)
+    try:
+        with _uvicorn(uri, interfaz="htmx") as url:
+            yield url
+    finally:
+        con_base(_borrar_base, uri)
+
+
+INDICE_SPA = RUTA_RAIZ / "app" / "estaticos" / "spa" / "index.html"
+
+
+@pytest.fixture(scope="session")
+def servidor_spa(servidor_e2e: str) -> Iterator[str]:
+    """Otro `uvicorn` sobre la MISMA base, con `portal.interfaz: spa` (T-61).
+
+    Existe mientras dure la migracion: las e2e HTMX siguen contra `servidor_e2e` y las de
+    la SPA van contra este. Los dos procesos corren D1 sobre la misma base; el indice
+    unico de `alertas.transaccion_id` hace que una transaccion siga dando UNA alerta (lo
+    mismo que prueba la resiliencia de T-52). El canal SSE de este servidor ve las alertas
+    que escriba cualquiera de los dos: lee el change stream, no un bus en memoria.
+    Necesita el build: `python tareas.py front` (el CI lo corre antes de las e2e).
+    """
+    if not INDICE_SPA.is_file():
+        saltar_o_fallar("falta el build de la SPA (app/estaticos/spa/index.html): python tareas.py front")
+    with _uvicorn(_uri(), interfaz="spa") as url:
+        yield url
 
 
 async def _borrar_base(base: Any) -> None:

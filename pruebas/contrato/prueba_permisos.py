@@ -123,6 +123,7 @@ def prueba_sin_sesion_solo_es_publico_login_salud_y_lo_necesario_para_entrar() -
         ("POST", "/salir"),
         ("GET", "/salud"),
         ("POST", "/api/v1/sesion"),
+        ("DELETE", "/api/v1/sesion"),
     }
 
 

@@ -23,11 +23,13 @@ Reglas del dibujo:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 from app.api.formatos import colones
+from app.repos.detalle import ProtocoloRepoDetalle
 from app.repos.red_mulas import RedMulas
 
 COLUMNA_PASO = 230  # distancia horizontal entre columnas
@@ -262,3 +264,24 @@ def disponer_sankey(red: RedMulas, victima: Victima | None = None) -> Sankey | N
         cuentas=list(vistas.values()),
     )
 
+
+ID_TRANSACCION = re.compile(r"^TXN-\d{3,}$")
+
+
+async def victima_de(
+    repo: ProtocoloRepoDetalle, transaccion_id: str | None
+) -> Victima | None:
+    """La victima de la transaccion de partida, si hay una y existe (D-54)."""
+    if not transaccion_id or not ID_TRANSACCION.match(transaccion_id):
+        return None
+    contexto = await repo.contexto(transaccion_id)
+    transaccion, cliente = contexto["transaccion"], contexto["cliente"]
+    if transaccion is None or cliente is None:
+        return None
+    return Victima(
+        nombre=cliente["nombre"],
+        cuenta=transaccion.get("sinpe_origen") or transaccion["cuenta_origen"],
+        transaccion_id=transaccion["_id"],
+        monto_crc=int(transaccion["monto_crc"]),
+        fecha=transaccion["fecha"],
+    )

@@ -1,0 +1,21 @@
+{
+  "_nota": "Casos compartidos de la regla anti redireccion abierta: los verifica frontend/src/destino.test.ts contra destino.ts y pruebas/contrato/prueba_formatos_compartidos.py contra destino_seguro de app/api/rutas/acceso.py.",
+  "casos": [
+    { "entrada": "/detalle/ALR-001", "salida": "/detalle/ALR-001" },
+    { "entrada": "/busqueda?cuenta=6033-9001&canal=sinpe_movil", "salida": "/busqueda?cuenta=6033-9001&canal=sinpe_movil" },
+    { "entrada": "/tablero", "salida": "/tablero" },
+    { "entrada": null, "salida": "/panel" },
+    { "entrada": "", "salida": "/panel" },
+    { "entrada": "panel", "salida": "/panel" },
+    { "entrada": "//otro.sitio/x", "salida": "/panel" },
+    { "entrada": "https://otro.sitio", "salida": "/panel" },
+    { "entrada": "/\\otro.sitio", "salida": "/panel" },
+    { "entrada": "javascript:alert(1)", "salida": "/panel" },
+    { "entrada": "/login", "salida": "/panel" },
+    { "entrada": "/salir", "salida": "/panel" },
+    { "entrada": "/\t/otro.sitio", "salida": "/panel" },
+    { "entrada": "/\n/otro.sitio", "salida": "/panel" },
+    { "entrada": "/ /otro.sitio", "salida": "/panel" },
+    { "entrada": "/\u007f/otro.sitio", "salida": "/panel" }
+  ]
+}

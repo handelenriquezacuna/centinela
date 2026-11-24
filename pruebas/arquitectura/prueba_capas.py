@@ -391,8 +391,17 @@ def prueba_no_hay_emojis_en_el_codigo_ni_en_las_pruebas() -> None:
         (0x2B00, 0x2BFF),
     )
 
+    # La SPA (T-61) tambien: su fuente y su configuracion, no el build ni node_modules.
+    frontend = RAIZ / "frontend"
+    fuente_spa = [
+        a
+        for a in (*frontend.glob("*"), *(frontend / "src").rglob("*"))
+        if a.suffix in (".ts", ".tsx", ".js", ".json", ".html", ".css") and a.name != "package-lock.json"
+    ]
+    assert fuente_spa, "la regla de emojis no esta mirando frontend/"
+
     infractores: list[str] = []
-    for ruta in [*modulos(APP), *modulos(RAIZ / "pruebas"), RAIZ / "tareas.py"]:
+    for ruta in [*modulos(APP), *modulos(RAIZ / "pruebas"), RAIZ / "tareas.py", *fuente_spa]:
         if not ruta.is_file():
             continue
         for numero, linea in enumerate(

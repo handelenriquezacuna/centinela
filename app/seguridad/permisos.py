@@ -11,7 +11,12 @@ prueba de contrato la senala. Las pruebas generan "cada ruta contra cada rol" de
 mismas tablas, asi que no hay una segunda lista que mantener.
 
 Sin sesion solo se puede entrar a `/login`, `/salud` y los estaticos (el montaje
-`/estaticos` no pasa por rutas de FastAPI y es publico por construccion).
+`/estaticos` no pasa por rutas de FastAPI y es publico por construccion; ahi vive tambien
+el build de la SPA, `/estaticos/spa/`, que no trae datos).
+
+Las rutas de pagina (`/panel`, `/detalle/{alerta_id}`, ...) tienen el mismo permiso con
+las dos interfaces (`portal.interfaz`): con `spa` devuelven el `index.html` de la SPA, y
+la decision de acceso sigue siendo esta tabla.
 """
 
 from __future__ import annotations
@@ -88,7 +93,9 @@ ACCESOS: tuple[Acceso, ...] = (
     _a("POST", "/salir", None),
     _a("GET", "/salud", None),
     _a("POST", "/api/v1/sesion", None),
+    _a("DELETE", "/api/v1/sesion", None),
     # Cualquier sesion
+    _a("GET", "/api/v1/sesion", Permiso.SESION),
     _a("GET", "/estado", Permiso.SESION),
     _a("GET", "/openapi.json", Permiso.SESION),
     # Panel y alertas
@@ -99,9 +106,14 @@ ACCESOS: tuple[Acceso, ...] = (
     _a("GET", "/panel/rezago", Permiso.PANEL),
     _a("GET", "/api/v1/alertas", Permiso.PANEL),
     _a("GET", "/api/v1/alertas/flujo", Permiso.PANEL),
+    _a("GET", "/api/v1/alertas/eventos", Permiso.PANEL),
+    _a("GET", "/api/v1/casos-destino", Permiso.PANEL),
+    _a("GET", "/api/v1/casos-destino/{cuenta}", Permiso.PANEL),
+    _a("GET", "/api/v1/deteccion/rezago", Permiso.PANEL),
     # Detalle y resolucion
     _a("GET", "/detalle", Permiso.DETALLE),
     _a("GET", "/detalle/{alerta_id}", Permiso.DETALLE),
+    _a("GET", "/api/v1/alertas/{alerta_id}/detalle", Permiso.DETALLE),
     _a("POST", "/detalle/{alerta_id}/transicion", Permiso.RESOLVER),
     _a("POST", "/api/v1/alertas/{alerta_id}/transiciones", Permiso.RESOLVER),
     _a("POST", "/api/v1/alertas/transiciones", Permiso.RESOLVER),
@@ -115,6 +127,8 @@ ACCESOS: tuple[Acceso, ...] = (
     _a("GET", "/red-mulas/{cuenta}", Permiso.RED_MULAS),
     _a("GET", "/red-mulas/{cuenta}/sankey", Permiso.RED_MULAS),
     _a("GET", "/api/v1/red-mulas/{cuenta}", Permiso.RED_MULAS),
+    _a("GET", "/api/v1/red-mulas/{cuenta}/sankey", Permiso.RED_MULAS),
+    _a("GET", "/api/v1/red-mulas/{cuenta}/grafo", Permiso.RED_MULAS),
     # Listas de riesgo: solo supervisor y administrador
     _a("POST", "/api/v1/red-mulas/{cuenta}/propuestas/{propuesta}", Permiso.GESTIONAR_LISTAS),
     _a("POST", "/red-mulas/{cuenta}/propuestas/{propuesta}", Permiso.GESTIONAR_LISTAS),
@@ -125,6 +139,7 @@ ACCESOS: tuple[Acceso, ...] = (
     # Tablero
     _a("GET", "/tablero", Permiso.TABLERO),
     _a("GET", "/api/v1/efectividad", Permiso.TABLERO),
+    _a("GET", "/api/v1/tablero", Permiso.TABLERO),
     # Reglas y politica
     _a("GET", "/reglas", Permiso.VER_REGLAS),
     _a("GET", "/api/v1/reglas", Permiso.VER_REGLAS),

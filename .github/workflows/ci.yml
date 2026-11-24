@@ -57,6 +57,15 @@
 # el paso falla y el PR no se puede fusionar. Para subir pip-audit, cambiar su version
 # fijada en el paso y correr el mismo comando en local antes de empujar.
 #
+# Frontend (T-61): la SPA React vive en frontend/. Node se instala con
+# actions/setup-node fijado por SHA (la accion corre sobre node24) y con la version EXACTA
+# de frontend/.nvmrc, la misma que usa el equipo en local. `npm ci` instala lo que dice
+# package-lock.json, nada mas; el cache es el de npm, por el hash del lock. Compuertas:
+# lint, typecheck, Vitest, `npm audit --audit-level=high` (cero hallazgos altos o
+# criticos) y el build, que escribe app/estaticos/spa/. El build va ANTES de las e2e: la
+# prueba de la SPA lo sirve con portal.interfaz=spa y, en modo estricto, falta de build es
+# falla.
+#
 # Lo que a proposito NO esta aqui: pruebas de rendimiento y de resiliencia. La
 # resiliencia (que el replica set elija otro primario si el actual cae, y que D1 no
 # duplique ni pierda alertas) necesita tres nodos con eleccion real y Docker con puertos
@@ -97,6 +106,37 @@ jobs:
 
       - name: Compuerta -- ruff
         run: uv run ruff check .
+
+      - name: Instalar Node (version de frontend/.nvmrc)
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependencias exactas del frontend (npm ci)
+        working-directory: frontend
+        run: npm ci
+
+      - name: Compuerta -- frontend lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Compuerta -- frontend typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Compuerta -- frontend pruebas de componentes (Vitest)
+        working-directory: frontend
+        run: npm test
+
+      - name: Compuerta -- frontend auditoria de dependencias
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+      - name: Construir la SPA (app/estaticos/spa, antes de las e2e)
+        working-directory: frontend
+        run: npm run build
 
       # Auditoria de dependencias: exporta el lock exacto (sin hashes, el mismo formato que
       # usa el equipo en local) y lo audita con pip-audit en version fija. pipefail hace que
