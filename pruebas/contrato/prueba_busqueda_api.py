@@ -253,3 +253,31 @@ async def prueba_parametros_invalidos_son_422_con_la_forma_unica(
 @pytest.mark.asyncio
 async def prueba_una_fecha_sin_zona_se_toma_como_utc(cliente: AsyncClient) -> None:
     assert await _ids(cliente, desde="2026-10-06T12:00:00") == ["TXN-006"]
+
+
+@pytest.mark.asyncio
+async def prueba_el_csv_de_la_api_aplica_los_filtros_con_montos_enteros_y_hora_cr(
+    cliente: AsyncClient,
+) -> None:
+    respuesta = await cliente.get(
+        RUTA + "/exportar.csv",
+        params={"cuenta": "CTA-002", "monto_min": 30000, "desde": "2026-10-01T00:00:00-06:00"},
+    )
+    assert respuesta.status_code == 200, respuesta.text
+    assert respuesta.headers["content-type"].startswith("text/csv")
+    assert "attachment" in respuesta.headers["content-disposition"]
+    assert respuesta.headers["x-filas-exportadas"] == "1"
+    lineas = respuesta.text.strip().split("\r\n")
+    assert lineas[0].startswith("transaccion_id,fecha_hora_cr,cuenta_origen")
+    # 12:00 UTC del 4 de octubre son las 06:00 en Costa Rica; el monto va entero.
+    assert lineas[1].startswith("TXN-004,2026-10-04 06:00:00,CTA-002,")
+    assert ",40000,CRC," in lineas[1]
+
+
+@pytest.mark.asyncio
+async def prueba_el_csv_de_la_api_rechaza_un_rango_invertido_con_la_forma_unica(
+    cliente: AsyncClient,
+) -> None:
+    respuesta = await cliente.get(RUTA + "/exportar.csv", params={"monto_min": 9, "monto_max": 1})
+    assert respuesta.status_code == 422
+    assert respuesta.json()["error"]["codigo"] == "parametros_invalidos"

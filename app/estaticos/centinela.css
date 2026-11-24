@@ -1136,3 +1136,9 @@ summary:focus-visible {
 .atajos > div { display: flex; gap: var(--espacio-3); margin-bottom: var(--espacio-1); }
 .atajos dt { min-width: 6rem; }
 .atajos dd { margin: 0; }
+
+/* Filas del panel de la SPA (tr de la vista por cuenta destino): foco de los atajos j/k. */
+[data-fila-atajo]:focus {
+  outline: 3px solid var(--color-acento);
+  outline-offset: -3px;
+}

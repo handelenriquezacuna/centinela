@@ -6,6 +6,7 @@ import { alPerderSesion, ErrorApi } from "./api/cliente";
 import { CLAVE_SESION } from "./api/sesion";
 import { Marco } from "./componentes/Marco";
 import { RequiereSesion } from "./componentes/RequiereSesion";
+import { Busqueda } from "./paginas/Busqueda";
 import { Login } from "./paginas/Login";
 import { NoEncontrada } from "./paginas/NoEncontrada";
 import { Panel } from "./paginas/Panel";
@@ -37,7 +38,7 @@ export const RUTAS: RouteObject[] = [
       },
       {
         path: "/busqueda",
-        element: protegida("/busqueda", <Pendiente titulo="Búsqueda forense" endpoint="GET /api/v1/transacciones" />),
+        element: protegida("/busqueda", <Busqueda />),
       },
       {
         path: "/red-mulas",

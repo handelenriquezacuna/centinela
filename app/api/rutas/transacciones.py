@@ -8,10 +8,13 @@ resumen del `explain` de la consulta, para ver que indice uso.
 
 from __future__ import annotations
 
+import csv
+import io
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, status
+from fastapi.responses import Response
 
 from app.api.dependencias import AjustesDep, RepoBusquedaDep
 from app.api.errores import (
@@ -22,12 +25,58 @@ from app.api.errores import (
 )
 from app.api.esquemas import ElementoTransaccion, PaginaTransacciones
 from app.api.paginacion import acotar_limite
-from app.modelos import EstadoAlerta
+from app.modelos import ZONA_COSTA_RICA, EstadoAlerta
 from app.modelos.base import asumir_utc
 from app.modelos.transaccional import Canal
-from app.repos.busqueda import FiltroBusqueda, problemas_del_filtro
+from app.repos.busqueda import LIMITE_EXPORTACION, FiltroBusqueda, problemas_del_filtro
 
 enrutador = APIRouter(tags=["transacciones"])
+
+COLUMNAS_CSV = (
+    "transaccion_id",
+    "fecha_hora_cr",
+    "cuenta_origen",
+    "sinpe_origen",
+    "cuenta_destino",
+    "monto_crc",
+    "moneda",
+    "canal",
+    "alerta_id",
+    "alerta_estado",
+)
+
+
+def fila_csv(documento: dict[str, Any]) -> list[Any]:
+    return [
+        documento["_id"],
+        documento["fecha"].astimezone(ZONA_COSTA_RICA).strftime("%Y-%m-%d %H:%M:%S"),
+        documento["cuenta_origen"],
+        documento.get("sinpe_origen") or "",
+        documento["cuenta_destino"],
+        int(documento["monto_crc"]),
+        documento["moneda"],
+        documento["canal"],
+        documento.get("alerta_id") or "",
+        documento.get("alerta_estado") or "",
+    ]
+
+
+def respuesta_csv(resultado: Any) -> Response:
+    """El CSV de una busqueda: montos enteros, fechas en hora de Costa Rica."""
+    salida = io.StringIO()
+    escritor = csv.writer(salida, lineterminator="\r\n")
+    escritor.writerow(COLUMNAS_CSV)
+    for documento in resultado.documentos:
+        escritor.writerow(fila_csv(documento))
+    return Response(
+        salida.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="transacciones.csv"',
+            "X-Total-Coincidencias": str(resultado.total),
+            "X-Filas-Exportadas": str(len(resultado.documentos)),
+        },
+    )
 
 
 def exigir_filtro_valido(filtro: FiltroBusqueda) -> None:
@@ -131,6 +180,46 @@ async def buscar_transacciones(
         elementos=[elemento_de(d) for d in resultado.documentos],
         plan=resultado.plan,
     )
+
+
+@enrutador.get(
+    "/transacciones/exportar.csv",
+    response_class=Response,
+    summary="Exporta a CSV las transacciones de una busqueda forense",
+    responses={
+        status.HTTP_200_OK: {"content": {"text/csv": {}}, "description": "CSV con encabezado"},
+        **respuestas_documentadas(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+        ),
+    },
+)
+async def exportar_transacciones_csv(
+    repo: RepoBusquedaDep,
+    desde: Annotated[datetime | None, Query(description="Limite inferior de fecha, con zona")] = None,
+    hasta: Annotated[datetime | None, Query(description="Limite superior de fecha, con zona")] = None,
+    monto_min: Annotated[int | None, Query(ge=0, description="Colones enteros")] = None,
+    monto_max: Annotated[int | None, Query(ge=0, description="Colones enteros")] = None,
+    cuenta: Annotated[str | None, Query(max_length=32)] = None,
+    canal: Annotated[list[Canal] | None, Query()] = None,
+    estado_alerta: Annotated[EstadoAlerta | None, Query()] = None,
+) -> Response:
+    """Los mismos filtros que `GET /api/v1/transacciones`, hasta `LIMITE_EXPORTACION` filas.
+
+    Montos enteros y fechas en hora de Costa Rica. El total de coincidencias viaja en
+    `X-Total-Coincidencias` y las filas escritas en `X-Filas-Exportadas`.
+    """
+    filtro = FiltroBusqueda(
+        desde=asumir_utc(desde) if desde is not None else None,
+        hasta=asumir_utc(hasta) if hasta is not None else None,
+        monto_min=monto_min,
+        monto_max=monto_max,
+        cuenta=cuenta.strip() if cuenta and cuenta.strip() else None,
+        canales=tuple(c.value for c in canal) if canal else (),
+        estado_alerta=estado_alerta,
+    )
+    exigir_filtro_valido(filtro)
+    return respuesta_csv(await repo.buscar(filtro, limite=LIMITE_EXPORTACION))
 
 
 def elemento_de(documento: dict) -> ElementoTransaccion:
