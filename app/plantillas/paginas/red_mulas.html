@@ -2,6 +2,7 @@
 {% block titulo %}Red de mulas{% endblock %}
 {% block contenido %}
 <link rel="stylesheet" href="/estaticos/tablero.css">
+<link rel="stylesheet" href="/estaticos/sankey.css">
 <div class="titulo-pantalla">
   <div>
     <h1>Red de cuentas mula</h1>
@@ -24,6 +25,11 @@
   {% if red.truncada %}La red se trunco por tamano.{% endif %}
 </p>
 {% if grafo %}
+<section class="tarjeta" aria-label="Recorrido del dinero">
+  <h2 class="seccion-titulo">Recorrido del dinero (Sankey)</h2>
+  {% include "paginas/sankey.html" %}
+</section>
+
 <section class="tarjeta grafo-contenedor" aria-label="Grafo">
   <svg class="grafico grafo" id="grafo-red" width="{{ grafo.ancho }}" height="{{ grafo.alto }}" viewBox="0 0 {{ grafo.ancho }} {{ grafo.alto }}" role="img" aria-label="Red de mulas de {{ red.cuenta }}">
     <defs><marker id="flecha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#475569"></path></marker></defs>

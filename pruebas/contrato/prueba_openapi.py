@@ -41,6 +41,7 @@ def prueba_estan_publicadas_las_rutas_decididas() -> None:
         "/api/v1/efectividad",
         "/api/v1/red-mulas/{cuenta}",
         "/api/v1/red-mulas/{cuenta}/propuestas/{propuesta}",
+        "/api/v1/listas-riesgo",
         "/api/v1/listas-riesgo/{riesgo_id}",
     }
 
@@ -95,6 +96,7 @@ def prueba_las_rutas_de_listas_de_riesgo_publican_sus_errores() -> None:
     esperado = {
         "/api/v1/red-mulas/{cuenta}/propuestas/{propuesta}": ("post", {"422"}),
         "/api/v1/listas-riesgo/{riesgo_id}": ("delete", {"404", "422"}),
+        "/api/v1/listas-riesgo": ("post", {"422"}),
     }
     for ruta, (metodo, errores) in esperado.items():
         assert set(ESQUEMA["paths"][ruta]) == {metodo}, ruta

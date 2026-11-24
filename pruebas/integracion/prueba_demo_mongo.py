@@ -110,7 +110,11 @@ async def prueba_la_red_del_caso_dibuja_tres_saltos_con_sus_montos(base_demo: An
     ]
     assert [a.minutos_desde_anterior for a in red.aristas] == [4.0, 9.0, 11.0]
     assert not any(nodo.externa for nodo in red.nodos), "las cuatro cuentas existen en cuentas"
-    assert all(nodo.en_lista_riesgo for nodo in red.nodos)
+    # D-55: solo el primer salto esta reportado; las otras tres son propuestas de la red.
+    assert {n.cuenta: n.en_lista_riesgo for n in red.nodos} == {
+        "6033-9001": True, "7104-2288": False, "8455-1177": False, "6001-3344": False,
+    }
+    assert red.propuestas_lista_riesgo == ["7104-2288", "8455-1177", "6001-3344"]
 
 
 @pytest.mark.asyncio

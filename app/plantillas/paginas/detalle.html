@@ -2,6 +2,7 @@
 {% block titulo %}Alerta {{ alerta['_id'] }}{% endblock %}
 {% block contenido %}
 <link rel="stylesheet" href="/estaticos/detalle.css">
+<link rel="stylesheet" href="/estaticos/sankey.css">
 <p class="migaja"><a href="/panel">Panel</a> / Alerta {{ alerta['_id'] }}</p>
 
 <div class="titulo-pantalla">
@@ -36,6 +37,14 @@
     <div><dt>Fecha y hora (hora CR)</dt><dd class="hora">{{ (transaccion['fecha'] if transaccion else alerta['fecha_creacion']) | hora_costa_rica }}</dd></div>
   </dl>
   {% if not transaccion %}<p class="nota-tecnica">No se encontró la transacción; se muestran los datos copiados en la alerta.</p>{% endif %}
+</section>
+
+<section class="tarjeta" aria-label="Recorrido del dinero">
+  <h2 class="seccion-titulo">Recorrido del dinero</h2>
+  <div id="sankey-carga" hx-get="/red-mulas/{{ alerta['cuenta_destino'] }}/sankey?desde={{ (transaccion['fecha'] if transaccion else alerta['fecha_creacion']).isoformat() | urlencode }}&amp;transaccion={{ alerta['transaccion_id'] }}"
+       hx-trigger="load" hx-swap="innerHTML">
+    <p class="nota-tecnica">Cargando el recorrido del dinero.</p>
+  </div>
 </section>
 
 <section class="tarjeta" aria-label="Perfil del cliente">

@@ -221,6 +221,13 @@ async def _restaurar(base: Any) -> None:
     await base["alertas"].delete_many({"_id": {"$nin": sorted(demo)}})
     ids_demo = [t.transaccion_id for t in DATOS_DEMO["transacciones"]]
     await base["transacciones"].delete_many({"_id": {"$nin": ids_demo}})
+    # Las listas de riesgo: una prueba pudo quitar o agregar entradas (T-55).
+    listas = DATOS_DEMO["listas_riesgo"]
+    await base["listas_riesgo"].delete_many({"_id": {"$nin": [e.riesgo_id for e in listas]}})
+    for entrada in listas:
+        await base["listas_riesgo"].replace_one(
+            {"_id": entrada.riesgo_id}, a_entero_64(entrada.a_documento()), upsert=True
+        )
 
 
 @pytest.fixture(autouse=True)

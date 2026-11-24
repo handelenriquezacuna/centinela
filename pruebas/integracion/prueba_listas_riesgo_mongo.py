@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -150,11 +151,11 @@ async def prueba_aprobar_crea_la_entrada_vigente_con_la_forma_del_validador(
     entrada = await base_listas["listas_riesgo"].find_one({"cuenta": DESTINO})
     assert entrada is not None  # el validador real la acepto al insertar
     assert set(entrada) == {"_id", "cuenta", "motivo", "fecha_reporte", "vigente", "esquema_version"}
-    assert entrada["_id"] == "RSK-005"  # el demo trae RSK-001..004
+    assert entrada["_id"] == "RSK-002"  # el demo trae RSK-001
     assert entrada["vigente"] is True and entrada["esquema_version"] == 1
     assert entrada["motivo"] == "red de mulas desde 8712-4455"
     assert entrada["fecha_reporte"].replace(tzinfo=UTC) >= antes.replace(microsecond=0)
-    assert respuesta.json()["entrada"]["_id"] == "RSK-005"
+    assert respuesta.json()["entrada"]["_id"] == "RSK-002"
 
 
 @pytest.mark.asyncio
@@ -200,7 +201,7 @@ async def prueba_el_repo_asigna_ids_sin_chocar_con_los_del_generador(base_listas
         DESTINO, cuenta_partida="8712-4455", agente_id="AGT-002"
     )
 
-    assert resultado.entrada["_id"] == "RSK-005" and resultado.creada
+    assert resultado.entrada["_id"] == "RSK-002" and resultado.creada
 
 
 # ---------------------------------------------------------------------------
@@ -215,17 +216,17 @@ async def prueba_dar_de_baja_elimina_el_documento_y_deja_rastro(
     caplog.set_level(logging.INFO, logger="centinela.auditoria")
     await http.post(APROBAR)
 
-    respuesta = await http.delete("/api/v1/listas-riesgo/RSK-005")
-    otra_vez = await http.delete("/api/v1/listas-riesgo/RSK-005")
+    respuesta = await http.delete("/api/v1/listas-riesgo/RSK-002")
+    otra_vez = await http.delete("/api/v1/listas-riesgo/RSK-002")
 
     assert respuesta.status_code == 204
-    assert await base_listas["listas_riesgo"].count_documents({"_id": "RSK-005"}) == 0
+    assert await base_listas["listas_riesgo"].count_documents({"_id": "RSK-002"}) == 0
     assert otra_vez.status_code == 404
     assert otra_vez.json()["error"]["codigo"] == "no_encontrado"
     baja = [r for r in caplog.records if "lista_riesgo_baja" in r.getMessage()]
     assert len(baja) == 1
     texto = baja[0].getMessage()
-    assert f"cuenta={DESTINO}" in texto and "id=RSK-005" in texto and "dio_de_baja=AGT-002" in texto
+    assert f"cuenta={DESTINO}" in texto and "id=RSK-002" in texto and "dio_de_baja=AGT-002" in texto
     assert "red de mulas desde 8712-4455" in texto
 
 
@@ -235,7 +236,7 @@ async def prueba_no_se_crea_ninguna_coleccion_para_el_rastro(
 ) -> None:
     antes = set(await base_listas.list_collection_names())
     await http.post(APROBAR)
-    await http.delete("/api/v1/listas-riesgo/RSK-005")
+    await http.delete("/api/v1/listas-riesgo/RSK-002")
 
     assert set(await base_listas.list_collection_names()) - antes <= {"indicadores_diarios"}
 
@@ -275,6 +276,98 @@ async def prueba_r07_dispara_en_la_siguiente_transaccion_al_destino_aprobado(
     assert "R-07" in await _codigos(base_listas, "TXN-032")
 
     # 3. Se da de baja y la que sigue ya no dispara.
-    assert (await http.delete("/api/v1/listas-riesgo/RSK-005")).status_code == 204
+    assert (await http.delete("/api/v1/listas-riesgo/RSK-002")).status_code == 204
     await insertar(_transaccion("TXN-033", DESTINO, 4))
     assert "R-07" not in await _codigos(base_listas, "TXN-033")
+
+
+# ---------------------------------------------------------------------------
+# T-55: marcar como mula desde el Sankey
+# ---------------------------------------------------------------------------
+
+MARCAR = "/api/v1/listas-riesgo"
+
+
+@pytest.mark.asyncio
+async def prueba_marcar_guarda_el_motivo_libre_y_deja_la_auditoria(
+    http: AsyncClient, base_listas: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO, logger="centinela.auditoria")
+    respuesta = await http.post(MARCAR, json={"cuenta": DESTINO, "motivo": "  Recibio el dinero de la victima  "})
+    repetida = await http.post(MARCAR, json={"cuenta": DESTINO, "motivo": "otro motivo cualquiera"})
+
+    assert (respuesta.status_code, repetida.status_code) == (201, 200)
+    entradas = await base_listas["listas_riesgo"].find({"cuenta": DESTINO}).to_list(None)
+    assert len(entradas) == 1  # el validador real la acepto, y una cuenta tiene una entrada
+    assert entradas[0]["motivo"] == "Recibio el dinero de la victima"
+    assert entradas[0]["vigente"] is True
+    altas = [r.getMessage() for r in caplog.records if "lista_riesgo_alta" in r.getMessage()]
+    assert len(altas) == 1
+    assert f"cuenta={DESTINO}" in altas[0] and "aprobo=AGT-002" in altas[0] and "via=marca" in altas[0]
+    assert "Recibio el dinero de la victima" in altas[0]
+
+
+@pytest.mark.asyncio
+async def prueba_marcar_sin_motivo_es_422_y_no_escribe(
+    http: AsyncClient, base_listas: Any
+) -> None:
+    sin = await http.post(MARCAR, json={"cuenta": DESTINO})
+    vacio = await http.post(MARCAR, json={"cuenta": DESTINO, "motivo": "   "})
+
+    assert sin.status_code == vacio.status_code == 422
+    assert await base_listas["listas_riesgo"].count_documents({"cuenta": DESTINO}) == 0
+
+
+@pytest.mark.asyncio
+async def prueba_el_agente_no_puede_marcar_y_la_base_queda_intacta(
+    http: AsyncClient, base_listas: Any
+) -> None:
+    respuesta = await http.post(
+        MARCAR,
+        json={"cuenta": DESTINO, "motivo": "Recibio el dinero"},
+        headers=encabezados_de("agente", "AGT-001"),
+    )
+
+    assert respuesta.status_code == 403
+    assert await base_listas["listas_riesgo"].count_documents({"cuenta": DESTINO}) == 0
+
+
+@pytest.mark.asyncio
+async def prueba_marcar_desde_el_sankey_cambia_el_nodo_y_r07_dispara_en_la_siguiente(
+    http: AsyncClient, base_listas: Any
+) -> None:
+    """De punta a punta: la mula marcada en el Sankey dispara R-07 en la transaccion que sigue.
+
+    La cadena de la demo es 6033-9001 -> 7104-2288 -> 8455-1177 -> 6001-3344 (TXN-005..007).
+    """
+    ids_cadena = ("TXN-005", "TXN-006", "TXN-007")
+    cadena = [t for t in DATOS_DEMO["transacciones"] if t.transaccion_id in ids_cadena]
+    await base_listas["transacciones"].insert_many([a_entero_64(t.a_documento()) for t in cadena])
+    mula = "7104-2288"
+    # D-55: el demo solo trae a 6033-9001 en la lista; 7104-2288 es una propuesta de la red.
+    assert await base_listas["listas_riesgo"].count_documents({"cuenta": mula}) == 0
+
+    async def insertar(transaccion: Transaccion) -> None:
+        await base_listas["transacciones"].insert_one(a_entero_64(transaccion.a_documento()))
+
+    await insertar(_transaccion("TXN-041", mula, 0))
+    assert "R-07" not in await _codigos(base_listas, "TXN-041")
+
+    antes = await http.get("/red-mulas/6033-9001")
+    assert antes.status_code == 200 and 'data-saltos="3"' in antes.text
+    assert re.search(rf'data-cuenta="{mula}"[^>]*data-en-lista="no"', antes.text)
+    assert "Marcar como mula" in antes.text
+
+    marca = await http.post(
+        f"/red-mulas/6033-9001/mulas/{mula}",
+        content="motivo=Recibio+el+dinero+de+la+victima",
+        headers={"content-type": "application/x-www-form-urlencoded"},
+    )
+    assert marca.status_code == 200
+    assert re.search(rf'data-cuenta="{mula}"[^>]*data-en-lista="si"', marca.text)
+    assert "quedó en lista de riesgo" in marca.text
+    entrada = await base_listas["listas_riesgo"].find_one({"cuenta": mula})
+    assert entrada["motivo"] == "Recibio el dinero de la victima" and entrada["vigente"] is True
+
+    await insertar(_transaccion("TXN-042", mula, 2))
+    assert "R-07" in await _codigos(base_listas, "TXN-042")

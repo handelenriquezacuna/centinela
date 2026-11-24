@@ -16,10 +16,15 @@ import pytest_asyncio
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
-from app.api.dependencias import dep_repo_red_mulas_portal, dep_repo_tablero
+from app.api.dependencias import (
+    dep_repo_detalle,
+    dep_repo_red_mulas_portal,
+    dep_repo_tablero,
+)
 from app.api.rutas.listas_riesgo import dep_repo_listas_riesgo
 from app.main import crear_aplicacion
 from app.modelos.alertas import RolAgente
+from pruebas.dobles.repo_detalle_falso import RepoDetalleFalso
 from pruebas.dobles.repo_tablero_falso import (
     RepoListasRiesgoFalso,
     RepoRedMulasFalso,
@@ -59,9 +64,10 @@ async def http(listas: RepoListasRiesgoFalso, tablero: RepoTableroFalso) -> Asyn
     creada = crear_aplicacion()
     creada.dependency_overrides[dep_repo_listas_riesgo] = lambda: listas
     creada.dependency_overrides[dep_repo_red_mulas_portal] = lambda: RepoRedMulasFalso(
-        red_de_cuatro_saltos()
+        red_de_cuatro_saltos(), listas
     )
     creada.dependency_overrides[dep_repo_tablero] = lambda: tablero
+    creada.dependency_overrides[dep_repo_detalle] = lambda: RepoDetalleFalso()
     async with LifespanManager(creada) as gestionada, AsyncClient(
         transport=ASGITransport(app=gestionada.app), base_url="http://pruebas"
     ) as cliente:
@@ -238,6 +244,193 @@ async def prueba_el_formulario_htmx_da_de_baja_y_un_inexistente_es_404(
 
     assert ok.status_code == 200 and "Dada de baja" in ok.text and listas.entradas == []
     assert falta.status_code == 404 and "No existe la entrada RSK-001" in falta.text
+
+
+# ---------------------------------------------------------------------------
+# Sankey y marcar como mula (T-55)
+# ---------------------------------------------------------------------------
+
+MARCAR = "/api/v1/listas-riesgo"
+MARCAR_PORTAL = "/red-mulas/8712-4455/mulas/6033-9002?desde=2026-11-19T03:47:00%2B00:00"
+
+
+@pytest.mark.asyncio
+async def prueba_la_pagina_de_la_red_dibuja_el_sankey_con_bandas_proporcionales(
+    http: AsyncClient,
+) -> None:
+    html = (await http.get(PAGINA_RED, headers=_como(RolAgente.AGENTE))).text
+
+    assert 'id="sankey-svg"' in html and 'role="img"' in html
+    assert html.count('class="sankey-banda"') == 4
+    assert 'data-saltos="4"' in html
+    assert re.search(r"<title>₡750\.000 de 8712-4455 a 6033-9001, 18/11/2026 21:47", html)
+    grosores = [int(g) for g in re.findall(r'data-grosor="(\d+)"', html)]
+    assert grosores == sorted(grosores, reverse=True) and grosores[0] == 140
+
+
+@pytest.mark.asyncio
+async def prueba_el_agente_ve_el_sankey_pero_no_el_boton_de_marcar(http: AsyncClient) -> None:
+    html = (await http.get(PAGINA_RED, headers=_como(RolAgente.AGENTE))).text
+
+    assert 'id="sankey-cuentas"' in html and "6033-9002" in html
+    assert "Marcar como mula" not in html
+
+
+@pytest.mark.asyncio
+async def prueba_el_supervisor_ve_el_boton_solo_en_las_cuentas_sin_marca(
+    http: AsyncClient,
+) -> None:
+    html = (await http.get(PAGINA_RED, headers=_como(RolAgente.SUPERVISOR))).text
+
+    assert html.count("Marcar como mula") == 4  # 5 cuentas, una ya en lista (6033-9001)
+    assert 'hx-post="/red-mulas/8712-4455/mulas/6033-9002?' in html
+    assert 'hx-post="/red-mulas/8712-4455/mulas/6033-9001?' not in html
+    assert "hx-confirm=\"Se marca la cuenta 6033-9002 como mula" in html
+    assert 'data-cuenta="6033-9001" data-columna="1" data-en-lista="si"' in html
+
+
+@pytest.mark.asyncio
+async def prueba_el_fragmento_del_sankey_es_el_mismo_dibujo(http: AsyncClient) -> None:
+    respuesta = await http.get(
+        "/red-mulas/8712-4455/sankey?desde=2026-11-19T03:47:00", headers=_como(RolAgente.AGENTE)
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.text.lstrip().startswith('<div id="sankey"')
+    assert "<html" not in respuesta.text
+
+
+@pytest.mark.asyncio
+async def prueba_con_transaccion_de_partida_la_victima_es_la_columna_0_y_no_tiene_boton(
+    http: AsyncClient,
+) -> None:
+    ruta = "/red-mulas/8712-4455/sankey?desde=2026-11-19T03:47:00&transaccion=TXN-001"
+    html = (await http.get(ruta, headers=_como(RolAgente.SUPERVISOR))).text
+
+    assert 'data-saltos="4" data-transferencias="5"' in html
+    assert "desde la víctima Maria Rodriguez Vargas: 5 transferencias" in html
+    assert html.count('class="sankey-banda"') == 5
+    assert re.search(r'data-cuenta="CTA-001" data-columna="0" data-en-lista="no" data-victima="si"', html)
+    assert "Víctima: Maria Rodriguez Vargas" in html
+    assert 'hx-post="/red-mulas/8712-4455/mulas/CTA-001' not in html
+    # Los formularios de marcar repiten la transaccion para volver a dibujar con la victima.
+    assert "transaccion=TXN-001" in html and html.count("Marcar como mula") == 4
+    grosores = [int(g) for g in re.findall(r'data-grosor="(\d+)"', html)]
+    assert grosores[0] == 140  # 750.000 es la mayor banda
+
+
+@pytest.mark.asyncio
+async def prueba_sin_transaccion_de_partida_el_sankey_no_tiene_victima(http: AsyncClient) -> None:
+    html = (await http.get(PAGINA_RED, headers=_como(RolAgente.AGENTE))).text
+
+    assert 'data-victima="si"' not in html and "desde la cuenta 8712-4455" in html
+    assert 'data-saltos="4" data-transferencias="4"' in html
+
+
+@pytest.mark.asyncio
+async def prueba_marcar_con_transaccion_vuelve_a_dibujar_con_la_victima(
+    http: AsyncClient,
+) -> None:
+    respuesta = await http.post(
+        MARCAR_PORTAL + "&transaccion=TXN-001",
+        content="motivo=Recibio+el+dinero",
+        headers={**_como(RolAgente.SUPERVISOR),
+                 "content-type": "application/x-www-form-urlencoded"},
+    )
+
+    assert respuesta.status_code == 200
+    assert 'data-victima="si"' in respuesta.text and "5 transferencias" in respuesta.text
+    assert 'data-cuenta="6033-9002" data-columna="3" data-en-lista="si"' in respuesta.text
+
+
+@pytest.mark.asyncio
+async def prueba_marcar_desde_el_portal_cambia_el_nodo_y_guarda_el_motivo(
+    http: AsyncClient, listas: RepoListasRiesgoFalso
+) -> None:
+    respuesta = await http.post(
+        MARCAR_PORTAL,
+        content="motivo=Recibio+el+dinero+de+la+victima",
+        headers={**_como(RolAgente.SUPERVISOR, "AGT-003"),
+                 "content-type": "application/x-www-form-urlencoded"},
+    )
+
+    assert respuesta.status_code == 200
+    assert 'data-cuenta="6033-9002" data-columna="2" data-en-lista="si"' in respuesta.text
+    assert "quedó en lista de riesgo" in respuesta.text
+    nueva = listas.entradas[-1]
+    assert nueva["cuenta"] == "6033-9002" and nueva["aprobo"] == "AGT-003"
+    assert nueva["motivo"] == "Recibio el dinero de la victima"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cuerpo", ["motivo=", "motivo=+++", "", "motivo=abc", "motivo=" + "x" * 201])
+async def prueba_marcar_desde_el_portal_sin_motivo_valido_es_422_y_no_escribe(
+    http: AsyncClient, listas: RepoListasRiesgoFalso, cuerpo: str
+) -> None:
+    respuesta = await http.post(
+        MARCAR_PORTAL,
+        content=cuerpo,
+        headers={**_como(RolAgente.SUPERVISOR),
+                 "content-type": "application/x-www-form-urlencoded"},
+    )
+
+    assert respuesta.status_code == 422
+    assert "El motivo es obligatorio" in respuesta.text and 'role="alert"' in respuesta.text
+    assert [e["cuenta"] for e in listas.entradas] == ["6033-9001"]
+
+
+@pytest.mark.asyncio
+async def prueba_el_agente_no_puede_marcar_ni_por_la_api_ni_por_el_portal(
+    http: AsyncClient, listas: RepoListasRiesgoFalso
+) -> None:
+    api = await http.post(
+        MARCAR,
+        json={"cuenta": "6033-9002", "motivo": "Recibio el dinero"},
+        headers=_como(RolAgente.AGENTE),
+    )
+    portal = await http.post(
+        MARCAR_PORTAL, content="motivo=Recibio+el+dinero", headers=_como(RolAgente.AGENTE)
+    )
+
+    assert api.status_code == portal.status_code == 403
+    assert [e["cuenta"] for e in listas.entradas] == ["6033-9001"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "cuerpo",
+    [
+        {"cuenta": "6033-9002"},
+        {"cuenta": "6033-9002", "motivo": ""},
+        {"cuenta": "6033-9002", "motivo": "    "},
+        {"cuenta": "6033-9002", "motivo": "x" * 201},
+        {"cuenta": "no-es-sinpe", "motivo": "Recibio el dinero"},
+        {"cuenta": "6033-9002", "motivo": "Recibio el dinero", "vigente": False},
+    ],
+)
+async def prueba_marcar_por_la_api_con_cuerpo_invalido_es_422(
+    http: AsyncClient, listas: RepoListasRiesgoFalso, cuerpo: dict[str, Any]
+) -> None:
+    respuesta = await http.post(MARCAR, json=cuerpo, headers=_como(RolAgente.SUPERVISOR))
+
+    assert respuesta.status_code == 422
+    assert set(respuesta.json()["error"]) == {"codigo", "mensaje", "detalles"}
+    assert len(listas.entradas) == 1
+
+
+@pytest.mark.asyncio
+async def prueba_marcar_por_la_api_crea_201_y_es_idempotente(
+    http: AsyncClient, listas: RepoListasRiesgoFalso
+) -> None:
+    cuerpo = {"cuenta": "6033-9002", "motivo": "  Recibio el dinero  "}
+    primera = await http.post(MARCAR, json=cuerpo, headers=_como(RolAgente.SUPERVISOR, "AGT-003"))
+    segunda = await http.post(MARCAR, json=cuerpo, headers=_como(RolAgente.ADMINISTRADOR))
+
+    assert (primera.status_code, segunda.status_code) == (201, 200)
+    assert primera.json()["entrada"]["motivo"] == "Recibio el dinero"
+    assert primera.json()["creada"] is True and segunda.json()["creada"] is False
+    assert listas.entradas[-1]["aprobo"] == "AGT-003"
+    assert len([e for e in listas.entradas if e["cuenta"] == "6033-9002"]) == 1
 
 
 # ---------------------------------------------------------------------------

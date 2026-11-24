@@ -437,11 +437,11 @@ recrearColeccion("listas_riesgo", {
 // fecha_reporte no esta dada en el contrato (solo cuenta y motivo): se usa
 // el dia siguiente al caso UC-02 como dato de relleno razonable (cuando el
 // agente investiga la cadena en UC-04).
+// D-55: solo el primer salto esta reportado. Las otras tres cuentas de la cadena
+// (7104-2288, 8455-1177, 6001-3344) son propuestas de la red de mulas: un supervisor
+// las marca desde el Sankey.
 db.listas_riesgo.insertMany([
-  { _id: "RSK-001", cuenta: "6033-9001", motivo: "Primer salto de una cadena de fragmentacion", fecha_reporte: new Date("2026-09-25T09:00:00-06:00"), vigente: true, esquema_version: 1 },
-  { _id: "RSK-002", cuenta: "7104-2288", motivo: "Segundo salto", fecha_reporte: new Date("2026-09-25T09:00:00-06:00"), vigente: true, esquema_version: 1 },
-  { _id: "RSK-003", cuenta: "8455-1177", motivo: "Tercer salto", fecha_reporte: new Date("2026-09-25T09:00:00-06:00"), vigente: true, esquema_version: 1 },
-  { _id: "RSK-004", cuenta: "6001-3344", motivo: "Cuarto salto", fecha_reporte: new Date("2026-09-25T09:00:00-06:00"), vigente: true, esquema_version: 1 }
+  { _id: "RSK-001", cuenta: "6033-9001", motivo: "Primer salto de una cadena de fragmentacion", fecha_reporte: new Date("2026-09-25T09:00:00-06:00"), vigente: true, esquema_version: 1 }
 ]);
 
 // ------------------------------------------------------------

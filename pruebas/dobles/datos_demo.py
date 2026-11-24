@@ -153,29 +153,13 @@ PERFILES = [
 # Definirlo en los dos lugares es garantizar que se separen: los pesos de las reglas
 # son de quien las disena, no de la plataforma.
 
+# D-55: solo el primer salto esta reportado; las otras tres cuentas de la cadena son
+# propuestas de la red de mulas y se marcan desde el Sankey.
 LISTAS_RIESGO = [
     EntradaListaRiesgo(
         _id="RSK-001",
         cuenta="6033-9001",
         motivo="Primer salto de una cadena de fragmentacion",
-        fecha_reporte=_local(23, 10),
-    ),
-    EntradaListaRiesgo(
-        _id="RSK-002",
-        cuenta="7104-2288",
-        motivo="Segundo salto",
-        fecha_reporte=_local(23, 10),
-    ),
-    EntradaListaRiesgo(
-        _id="RSK-003",
-        cuenta="8455-1177",
-        motivo="Tercer salto",
-        fecha_reporte=_local(23, 10),
-    ),
-    EntradaListaRiesgo(
-        _id="RSK-004",
-        cuenta="6001-3344",
-        motivo="Cuarto salto",
         fecha_reporte=_local(23, 10),
     ),
 ]

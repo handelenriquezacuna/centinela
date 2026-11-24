@@ -42,6 +42,7 @@ EJEMPLOS = {
     "regla_id": "REG-001",
     "cuenta": "8712-4455",
     "propuesta": "6033-9002",
+    "objetivo": "6033-9002",
     "riesgo_id": "RSK-001",
 }
 ROLES = list(RolAgente)
