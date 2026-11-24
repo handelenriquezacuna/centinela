@@ -287,11 +287,17 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) ->
 def traza_si_falla(
     context: BrowserContext, request: pytest.FixtureRequest
 ) -> Iterator[None]:
-    """Graba la prueba y guarda la traza solo si fallo."""
+    """Graba la prueba y guarda la traza si fallo, o siempre con CENTINELA_E2E_TRAZA=siempre.
+
+    La traza se abre con `uv run playwright show-trace pruebas/e2e/trazas/<prueba>.zip`:
+    cada paso con captura, el DOM, la red y la consola. Es la forma de revisar un recorrido
+    que paso, no solo uno que fallo.
+    """
     context.tracing.start(screenshots=True, snapshots=True, sources=True)
     yield
     reporte = getattr(request.node, "reporte_call", None)
-    if reporte is not None and reporte.failed:
+    siempre = os.environ.get("CENTINELA_E2E_TRAZA") == "siempre"
+    if reporte is not None and (reporte.failed or siempre):
         TRAZAS.mkdir(parents=True, exist_ok=True)
         nombre = re.sub(r"[^A-Za-z0-9_.-]+", "_", request.node.nodeid)
         context.tracing.stop(path=str(TRAZAS / f"{nombre}.zip"))
