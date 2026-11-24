@@ -17,6 +17,8 @@ node_modules/
 dist/
 build/
 .vite/
+# Build de la SPA (T-61): lo genera `python tareas.py front` y lo sirve FastAPI.
+app/estaticos/spa/
 
 # Entorno y secretos (H-25). .env lo crea `python tareas.py arriba` con contrasenas
 # aleatorias; el keyfile del replica set, igual, en infra/secretos/ (permisos 400).

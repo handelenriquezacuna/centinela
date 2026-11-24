@@ -71,6 +71,20 @@ def etiqueta(valor: Any) -> str:
     return palabras[:1].upper() + palabras[1:]
 
 
+def antiguedad_legible(segundos: float | None) -> str:
+    """`125.0` -> `2 min`; el aviso dice cuanto falta para que D1 se ponga al dia."""
+    if segundos is None:
+        return ""
+    total = max(1, int(segundos))
+    if total < 60:
+        return f"{total} s"
+    if total < 3600:
+        return f"{total // 60} min"
+    if total < 86400:
+        return f"{total // 3600} h"
+    return f"{total // 86400} d"
+
+
 def registrar(entorno: Environment) -> None:
     """Instala los filtros en un entorno de Jinja."""
     entorno.filters["hora_costa_rica"] = hora_costa_rica

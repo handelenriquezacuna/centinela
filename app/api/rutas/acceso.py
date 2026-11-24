@@ -5,7 +5,12 @@
   donde iba el usuario.
 - `POST /salir`: borra la cookie.
 - `POST /api/v1/sesion`: lo mismo para clientes de la API; devuelve el token para usarlo
-  como `Authorization: Bearer`.
+  como `Authorization: Bearer` y deja la MISMA cookie que `/login` (T-61): la SPA entra
+  por aqui, descarta el token del cuerpo y nunca lo guarda (ni en localStorage ni en
+  memoria); las peticiones siguientes viajan con la cookie HttpOnly.
+- `GET /api/v1/sesion`: quien es la sesion, su rol, sus permisos y las pantallas que
+  puede abrir. Es lo primero que pide la SPA.
+- `DELETE /api/v1/sesion`: borra la cookie (204). Publica, como `/salir`.
 - `GET /openapi.json`: el documento de la API, ahora detras de sesion. `/docs` y
   `/redoc` se retiraron: cargaban su JavaScript de una CDN y el portal no depende de una.
 """
@@ -22,12 +27,16 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.dependencias import BaseDep
 from app.api.errores import CodigoError, ErrorCentinela, respuestas_documentadas
-from app.api.rutas.paginas import ENTORNO
-from app.api.sesion import ServicioSesionDep
+from app.api.esquemas_portal import PaginaPermitida, SesionActual
+from app.api.rutas.paginas import ENTORNO, NAVEGACION
+from app.api.rutas.spa import PAGINAS_SPA
+from app.api.sesion import ServicioSesionDep, SesionDep
 from app.modelos.alertas import RolAgente
 from app.modelos.base import AgenteId
 from app.repos.agentes import ProtocoloRepoAgentes, RepoAgentes
 from app.seguridad.autenticacion import autenticar
+from app.seguridad.permisos import PERMISOS_POR_ROL, permite
+from app.seguridad.servicio import ServicioSesion
 
 enrutador = APIRouter(include_in_schema=False)
 enrutador_api = APIRouter(tags=["sesion"])
@@ -104,6 +113,12 @@ async def iniciar_sesion_portal(
     respuesta = RedirectResponse(
         destino_seguro(campo("siguiente")), status_code=status.HTTP_303_SEE_OTHER
     )
+    poner_cookie(respuesta, servicio, token)
+    return respuesta
+
+
+def poner_cookie(respuesta: Response, servicio: ServicioSesion, token: str) -> None:
+    """La cookie de sesion, una sola forma para el portal HTMX y la SPA."""
     respuesta.set_cookie(
         servicio.nombre_cookie,
         token,
@@ -113,12 +128,9 @@ async def iniciar_sesion_portal(
         secure=servicio.cookie_segura,
         path="/",
     )
-    return respuesta
 
 
-@enrutador.post("/salir")
-async def salir(servicio: ServicioSesionDep) -> RedirectResponse:
-    respuesta = RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+def quitar_cookie(respuesta: Response, servicio: ServicioSesion) -> None:
     respuesta.delete_cookie(
         servicio.nombre_cookie,
         path="/",
@@ -126,6 +138,12 @@ async def salir(servicio: ServicioSesionDep) -> RedirectResponse:
         samesite="strict",
         secure=servicio.cookie_segura,
     )
+
+
+@enrutador.post("/salir")
+async def salir(servicio: ServicioSesionDep) -> RedirectResponse:
+    respuesta = RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+    quitar_cookie(respuesta, servicio)
     return respuesta
 
 
@@ -161,7 +179,10 @@ class RespuestaSesion(BaseModel):
     ),
 )
 async def iniciar_sesion_api(
-    solicitud: SolicitudSesion, repo: RepoAgentesDep, servicio: ServicioSesionDep
+    solicitud: SolicitudSesion,
+    repo: RepoAgentesDep,
+    servicio: ServicioSesionDep,
+    respuesta: Response,
 ) -> RespuestaSesion:
     agente: dict[str, Any] | None = await autenticar(
         repo, solicitud.agente_id, solicitud.contrasena
@@ -172,4 +193,38 @@ async def iniciar_sesion_api(
         )
     rol = RolAgente(agente["rol"])
     token, expira = servicio.emitir(agente["_id"], rol)
+    poner_cookie(respuesta, servicio, token)
     return RespuestaSesion(token=token, agente_id=agente["_id"], rol=rol, expira=expira)
+
+
+@enrutador_api.get(
+    "/sesion",
+    response_model=SesionActual,
+    summary="La sesion vigente: agente, rol, permisos y pantallas que puede abrir",
+)
+async def sesion_vigente(sesion: SesionDep) -> SesionActual:
+    """Sin sesion valida, el guardia ya respondio 401 en la forma unica del error."""
+    return SesionActual(
+        agente_id=sesion.agente_id,
+        rol=sesion.rol,
+        expira=sesion.expira,
+        permisos=sorted(p.value for p in PERMISOS_POR_ROL[sesion.rol]),
+        navegacion=[
+            PaginaPermitida(ruta=ruta, rotulo=rotulo)
+            for ruta, rotulo, _clave in NAVEGACION
+            if permite(sesion.rol, "GET", ruta)
+        ],
+        paginas=[ruta for ruta in PAGINAS_SPA if permite(sesion.rol, "GET", ruta)],
+    )
+
+
+@enrutador_api.delete(
+    "/sesion",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Cierra la sesion: borra la cookie",
+)
+async def cerrar_sesion_api(servicio: ServicioSesionDep) -> Response:
+    """Publica e idempotente, como `/salir`: sin sesion tambien responde 204."""
+    respuesta = Response(status_code=status.HTTP_204_NO_CONTENT)
+    quitar_cookie(respuesta, servicio)
+    return respuesta

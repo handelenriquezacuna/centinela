@@ -34,7 +34,7 @@ import base64
 import binascii
 import json
 import logging
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from typing import Any
 
 from sse_starlette import ServerSentEvent
@@ -131,11 +131,17 @@ def evento_resincronizar(motivo: str) -> ServerSentEvent:
     return ServerSentEvent(data=motivo, event=EVENTO_RESINCRONIZAR, id="")
 
 
+ConstructorAlerta = Callable[[CambioAlerta], ServerSentEvent | None]
+ConstructorResincronizar = Callable[[str], ServerSentEvent]
+
+
 async def eventos_de_alertas(
     repo: ProtocoloFlujoAlertas,
     *,
     id_ultimo_evento: str | None = None,
     reintento_ms: int,
+    construir_alerta: ConstructorAlerta = evento_alerta,
+    construir_resincronizar: ConstructorResincronizar = evento_resincronizar,
 ) -> AsyncIterator[ServerSentEvent]:
     """Genera el flujo completo de una conexion: apertura, alertas y resincronizaciones.
 
@@ -143,6 +149,12 @@ async def eventos_de_alertas(
     observa la coleccion y el identificador del ultimo evento que el cliente vio, y
     devuelve eventos. Por eso se puede probar sin levantar un servidor, que es como se
     prueba el evento `resincronizar` sin tener que romper el oplog de verdad.
+
+    Los dos constructores deciden solo el CUERPO de cada evento: HTML para el canal de
+    HTMX (por omision) y JSON para el de la SPA (`app/api/canal_json.py`, T-61). Nombres,
+    `id`, reanudacion y resincronizacion son los mismos en los dos canales porque son este
+    bucle. Un constructor que devuelve `None` omite el evento (un documento que no se
+    puede publicar no tumba la conexion).
     """
     token: Mapping[str, Any] | None = None
     motivo: str | None = None
@@ -158,7 +170,7 @@ async def eventos_de_alertas(
     while True:
         if motivo is not None:
             registro_log.info("canal resincronizando: %s", motivo)
-            yield evento_resincronizar(motivo)
+            yield construir_resincronizar(motivo)
             motivo = None
             token = None
 
@@ -168,7 +180,9 @@ async def eventos_de_alertas(
                 # hay que volver a abrirlo, se sigue desde el ultimo evento entregado
                 # y no desde el principio.
                 token = cambio.token
-                yield evento_alerta(cambio)
+                evento = construir_alerta(cambio)
+                if evento is not None:
+                    yield evento
         except TokenDeReanudacionInvalido as fallo:
             motivo = str(fallo)
             continue

@@ -30,6 +30,7 @@ from fastapi import APIRouter, Header, Query, status
 from sse_starlette import EventSourceResponse
 
 from app.api.canal import eventos_de_alertas
+from app.api.canal_json import eventos_json
 from app.api.dependencias import AjustesDep, FlujoAlertasDep
 from app.api.errores import respuestas_documentadas
 
@@ -93,6 +94,52 @@ async def flujo_de_alertas(
     """
     return EventSourceResponse(
         eventos_de_alertas(
+            flujo,
+            id_ultimo_evento=last_event_id or ultimo_evento,
+            reintento_ms=ajustes.canal.reintento_ms,
+        ),
+        ping=ajustes.canal.ping_segundos,
+    )
+
+
+@enrutador.get(
+    "/alertas/eventos",
+    summary="Canal SSE de alertas con eventos JSON, para la SPA (T-61)",
+    response_class=EventSourceResponse,
+    responses={
+        status.HTTP_200_OK: {
+            "description": (
+                "Flujo `text/event-stream`, el mismo canal que /api/v1/alertas/flujo con "
+                "cuerpo JSON. Eventos: `alerta` (`{formato, operacion, alerta}`, con el "
+                "token de reanudacion como `id`) y `resincronizar` (`{formato, motivo}`: "
+                "pedir la lista de nuevo). Formato en docs/06-plataforma.md."
+            ),
+            "content": {"text/event-stream": {}},
+        },
+        **respuestas_documentadas(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+        ),
+    },
+)
+async def eventos_de_alertas_json(
+    ajustes: AjustesDep,
+    flujo: FlujoAlertasDep,
+    last_event_id: Annotated[
+        str | None,
+        Header(
+            alias="Last-Event-ID",
+            description="Token de reanudacion del ultimo evento que el cliente recibio",
+        ),
+    ] = None,
+    ultimo_evento: Annotated[
+        str | None,
+        Query(description="Mismo valor que la cabecera Last-Event-ID, para curl"),
+    ] = None,
+) -> EventSourceResponse:
+    """Misma reanudacion y misma resincronizacion que el canal HTML; cambia el cuerpo."""
+    return EventSourceResponse(
+        eventos_json(
             flujo,
             id_ultimo_evento=last_event_id or ultimo_evento,
             reintento_ms=ajustes.canal.reintento_ms,

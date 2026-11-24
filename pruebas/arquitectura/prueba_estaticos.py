@@ -30,7 +30,13 @@ CDN_PROHIBIDOS = ("unpkg.com", "jsdelivr.net", "cdnjs.cloudflare.com", "cdn.")
 
 # Extensiones que se revisan buscando referencias a CDN. La procedencia se documenta en
 # Markdown y ahi si es legitimo nombrar de donde salio el archivo.
-EXTENSIONES_REVISADAS = (".py", ".js", ".css", ".html")
+EXTENSIONES_REVISADAS = (".py", ".js", ".css", ".html", ".ts", ".tsx")
+
+# El build de la SPA (T-61) es generado e ignorado por git: la regla se aplica a su
+# fuente, `frontend/`, que es lo que alguien edita. Sus dependencias se instalan con
+# `npm ci` desde el lock y quedan dentro del bundle; ninguna se carga de internet.
+SPA_GENERADA = ESTATICOS / "spa"
+FUENTE_SPA = (RAIZ / "frontend" / "src", RAIZ / "frontend" / "index.html")
 
 
 def prueba_la_carpeta_de_estaticos_existe() -> None:
@@ -91,9 +97,23 @@ def prueba_la_procedencia_esta_documentada() -> None:
         assert nombre in texto, f"PROCEDENCIA.md no menciona {nombre}"
 
 
+def _revisados() -> list[Path]:
+    archivos = [a for a in (RAIZ / "app").rglob("*") if SPA_GENERADA not in a.parents]
+    for fuente in FUENTE_SPA:
+        archivos += [fuente] if fuente.is_file() else list(fuente.rglob("*"))
+    return sorted(archivos)
+
+
+def prueba_la_fuente_de_la_spa_se_revisa() -> None:
+    """Contraprueba: la regla del CDN no pasa en verde por no mirar `frontend/`."""
+    revisados = {a.relative_to(RAIZ).as_posix() for a in _revisados()}
+    assert "frontend/index.html" in revisados
+    assert "frontend/src/main.tsx" in revisados
+
+
 def prueba_nada_de_app_carga_desde_un_cdn() -> None:
     culpables: list[str] = []
-    for archivo in sorted((RAIZ / "app").rglob("*")):
+    for archivo in _revisados():
         if not archivo.is_file() or archivo.suffix not in EXTENSIONES_REVISADAS:
             continue
         texto = archivo.read_text(encoding="utf-8", errors="ignore").lower()

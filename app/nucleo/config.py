@@ -20,7 +20,7 @@ import os
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -204,6 +204,24 @@ class AjustesSesion(BaseModel):
     clave: str | None = Field(default=None, min_length=32, repr=False)
 
 
+class AjustesPortal(BaseModel):
+    """Que interfaz sirven las rutas de pagina (T-61, D-60 a D-63). Tecnico.
+
+    - `htmx`: las paginas Jinja + HTMX de siempre.
+    - `spa`: `/`, `/panel`, `/detalle/...` y las demas devuelven el `index.html` de la SPA
+      React construida en `app/estaticos/spa/` (`python tareas.py front`). Las rutas HTMX
+      que no son de pagina (fragmentos, formularios) siguen registradas mientras dure la
+      migracion; la fase 2 las retira.
+
+    Es una bandera de migracion: cuando la fase 2 tenga paridad con las e2e, el valor por
+    omision pasa a `spa` y la rama HTMX se borra. Ver docs/06-plataforma.md.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    interfaz: Literal["htmx", "spa"] = "htmx"
+
+
 class AjustesRegistro(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -312,6 +330,7 @@ class Ajustes(BaseSettings):
     deteccion: AjustesDeteccion = AjustesDeteccion()
     indicadores: AjustesIndicadores = AjustesIndicadores()
     sesion: AjustesSesion = AjustesSesion()
+    portal: AjustesPortal = AjustesPortal()
     registro: AjustesRegistro = AjustesRegistro()
     generador: AjustesGenerador = Field(default_factory=AjustesGenerador)
 

@@ -43,9 +43,17 @@ from app.api.dependencias import (
     RepoReglasDep,
     SupervisorDep,
 )
+from app.api.detalle import (
+    AVISO_V1,
+    acciones_permitidas,
+    caso_de,
+    cortes_de,
+    es_v2,
+    explicacion_puntaje,
+)
 from app.api.errores import ErrorCentinela
 from app.api.esquemas import EdicionRegla, PeticionTransicion
-from app.api.formatos import colones, decimal, etiqueta
+from app.api.formatos import antiguedad_legible, etiqueta
 from app.api.formatos import registrar as registrar_formatos
 from app.api.fragmentos import RUTA_PLANTILLAS
 from app.api.rutas.alertas import AlertaIdRuta, transicionar_alerta
@@ -54,10 +62,8 @@ from app.api.sesion import SesionDep, permite_ruta, sesion_actual
 from app.deteccion.d1 import NOMBRE_D1
 from app.deteccion.evaluador import TIPOS_REGLA
 from app.modelos import (
-    ZONA_COSTA_RICA,
     EstadoAlerta,
     TransicionInvalida,
-    transiciones_validas,
 )
 
 enrutador = APIRouter(include_in_schema=False)
@@ -83,6 +89,9 @@ registrar_formatos(ENTORNO)
 ENTORNO.globals["permite_ruta"] = permite_ruta
 ENTORNO.globals["sesion_actual"] = sesion_actual
 ENTORNO.globals["acciones_del_caso"] = acciones_del_caso
+
+# Se reexporta: `pruebas/contrato/prueba_aviso_rezago.py` la importa desde aqui.
+__all__ = ["antiguedad_legible"]
 
 
 def _json_compacto(valor: Any) -> str:
@@ -164,20 +173,6 @@ async def cola(repo: RepoAlertasDep, ajustes: AjustesDep) -> HTMLResponse:
         alertas=await _cola(repo, ajustes)
     )
     return HTMLResponse(html)
-
-
-def antiguedad_legible(segundos: float | None) -> str:
-    """`125.0` -> `2 min`; el aviso dice cuanto falta para que D1 se ponga al dia."""
-    if segundos is None:
-        return ""
-    total = max(1, int(segundos))
-    if total < 60:
-        return f"{total} s"
-    if total < 3600:
-        return f"{total // 60} min"
-    if total < 86400:
-        return f"{total // 3600} h"
-    return f"{total // 86400} d"
 
 
 @enrutador.get("/panel/rezago", response_class=HTMLResponse)
@@ -321,176 +316,6 @@ async def guardar_regla(
 # Detalle de alerta (H-18)
 # ---------------------------------------------------------------------------
 
-# Orden y rotulo de los botones. Cuales aparecen lo decide la maquina de estados.
-# Cuarto elemento: ayuda corta del boton. Quinto: si la accion cierra la alerta y pide confirmar.
-ACCIONES = [
-    (
-        EstadoAlerta.EN_REVISION,
-        "Tomar",
-        "boton-primario",
-        "Te asigna la alerta y la pasa a En revisión.",
-        False,
-    ),
-    (
-        EstadoAlerta.CONFIRMADA,
-        "Confirmar fraude",
-        "boton-confirmar",
-        "Cierra la alerta como fraude real. No se puede deshacer.",
-        True,
-    ),
-    (
-        EstadoAlerta.DESCARTADA,
-        "Descartar",
-        "boton-descartar",
-        "Cierra la alerta como falso positivo. No se puede deshacer.",
-        True,
-    ),
-    (
-        EstadoAlerta.ESCALADA,
-        "Escalar a caso",
-        "boton-escalar",
-        "Abre un caso de investigación y cierra la alerta. No se puede deshacer.",
-        True,
-    ),
-]
-
-AVISO_V1 = "alerta v1: migrar con python tareas.py migrar"
-
-
-def _porcentaje(valor: int, total: int) -> int:
-    return max(0, min(100, round(valor * 100 / total))) if total > 0 else 0
-
-
-_PREFIJO_REGLA = re.compile(r"^\s*R-\d+\s+v\d+\s*:\s*")
-_APORTE_INTERNO = re.compile(r"\s*\(aporta\s+\d+[^)]*\)")
-_RUIDO_MIGRACION = re.compile(r";?\s*explicaci[oó]n reconstruida por la migraci[oó]n 001", re.IGNORECASE)
-
-
-def _limpiar_explicacion(texto: str) -> str:
-    """Quita lo que la tabla ya muestra en otra columna: "R-01 v2:", "(aporta 35)" y la nota de migracion."""
-    limpio = _PREFIJO_REGLA.sub("", texto)
-    limpio = _APORTE_INTERNO.sub("", limpio)
-    limpio = _RUIDO_MIGRACION.sub("", limpio).strip(" ;")
-    return limpio[:1].upper() + limpio[1:]
-
-
-def _evidencia(
-    tipo: str | None,
-    alerta: dict[str, Any],
-    transaccion: dict[str, Any] | None,
-    perfil: dict[str, Any] | None,
-) -> str | None:
-    """Una linea calculada con datos que la pagina ya muestra. None si no alcanza para calcularla."""
-    if perfil is None:
-        return None
-    if tipo == "monto":
-        promedio = perfil.get("promedio_crc")
-        if isinstance(promedio, int) and promedio > 0:
-            veces = decimal(alerta["monto_crc"] / promedio)
-            return (
-                f"Monto {colones(alerta['monto_crc'])} contra un promedio de "
-                f"{colones(promedio)}: {veces}x."
-            )
-    if tipo == "destino":
-        frecuentes = [str(c) for c in perfil.get("destinos_frecuentes") or []]
-        destino = alerta["cuenta_destino"]
-        if destino not in frecuentes:
-            return (
-                f"El destino {destino} no figura entre los {len(frecuentes)} destinos "
-                "frecuentes del cliente."
-            )
-    if tipo == "horario":
-        horario = perfil.get("horario_habitual") or {}
-        momento = (transaccion or {}).get("fecha") or alerta["fecha_creacion"]
-        if horario.get("inicio") and horario.get("fin"):
-            local = momento.astimezone(ZONA_COSTA_RICA)
-            if not horario["inicio"] <= f"{local:%H:%M}" <= horario["fin"]:
-                return (
-                    f"{local:%H:%M} (hora CR) está fuera del horario habitual "
-                    f"{horario['inicio']}-{horario['fin']}."
-                )
-    return None
-
-
-def _cortes_de(
-    alerta: dict[str, Any], vigente: dict[str, Any] | None
-) -> tuple[dict[str, Any] | None, str]:
-    """La politica con que se calculo la alerta, y de donde salieron los cortes.
-
-    Devuelve `(documento, origen)`: `usada` si es la politica que la alerta registra (la
-    vigente o una version anterior de su historia); `vigente` si la alerta no registra
-    politica o su version ya no esta disponible (los cortes son los de ahora, y la
-    pagina lo rotula); `ninguna` si no hay politica en la base.
-    """
-    if vigente is None:
-        return None, "ninguna"
-    usada = alerta.get("politica")
-    if not usada:
-        return vigente, "vigente"
-    if usada["politica_id"] == vigente.get("_id") and usada["version"] == vigente.get("version"):
-        return vigente, "usada"
-    if usada["politica_id"] == vigente.get("_id"):
-        for anterior in vigente.get("versiones_anteriores") or []:
-            if anterior.get("version") == usada["version"] and anterior.get("cortes_severidad"):
-                return anterior, "usada"
-    return vigente, "vigente"
-
-
-def _explicacion_puntaje(
-    alerta: dict[str, Any],
-    politica: dict[str, Any] | None,
-    *,
-    tipos: dict[str, str],
-    transaccion: dict[str, Any] | None,
-    perfil: dict[str, Any] | None,
-) -> dict[str, Any]:
-    """Los aportes en orden, el acumulado de cada uno y el corte que alcanza el puntaje.
-
-    Solo v2 trae aporte por regla; en v1 la lista es de ids y no hay nada que sumar.
-    `politica` es el documento cuyos cortes se muestran (ver `_cortes_de`).
-    """
-    puntaje = alerta["puntaje"]
-    maximo = politica["puntaje_maximo"] if politica is not None else 100
-    acumulado = 0
-    filas = []
-    for regla in alerta["reglas_disparadas"]:
-        if not isinstance(regla, dict):
-            continue
-        acumulado += regla["peso"]
-        filas.append(
-            {
-                **regla,
-                "explicacion": _limpiar_explicacion(regla["explicacion"]),
-                "evidencia": _evidencia(
-                    tipos.get(regla["regla_id"]), alerta, transaccion, perfil
-                ),
-                "acumulado": acumulado,
-                "ancho": _porcentaje(regla["peso"], maximo),
-            }
-        )
-    cortes = []
-    if politica is not None:
-        for corte in politica["cortes_severidad"]:
-            cortes.append(
-                {
-                    "severidad": str(corte["severidad"]),
-                    "minimo": corte["puntaje_minimo"],
-                    "maximo": corte["puntaje_maximo"],
-                    "inicio": _porcentaje(corte["puntaje_minimo"], maximo),
-                    "alcanzado": corte["puntaje_minimo"] <= puntaje <= corte["puntaje_maximo"],
-                }
-            )
-    return {
-        "filas": filas,
-        "suma": acumulado,
-        "tope": acumulado > puntaje,
-        "maximo": maximo,
-        "cortes": cortes,
-        "ancho_puntaje": _porcentaje(puntaje, maximo),
-        "umbral": politica["umbral_alerta"] if politica is not None else None,
-    }
-
-
 def _contexto_acciones(
     alerta: dict[str, Any],
     agentes: list[dict[str, Any]],
@@ -500,30 +325,17 @@ def _contexto_acciones(
     es_error: bool = False,
     oob: bool = False,
 ) -> dict[str, Any]:
-    estado = EstadoAlerta(alerta["estado"])
-    permitidas = transiciones_validas(estado)
     nombres = {a["_id"]: a["nombre"] for a in agentes}
     return {
         "alerta": alerta,
-        "estado_alerta": estado.value,
-        "botones": [
-            (e.value, rotulo, clase, ayuda, terminal)
-            for e, rotulo, clase, ayuda, terminal in ACCIONES
-            if e in permitidas
-        ],
+        "estado_alerta": EstadoAlerta(alerta["estado"]).value,
+        "botones": acciones_permitidas(alerta["estado"]),
         "nombres": nombres,
         "caso_id": caso_id,
         "mensaje": mensaje,
         "es_error": es_error,
         "oob": oob,
     }
-
-
-async def _caso_de(alerta: dict[str, Any], repo_detalle: RepoDetalleDep) -> str | None:
-    if alerta["estado"] != EstadoAlerta.ESCALADA.value:
-        return None
-    caso = await repo_detalle.caso_de_alerta(alerta["_id"])
-    return caso["_id"] if caso is not None else None
 
 
 @enrutador.get("/detalle")
@@ -547,17 +359,14 @@ async def detalle(
             "paginas/detalle_no_existe.html", "detalle", estado=404, alerta_id=alerta_id
         )
     vigente = await repo_reglas.politica_documento()
-    politica, origen_cortes = _cortes_de(alerta, vigente)
+    politica, origen_cortes = cortes_de(alerta, vigente)
     contexto = await repo_detalle.contexto(alerta["transaccion_id"])
     agentes = await repo_detalle.agentes()
     tipos = {r["_id"]: r["tipo"] for r in await repo_reglas.listar(activa=None)}
-    es_v2 = bool(alerta["reglas_disparadas"]) and all(
-        isinstance(r, dict) for r in alerta["reglas_disparadas"]
-    )
     return _pagina(
         "paginas/detalle.html",
         "detalle",
-        es_v2=es_v2,
+        es_v2=es_v2(alerta),
         aviso_v1=AVISO_V1,
         transaccion=contexto["transaccion"],
         cliente=contexto["cliente"],
@@ -565,14 +374,14 @@ async def detalle(
         politica=politica,
         politica_usada=alerta.get("politica"),
         origen_cortes=origen_cortes,
-        puntaje=_explicacion_puntaje(
+        puntaje=explicacion_puntaje(
             alerta,
             politica,
             tipos=tipos,
             transaccion=contexto["transaccion"],
             perfil=contexto["perfil"],
         ),
-        **_contexto_acciones(alerta, agentes, caso_id=await _caso_de(alerta, repo_detalle)),
+        **_contexto_acciones(alerta, agentes, caso_id=await caso_de(alerta, repo_detalle)),
     )
 
 
@@ -636,7 +445,7 @@ async def resolver_desde_detalle(
 
     despues = await repo.obtener(alerta_id) or actual
     if caso_id is None:
-        caso_id = await _caso_de(despues, repo_detalle)
+        caso_id = await caso_de(despues, repo_detalle)
     return _fragmento_acciones(
         _contexto_acciones(
             despues,

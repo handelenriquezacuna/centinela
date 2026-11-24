@@ -69,8 +69,8 @@ flowchart LR
         OL[(oplog)]
     end
 
-    subgraph portal [Portal · Jinja y HTMX]
-        UI[Pantallas del agente]
+    subgraph portal [Portal · SPA React + TypeScript]
+        UI[Pantallas del agente<br/>build estatico de Vite]
     end
 
     G -- "escritura directa<br/>sin pasar por la API" --> C
@@ -79,11 +79,17 @@ flowchart LR
     D1 --> C
     D2 --> SMTP[(SMTP pruebas)]
     D3 --> M --> C
-    UI --> R --> S --> P --> C
+    R -- "index.html y /estaticos/spa<br/>mismo proceso" --> UI
+    UI -- "fetch JSON /api/v1<br/>cookie HttpOnly" --> R --> S --> P --> C
     P --> V
     OL == "Change Stream de alertas" ==> W
-    W == "SSE · tiempo real" ==> UI
+    W == "SSE · eventos JSON" ==> UI
 ```
+
+El portal es una SPA React + TypeScript construida con Vite y servida por el **mismo**
+FastAPI: `uvicorn app.main:app` sigue siendo el único proceso y el único comando. No hay
+servidor Node en producción (Node solo construye), ni Next.js, ni WebSocket, ni bus en
+memoria. Detalle en la sección 6b.
 
 ## 4. El flujo que define el producto
 
@@ -193,7 +199,7 @@ flowchart LR
     M[(MongoDB)] -.-> D1[Detección D1]
     D1 --> M
     M -. "Change Stream<br/>de alertas" .-> API[API FastAPI]
-    API == SSE ==> UI[Portal Jinja y HTMX]
+    API == SSE ==> UI[Portal: Jinja y HTMX,<br/>luego SPA React T-61]
     API --> M
     style API fill:#1a4d2e,color:#fff
     style UI fill:#1a4d2e,color:#fff
@@ -239,6 +245,50 @@ Historias **H-25, H-27** (H-26 ya se hizo en E1, ver arriba). Roles y permisos,
 purga del histórico. Aquí el sistema se vuelve defendible, no solo demostrable.
 
 ---
+
+## 6b. El portal: SPA React servida por el monolito (T-61)
+
+Decisiones D-60 a D-63. La migración desde Jinja + HTMX se hace en la rama
+`feature/H-17-portal-react`; `dev` sigue con HTMX hasta que esa rama se fusione con
+paridad de las e2e. Si el 2 de diciembre no hay paridad, la defensa va con HTMX.
+
+```mermaid
+flowchart LR
+    subgraph navegador [Navegador]
+        RR[React Router<br/>una ruta por pantalla]
+        TQ[TanStack Query<br/>datos y cache]
+        ES[EventSource<br/>canal JSON]
+        FMT[formatos.ts<br/>colones y hora CR]
+    end
+
+    subgraph proceso [uvicorn app.main:app · un proceso]
+        SPA[rutas de pagina<br/>devuelven index.html]
+        EST["/estaticos/spa<br/>build de Vite"]
+        API["/api/v1 JSON<br/>forma única del error"]
+        GU[guardia de permisos<br/>tabla única]
+        SSE["/api/v1/alertas/eventos"]
+        PURO[funciones puras<br/>detalle, casos, sankey, gráficos]
+        REP[app/repos]
+    end
+
+    RR --> SPA
+    RR --> EST
+    TQ --> API
+    ES --> SSE
+    GU -. "antes de toda ruta" .- SPA & API & SSE
+    API --> PURO --> REP --> M[(MongoDB)]
+    SSE -- "change stream de alertas" --> M
+```
+
+| Pieza | Decisión |
+|---|---|
+| Servir | Las rutas de página (`/`, `/panel`, `/detalle/...`, `/red-mulas/...`, `/busqueda`, `/tablero`, `/reglas`, `/login`) devuelven el `index.html` del build; JS y CSS salen del montaje `/estaticos` de siempre. `/api/v1`, `/estado` y `/salud` no cambian |
+| Calcular | El servidor calcula todo lo que se dibuja: la explicación del puntaje, los casos por cuenta destino, la disposición del Sankey y del grafo (nodos, bandas con ancho entero, columnas). La SPA solo dibuja SVG; no hay librería de grafos en el navegador |
+| Datos | TanStack Query sobre la API JSON. Cada lectura comparte su función pura con la página HTMX equivalente, así que las dos interfaces no divergen mientras conviven |
+| Tiempo real | `EventSource` sobre `GET /api/v1/alertas/eventos`: el mismo canal que el de HTMX (mismo change stream, mismo `id`, misma reanudación, mismo `resincronizar`) con cuerpo JSON |
+| Sesión | `POST /api/v1/sesion` deja la cookie HttpOnly y SameSite=Strict; la SPA nunca guarda el token. 401 y 403 en la forma única del error; sin sesión se vuelve al login con el destino, con la misma regla anti redirección abierta |
+| Permisos | La tabla única de `app/seguridad/permisos.py`. La SPA recibe en `GET /api/v1/sesion` qué páginas puede abrir el rol y no copia la tabla |
+| Convivencia | `portal.interfaz` (`htmx` o `spa`) elige qué interfaz sirven las rutas de página. Mientras dure la migración, los fragmentos HTMX siguen registrados con las dos |
 
 ## 7. Calendario de etapas
 
@@ -291,7 +341,8 @@ paquetes por semana en `sc609-reparto-semanal` del cerebro.**
 | **Change Stream** | Suscripción al flujo de cambios de MongoDB. Es cómo el motor se entera de una transacción nueva sin preguntar cada segundo |
 | **oplog** | Bitácora de operaciones del replica set. Es lo que hace posibles los Change Streams |
 | **SSE** | *Server-Sent Events.* Flujo HTTP de una sola dirección, del servidor al navegador. Es cómo la alerta nueva llega al panel. Se eligió sobre WebSocket porque el panel solo necesita recibir, y el navegador reconecta solo |
-| **HTMX** | Biblioteca que deja al servidor devolver HTML e insertarlo en la página, en vez de devolver JSON y armar la pantalla en el navegador. Elimina el build de frontend |
+| **HTMX** | Biblioteca que deja al servidor devolver HTML e insertarlo en la página, en vez de devolver JSON y armar la pantalla en el navegador. Fue el portal hasta T-61; queda mientras dure la migración a la SPA |
+| **SPA** | *Single Page Application.* La página se carga una vez y React cambia de pantalla sin pedir HTML nuevo; los datos llegan como JSON. La de Centinela se construye con Vite y la sirve el mismo FastAPI |
 | **Token de reanudación** | Marca de posición en un Change Stream. El canal SSE la manda como identificador del evento; el navegador la devuelve al reconectar y el servidor retoma desde ahí. Si el oplog ya rodó, el token deja de servir y el panel vuelve a pedir su cola completa |
 | **Replica set** | Grupo de nodos con los mismos datos. Obligatorio para Change Streams y transacciones |
 | **Pipeline de agregación** | Secuencia de etapas que transforma documentos. El equivalente de un `GROUP BY` con esteroides |
