@@ -931,7 +931,7 @@ mismas funciones puras que la página HTMX.
 | `GET /red-mulas/{cuenta}/grafo?...` | red_mulas | La red, la posición de nodos y aristas, y las entradas de `listas_riesgo` solo para quien puede darlas de baja | `app/api/graficos.disponer_grafo` |
 
 Lo que ya existía y la SPA usa tal cual: `GET /alertas`, `POST /alertas/{id}/transiciones`,
-`POST /alertas/transiciones` (lote), `GET /transacciones`, `/busqueda/exportar.csv`,
+`POST /alertas/transiciones` (lote), `GET /transacciones`, `GET /transacciones/exportar.csv` (T-65: los mismos filtros, montos enteros, fechas en hora de Costa Rica, hasta 10.000 filas; el de HTMX, `/busqueda/exportar.csv`, comparte su escritura),
 `/reglas`, `/politica`, `/efectividad`, `GET /red-mulas/{cuenta}`, `POST /listas-riesgo`,
 `DELETE /listas-riesgo/{id}` y `POST /red-mulas/{cuenta}/propuestas/{propuesta}`.
 
@@ -979,11 +979,11 @@ migrada" con el endpoint que van a leer:
 
 | Pantalla | Endpoint | E2E HTMX que la cubre hoy |
 |---|---|---|
-| Panel por alerta (vista "Por alerta" y atajos `j`/`k`/`x`) | `GET /api/v1/alertas` + canal JSON | `prueba_tiempo_real.py` |
+| Panel por alerta y atajos `j`/`k`/`x`/`Enter`/`?` (hecho, T-65; la vista elegida se recuerda en `localStorage`, clave `centinela_vista`) | `GET /api/v1/alertas` + canal JSON | `prueba_spa_cola_busqueda.py` (y `prueba_tiempo_real.py` en HTMX) |
 | Detalle de alerta y resolución | `GET /api/v1/alertas/{id}/detalle`, `POST /api/v1/alertas/{id}/transiciones` | `prueba_detalle.py` |
 | Sankey del detalle y marcar mula | `GET /api/v1/red-mulas/{cuenta}/sankey`, `POST /api/v1/listas-riesgo` | `prueba_sankey.py` |
 | Red de mulas | `GET /api/v1/red-mulas/{cuenta}/grafo`, propuestas y baja | `prueba_red_mulas.py` |
-| Búsqueda forense y CSV | `GET /api/v1/transacciones`, `/busqueda/exportar.csv` | (contrato) |
+| Búsqueda forense y CSV (hecha, T-65) | `GET /api/v1/transacciones`, `GET /api/v1/transacciones/exportar.csv` | `prueba_spa_cola_busqueda.py` |
 | Tablero | `GET /api/v1/tablero`, `GET /api/v1/efectividad` | (contrato) |
 | Reglas y política | `/api/v1/reglas`, `/api/v1/reglas/tipos`, `/api/v1/politica` | (contrato) |
 | Lote en la vista por cuenta destino (ya en la SPA; falta su e2e) | `POST /api/v1/alertas/transiciones` | `prueba_casos.py` |

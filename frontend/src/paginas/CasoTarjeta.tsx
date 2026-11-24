@@ -229,6 +229,7 @@ export function CasoTarjeta({ caso, alTerminarLote }: Propiedades) {
             <tr
               key={alerta._id}
               id={`alerta-${alerta._id}`}
+              data-fila-atajo
               className={`severidad-${alerta.severidad}`}
               data-estado={alerta.estado}
               data-puntaje={alerta.puntaje}

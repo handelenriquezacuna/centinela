@@ -122,6 +122,7 @@ ACCESOS: tuple[Acceso, ...] = (
     _a("GET", "/busqueda", Permiso.BUSCAR),
     _a("GET", "/busqueda/exportar.csv", Permiso.BUSCAR),
     _a("GET", "/api/v1/transacciones", Permiso.BUSCAR),
+    _a("GET", "/api/v1/transacciones/exportar.csv", Permiso.BUSCAR),
     # Red de mulas
     _a("GET", "/red-mulas", Permiso.RED_MULAS),
     _a("GET", "/red-mulas/{cuenta}", Permiso.RED_MULAS),

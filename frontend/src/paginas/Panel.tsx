@@ -1,13 +1,18 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 
 import { ErrorApi, pedir } from "../api/cliente";
 import { CLAVE_SESION } from "../api/sesion";
 import type { CasoDestino, EventoAlerta, Pagina } from "../api/tipos";
 import { aplicarCaso } from "../casos";
+import { useAtajosDelPanel } from "../atajos";
 import { AvisoRezago } from "../componentes/AvisoRezago";
+import { AyudaAtajos } from "../componentes/AyudaAtajos";
+import { EncabezadoPanel, type VistaPanel } from "../componentes/EncabezadoPanel";
 import { useEventosAlertas } from "../tiempo-real/eventosAlertas";
 import { CasoTarjeta } from "./CasoTarjeta";
+import { PanelAlertas } from "./PanelAlertas";
 
 export const CLAVE_CASOS = ["casos-destino"] as const;
 /** Varias alertas de la misma cuenta en rafaga se juntan en un solo pedido del caso. */
@@ -24,6 +29,61 @@ async function leerCaso(cuenta: string): Promise<CasoDestino | null> {
   }
 }
 
+const CLAVE_VISTA = "centinela_vista";
+const VISTA_POR_OMISION: VistaPanel = "casos";
+
+function esVista(valor: string | null | undefined): valor is VistaPanel {
+  return valor === "casos" || valor === "alertas";
+}
+
+function vistaRecordada(): VistaPanel | null {
+  try {
+    const guardada = window.localStorage.getItem(CLAVE_VISTA);
+    return esVista(guardada) ? guardada : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * El panel: las dos vistas de la cola con el conmutador "Por cuenta destino / Por alerta".
+ * Por omision se agrupa por cuenta destino (D-56); `?vista=` elige y la eleccion se
+ * recuerda en este navegador (la cookie del servidor es HttpOnly y no la escribe la SPA).
+ * Los atajos de teclado y su ayuda son de las dos vistas.
+ */
+export function Panel() {
+  const [parametros] = useSearchParams();
+  const navegar = useNavigate();
+  const ayuda = useRef<HTMLDialogElement>(null);
+  const pedida = parametros.get("vista");
+  const vista: VistaPanel = esVista(pedida) ? pedida : (vistaRecordada() ?? VISTA_POR_OMISION);
+
+  useEffect(() => {
+    if (esVista(pedida)) {
+      try {
+        window.localStorage.setItem(CLAVE_VISTA, pedida);
+      } catch {
+        // Sin almacenamiento la eleccion solo vale para esta visita.
+      }
+    }
+  }, [pedida]);
+
+  const alternarAyuda = useCallback(() => {
+    const dialogo = ayuda.current;
+    if (!dialogo) return;
+    if (dialogo.open) dialogo.close();
+    else dialogo.showModal();
+  }, []);
+  useAtajosDelPanel({ alternarAyuda, abrir: (ruta) => void navegar(ruta) });
+
+  return (
+    <>
+      {vista === "alertas" ? <PanelAlertas alAbrirAyuda={alternarAyuda} /> : <PanelCasos alAbrirAyuda={alternarAyuda} />}
+      <AyudaAtajos ref={ayuda} />
+    </>
+  );
+}
+
 /**
  * Panel por cuenta destino (D-56): la pantalla de referencia de la migracion (T-61).
  *
@@ -34,7 +94,7 @@ async function leerCaso(cuenta: string): Promise<CasoDestino | null> {
  * - Accesible: regiones `aria-live` para el estado del canal y lo que llega, tablas con
  *   encabezados y casillas con etiqueta.
  */
-export function Panel() {
+function PanelCasos({ alAbrirAyuda }: { alAbrirAyuda: () => void }) {
   const clienteConsultas = useQueryClient();
   const [aviso, setAviso] = useState("");
   const temporizadores = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -84,28 +144,15 @@ export function Panel() {
   const pagina = consulta.data;
   return (
     <>
-      <div className="titulo-pantalla">
-        <div>
-          <h1>Panel de alertas</h1>
-          <p className="subtitulo">
-            Por cuenta destino: alertas abiertas agrupadas por la cuenta que las recibe, de mayor a menor severidad.{" "}
-            <span className="estado-canal">
-              Canal:{" "}
-              <strong id="estado-canal" aria-live="polite">
-                {estadoCanal}
-              </strong>
-            </span>
-          </p>
-          <p id="aviso-nuevas" className="subtitulo" aria-live="polite">
-            {aviso}
-          </p>
-        </div>
-        <div className="grupo-botones">
-          <button type="button" className="boton boton-secundario" onClick={() => void consulta.refetch()}>
-            Actualizar cuentas
-          </button>
-        </div>
-      </div>
+      <EncabezadoPanel
+        vista="casos"
+        descripcion="Por cuenta destino: alertas abiertas agrupadas por la cuenta que las recibe, de mayor a menor severidad."
+        estadoCanal={estadoCanal}
+        aviso={aviso}
+        rotuloActualizar="Actualizar cuentas"
+        alActualizar={() => void consulta.refetch()}
+        alAbrirAyuda={alAbrirAyuda}
+      />
 
       <AvisoRezago />
 

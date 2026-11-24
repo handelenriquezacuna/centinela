@@ -130,3 +130,17 @@ export interface EventoResincronizar {
   formato: 1;
   motivo: string;
 }
+
+/** Una transaccion del historico con su alerta asociada (GET /api/v1/transacciones). */
+export interface ElementoTransaccion {
+  transaccion_id: string;
+  cuenta_origen: string;
+  sinpe_origen: string | null;
+  cuenta_destino: string;
+  monto_crc: number;
+  moneda: string;
+  canal: string;
+  fecha: string;
+  alerta_id: string | null;
+  alerta_estado: EstadoAlerta | null;
+}

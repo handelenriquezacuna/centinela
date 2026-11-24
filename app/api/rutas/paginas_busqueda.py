@@ -19,11 +19,8 @@ Exige sesion y el permiso de busqueda (H-25).
 
 from __future__ import annotations
 
-import csv
-import io
 import re
 from datetime import date, datetime, time
-from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request, status
@@ -33,7 +30,7 @@ from app.api.dependencias import AjustesDep, RepoBusquedaDep
 from app.api.errores import CodigoError, DetalleError, ErrorCentinela
 from app.api.paginacion import acotar_limite
 from app.api.rutas.paginas import ENTORNO, NAVEGACION
-from app.api.rutas.transacciones import exigir_filtro_valido
+from app.api.rutas.transacciones import exigir_filtro_valido, respuesta_csv
 from app.modelos import ZONA_COSTA_RICA, EstadoAlerta
 from app.modelos.transaccional import Canal
 from app.repos.busqueda import LIMITE_EXPORTACION, FiltroBusqueda, problemas_del_filtro
@@ -50,20 +47,6 @@ CAMPOS_FILTRO = (
     "estado_alerta",
 )
 ENTERO = re.compile(r"^\d{1,15}$")
-COLUMNAS_CSV = (
-    "transaccion_id",
-    "fecha_hora_cr",
-    "cuenta_origen",
-    "sinpe_origen",
-    "cuenta_destino",
-    "monto_crc",
-    "moneda",
-    "canal",
-    "alerta_id",
-    "alerta_estado",
-)
-
-
 def _dia(
     valor: str, campo: str, errores: list[tuple[str, str]], *, fin: bool
 ) -> datetime | None:
@@ -124,21 +107,6 @@ def leer_filtro(crudo: dict[str, str]) -> tuple[FiltroBusqueda, list[tuple[str, 
 
 def _crudo(peticion: Request) -> dict[str, str]:
     return {clave: valor for clave, valor in peticion.query_params.items()}
-
-
-def fila_csv(documento: dict[str, Any]) -> list[Any]:
-    return [
-        documento["_id"],
-        documento["fecha"].astimezone(ZONA_COSTA_RICA).strftime("%Y-%m-%d %H:%M:%S"),
-        documento["cuenta_origen"],
-        documento.get("sinpe_origen") or "",
-        documento["cuenta_destino"],
-        int(documento["monto_crc"]),
-        documento["moneda"],
-        documento["canal"],
-        documento.get("alerta_id") or "",
-        documento.get("alerta_estado") or "",
-    ]
 
 
 @enrutador.get("/busqueda", response_class=HTMLResponse)
@@ -221,18 +189,4 @@ async def exportar_csv(peticion: Request, repo: RepoBusquedaDep) -> Response:
         )
     exigir_filtro_valido(filtro)
 
-    resultado = await repo.buscar(filtro, limite=LIMITE_EXPORTACION)
-    salida = io.StringIO()
-    escritor = csv.writer(salida, lineterminator="\r\n")
-    escritor.writerow(COLUMNAS_CSV)
-    for documento in resultado.documentos:
-        escritor.writerow(fila_csv(documento))
-    return Response(
-        salida.getvalue(),
-        media_type="text/csv; charset=utf-8",
-        headers={
-            "Content-Disposition": 'attachment; filename="transacciones.csv"',
-            "X-Total-Coincidencias": str(resultado.total),
-            "X-Filas-Exportadas": str(len(resultado.documentos)),
-        },
-    )
+    return respuesta_csv(await repo.buscar(filtro, limite=LIMITE_EXPORTACION))
