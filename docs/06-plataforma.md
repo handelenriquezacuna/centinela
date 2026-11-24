@@ -1191,3 +1191,213 @@ sin zona se rechaza), identificador `TXN-`. Ejemplo de linea:
 - Con D1 corriendo, cada transaccion cargada se evalua por el change stream como cualquier otra.
 
 Cifra: 2.498 transacciones cargadas en 0,07 s (unas 38.000 por segundo) en la misma maquina.
+
+## Perfil de D1 (T-59)
+
+Medicion previa a T-62 (D-64: D1 por lotes de hasta 500 eventos, R-09 con un bucket por
+minuto). No cambia el comportamiento del motor: el script
+`scripts/medicion/perfil_d1.py` corre el `d1()` real con un repositorio y un supervisor que
+heredan de los de produccion y solo agregan `time.perf_counter`, y con un `CommandListener`
+de pymongo (`crear_cliente(..., escuchas=[...])`) que cuenta cada comando por paso, tipo y
+coleccion. `app/deteccion/` no tiene una linea de perfilado. Se corre contra una base propia,
+nunca `antifraude`:
+
+```
+CENTINELA_MONGO__URI='mongodb://localhost:27232/?replicaSet=rsfraude' \
+  uv run python -m scripts.medicion.perfil_d1 todo --base antifraude_perfil_t59 --salida perfil.json
+```
+
+Modos: `rafaga` (10.000 transacciones de golpe con D1 corriendo), `explain` (ventana de R-09),
+`lote` (lectura por lote y estimacion de D-64; necesita el perfil de la rafaga, por eso `todo`).
+
+Maquina: Apple M4 Max (14 nucleos, 36 GB), macOS 27.0.1, Docker 28.0.4, Mongo 8.3.17 de un
+nodo en contenedor (cache de WiredTiger 0,25 GB), cliente con `w=majority` y
+`readConcern=majority` como produccion, 500 clientes, 140 alertas. Todo en `localhost`: la red
+real sumaria latencia a cada ida y vuelta, y eso favorece aun mas al lote.
+
+### Costo por paso, por transaccion
+
+Rafaga de 10.000. D1 evaluo 199 tx/s con la instrumentacion (50,2 s) y 205 tx/s sin ella
+(`prueba_rezago_volumen`, 48,7 s): el instrumento cuesta menos de 3 %. Es mas rapido que las
+137 tx/s de T-57 por la variacion entre corridas (no se investigo la causa); lo que importa es la proporcion entre
+pasos, no la cifra absoluta. Cada fila es el tiempo de pared medido alrededor del metodo.
+
+| Paso | Llamadas | ms prom. por llamada | ms p95 | ms por transaccion | % | Comandos por transaccion |
+|---|---|---|---|---|---|---|
+| Lectura de reglas activas | 10.000 | 0,445 | 0,593 | 0,445 | 8,9 | 1 (`find` reglas_deteccion) |
+| Lectura de politica vigente | 10.000 | 0,417 | 0,541 | 0,417 | 8,4 | 1 (`find` politica_deteccion) |
+| Origen (cuenta y cliente) | 10.000 | 0,794 | 0,997 | 0,794 | 15,9 | 2 (`find` cuentas, `find` clientes) |
+| Contexto (`armar_contexto`, total) | 10.000 | 2,216 | 2,813 | 2,216 | 44,4 | 5 |
+| - perfil | 10.000 | 0,342 (servidor) | 0,422 | 0,342 | | 1 (`find` perfiles_comportamiento) |
+| - destinos conocidos, R-03 | 10.000 | 0,810 (servidor) | 1,014 | 0,810 | | 2 (`distinct` cuentas, `aggregate` transacciones) |
+| - listas de riesgo, R-07 | 10.000 | 0,341 (servidor) | 0,420 | 0,341 | | 1 (`find` listas_riesgo) |
+| - ventana de velocidad, R-09 | 10.000 | 0,431 (servidor) | 0,537 | 0,431 | | 1 (`aggregate` transacciones) |
+| Evaluacion pura (`evaluar`) | 10.000 | 0,026 | 0,041 | 0,026 | 0,5 | 0 |
+| Escritura de la alerta | 140 | 0,806 | 1,406 | 0,011 | 0,2 | 0,014 (`insert` alertas, solo si hay alerta) |
+| Guardado del token | 10.000 | 1,041 | 1,864 | 1,041 | 20,8 | 1 (`update` deteccion_estado, upsert) |
+| Latido y contadores del supervisor | 10.000 | 0,002 | 0,005 | 0,002 | 0,0 | 0 |
+| Rezago (cada 2 s) | 25 | 1,626 | 1,957 | 0,004 | 0,1 | 0,007 (3 comandos por medicion) |
+| Cursor del change stream | 10.000 | 0,017 | 0,007 | 0,017 | 0,3 | 0 (4 `getMore` en total) |
+| Validacion del modelo, armar alerta, log | 10.000 | 0,020 | 0,037 | 0,020 | 0,4 | 0 |
+| **Total por transaccion** | 10.000 | **4,994** | **6,410** | **4,994** | 100 | **10,0** |
+
+Los sub-pasos del contexto muestran la duracion de servidor de cada comando (lo que reporta
+el escucha), asi que no suman los 2,216 ms del total: la diferencia, unos 0,29 ms, es el
+costo del cliente (serializar, esperar la respuesta, validar `PerfilComportamiento` y
+`EntradaListaRiesgo`). El p95 de los sub-pasos es el de la duracion de servidor.
+
+Lectura:
+
+- D1 hace **10 idas y vueltas a Mongo por transaccion** y gasta 4,99 ms en ellas; el calculo
+  real (`evaluar` mas armar la alerta) es 0,05 ms, el 1 %. D1 no esta limitado por CPU, esta
+  limitado por idas y vueltas secuenciales.
+- Los cuatro grupos que D-64 quiere sacar del camino por evento son el 94 % del tiempo:
+  contexto 44 %, token 21 %, reglas y politica 17 %, origen 16 %.
+- El token es la escritura mas cara y la unica con `w=majority` por evento: 1,04 ms, mas que
+  cualquier lectura. Con la alerta, que solo se escribe en el 1,4 % de los eventos, el costo
+  de escritura por transaccion es casi todo el token.
+- Reglas y politica se leen 10.000 veces para obtener 10.000 veces los mismos 6 y 1
+  documentos.
+
+### Explain de R-09 (ventana de velocidad)
+
+Mismo pipeline de `_ventana_origen` (`$match` por `cuenta_origen` y `fecha`, `$group`), ventana
+de 30 minutos, sobre 10.000 transacciones de ruido con el indice
+`idx_transacciones_cuenta_origen_fecha`, mas K transacciones del mismo origen dentro de la
+ventana. `explain("executionStats")`:
+
+| K en la ventana | Plan | nReturned (de la etapa `$group`) | totalKeysExamined | totalDocsExamined | executionTimeMillis |
+|---|---|---|---|---|---|
+| 1 | IXSCAN, FETCH, GROUP | 1 | 1 | 1 | 0 |
+| 10 | IXSCAN, FETCH, GROUP | 1 | 10 | 10 | 0 |
+| 100 | IXSCAN, FETCH, GROUP | 1 | 100 | 100 | 0 |
+
+La consulta usa el indice bien (sin COLLSCAN, sin SORT), pero **lee un documento por cada
+transaccion de la ventana**: `totalDocsExamined` crece lineal con K, porque el `_id: {$ne}`
+y el `$sum` de `monto_crc` obligan a traer el documento. Aun con K = 100 el servidor la
+resuelve en menos de 1 ms. Con la carga legitima (K de 0 a 2) R-09 cuesta 0,43 ms por
+transaccion; el costo lineal solo aparece en una rafaga real de un mismo origen, que es
+precisamente el patron que R-09 busca.
+
+Comparacion con el bucket por minuto (un documento por `cuenta_origen` y minuto con
+`cantidad` y `monto`), mismos datos, `find` por `cuenta_origen` y rango de `minuto`:
+
+| K en la ventana | Documentos de bucket | totalKeysExamined | totalDocsExamined |
+|---|---|---|---|
+| 1 | 1 | 1 | 1 |
+| 10 | 2 | 2 | 2 |
+| 100 | 17 | 17 | 17 |
+
+El bucket acota la lectura a un maximo de `ventana_minutos` documentos (30), sin importar K.
+
+### Que ganaria cada parte de D-64
+
+Mide `lote` lo que costaria leer lo mismo una vez por lote, con las consultas que propone
+D-64 sobre transacciones reales de la rafaga (mediana de 7 repeticiones): reglas y politica
+una vez; cuentas, clientes, perfiles y listas con `$in`; destinos y ventana con un `find`
+por `$in` y rango, con proyeccion minima y conteo en memoria (cada transaccion tiene su propia
+fecha de corte); `insert_many(ordered=False)` de las alertas esperadas (1,4 %) sobre un indice
+unico de `transaccion_id`; un solo `replace_one` de token. La parte de calculo (0,046 ms) y
+el cursor (0,017 ms) se toman de la rafaga.
+
+Costo por lote, en ms (idas y vueltas del lote, no por transaccion):
+
+| Parte | Lote 50 | Lote 200 | Lote 500 |
+|---|---|---|---|
+| Reglas y politica (2 comandos) | 1,53 | 1,20 | 1,08 |
+| Origen: cuentas y clientes (2) | 1,93 | 2,28 | 2,88 |
+| Perfiles (1) | 1,06 | 1,46 | 2,41 |
+| Destinos, R-03 (2) | 3,29 | 5,50 | 8,08 |
+| Listas de riesgo, R-07 (1) | 0,76 | 0,88 | 0,56 |
+| Ventana, R-09 (1) | 0,99 | 1,90 | 2,05 |
+| `insert_many` de alertas (1) | 1,28 | 1,34 | 1,31 |
+| Token (1) | 0,85 | 0,93 | 0,70 |
+| **Total I/O del lote (11 comandos)** | **11,7** | **15,5** | **19,1** |
+
+Estimacion del conjunto (I/O medido mas 0,063 ms por transaccion de calculo y cursor):
+
+| | Hoy (por evento) | Lote 50 | Lote 200 | Lote 500 |
+|---|---|---|---|---|
+| Idas y vueltas por transaccion | 10,0 | 0,22 | 0,055 | 0,022 |
+| ms por transaccion | 4,99 | 0,30 | 0,14 | 0,10 |
+| Transacciones por segundo | 200 | unas 3.400 | unas 7.100 | unas 9.900 |
+| Tiempo de 10.000 transacciones | 50 s | 3,0 s | 1,4 s | 1,0 s |
+| Ganancia | 1x | 17x | 36x | 49x |
+| Latencia de la primera alerta del lote | 5 ms | 15 ms | 28 ms | 51 ms |
+
+Cautelas sobre la estimacion. Es un techo, no una promesa: no incluye el costo de armar el
+lote en memoria ni de repartir cada fila al evaluador, que la implementacion real agrega; es
+razonable esperar el doble de ms por transaccion y la ganancia seguiria siendo de un orden de
+magnitud. Lo que no depende de la estimacion: el calculo es 1 % del costo actual, asi que
+cualquier diseno que elimine idas y vueltas elimina casi todo el tiempo.
+
+Por parte, sobre los 4,99 ms de hoy, y lo que queda por transaccion a 500 eventos:
+
+| Parte | Hoy ms/tx | A 500 ms/tx | Se recupera |
+|---|---|---|---|
+| Contexto (perfil, destinos, listas, ventana) | 2,216 | 0,026 | 2,19 |
+| Token | 1,041 | 0,0014 | 1,04 |
+| Reglas y politica | 0,862 | 0,0022 | 0,86 |
+| Origen | 0,794 | 0,0058 | 0,79 |
+
+La ganancia se satura rapido: de 50 a 200 eventos el costo por transaccion baja de 0,30 a 0,14
+ms; de 200 a 500, de 0,14 a 0,10 (0,4 s menos en 10.000 transacciones). La unica parte que sigue
+creciendo con el tamano del lote es la de destinos, que lee las transferencias previas de todos
+los clientes del lote: 3,3 ms a 50, 8,1 ms a 500, el 42 % del I/O del lote.
+
+Lo que se pierde:
+
+- **Latencia de la primera alerta del lote.** Una alerta no se escribe hasta que el lote
+  termina. Estimado: 15, 28 y 51 ms (hasta el doble con la cautela anterior). Frente a las
+  decenas de segundos de espera en cola que la rafaga produce hoy (p50 de 23,8 s medido) es una
+  mejora neta; con trafico bajo no hay perdida si D1 toma "lo que haya, hasta 500" y no espera a
+  que el lote se llene, porque entonces un evento solo es un lote de uno y paga lo mismo que hoy.
+- **Un cambio de regla o de politica rige desde el lote siguiente**, no desde la transaccion
+  siguiente. Con lotes de 500 son unos 50 ms de ventana, menor que lo que hoy tarda D1 en llegar
+  a una transaccion encolada (la rafaga de 10.000 tarda 50 s).
+- **Un evento que falla afecta al lote.** Hoy un evento envenenado va al descarte solo. Por lote,
+  hay que aislar el evento que falla (reintentar el lote por mitades o de a uno) para no
+  descartar 499 transacciones sanas. Es el costo de codigo mas alto de D-64.
+- **El token solo avanza al terminar el lote.** Si el proceso muere a mitad, se reprocesan
+  hasta 500 eventos; el indice unico de `transaccion_id` rechaza los duplicados y
+  `insert_many(ordered=False)` los salta sin abortar. Es el contrato de siempre (al menos una vez)
+  con una ventana de reproceso 500 veces mayor, y por eso `ordered=False` no es opcional.
+
+### Bucket por minuto de R-09: no se justifica por tiempo
+
+Una vez que la ventana va por lote, R-09 cuesta 2,05 ms por 500 transacciones (0,004 ms cada
+una): el bucket no tiene nada que recuperar. Su unico beneficio medido es acotar los documentos
+leidos en una rafaga real de un origen (17 contra 100 con K = 100), y eso hoy son menos de 1 ms.
+Tiene costos que el perfil si hace visibles:
+
+- Alguien tiene que mantener el bucket. Si lo hace D1 con `$inc`, un reproceso al menos una vez
+  suma dos veces (el indice unico protege la alerta, no el contador) y rompe la regla de que
+  reprocesar un evento no cambia el resultado. Si lo hace el ingreso, cada transaccion agrega una
+  escritura `w=majority` (1 ms, el mismo costo que hoy tiene el token).
+- Una segunda fuente de verdad que puede divergir de `transacciones`, que es la que R-09 y el
+  forense (H-15) consideran verdad.
+
+### Recomendacion para T-62
+
+1. **Hacer el lote, con tope 500, "lo que haya sin esperar".** Es el 94 % del tiempo y el calculo
+   no es el limite. Elegir el tope por el costo de aislar un evento fallido y por el tamano del
+   reproceso, no por la velocidad: 200 ya da el 94 % de la ganancia de 500, y 500 agrega 0,4 s en
+   10.000 transacciones. Mantener 500 como tope pero medir con 200.
+2. **Orden de implementacion, por ganancia y riesgo:** (a) token una vez por lote (1,04 ms por
+   transaccion, cambio chico, no toca el evaluador); (b) reglas y politica una vez por lote
+   (0,86 ms); (c) origen, perfiles, listas y destinos con `$in` (3 ms), siendo destinos lo
+   delicado: hay que contar en memoria con la fecha de corte de cada transaccion para que el
+   resultado sea identico al de hoy (estrictamente anteriores, sin la propia, ventana de
+   `dias_historial`); (d) `insert_many(ordered=False)`.
+3. **No hacer el bucket de R-09 en T-62.** Sustituirlo por la lectura de ventana por lote (una
+   consulta `$in` mas rango). Si despues una rafaga de miles de transacciones de un solo origen
+   lo justifica, se vuelve a medir con este script (`explain`).
+4. **Aislar el evento fallido dentro del lote** (reintento por mitades) y una prueba que lo
+   verifique, junto con otra que mate el proceso a mitad de lote y compruebe que el reproceso no
+   duplica alertas.
+5. **Prueba de equivalencia:** el mismo conjunto procesado por evento y por lote debe producir las
+   mismas alertas, con los mismos puntajes y `reglas_disparadas`. Es la red de seguridad de D-64
+   porque el lote cambia la forma de armar el contexto, no la regla.
+6. Reusar `scripts/medicion/perfil_d1.py` (`rafaga`) antes y despues: el criterio de exito es
+   una cifra, no una impresion. Con las cifras de arriba, 10.000 transacciones en menos de 5 s
+   (hoy 50 s) deja margen amplio frente al doble de costo esperado en la implementacion.
