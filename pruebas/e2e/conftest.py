@@ -228,6 +228,9 @@ async def _restaurar(base: Any) -> None:
         await base["listas_riesgo"].replace_one(
             {"_id": entrada.riesgo_id}, a_entero_64(entrada.a_documento()), upsert=True
         )
+    # Los casos que abrio una escalacion en lote (T-56); los del demo se quedan.
+    casos_demo = [c.caso_id for c in DATOS_DEMO["casos"]]
+    await base["casos"].delete_many({"_id": {"$nin": casos_demo}})
 
 
 @pytest.fixture(autouse=True)

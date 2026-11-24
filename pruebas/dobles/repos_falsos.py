@@ -55,6 +55,8 @@ class RepoAlertasFalso:
             raise ConflictoAlerta(f"La alerta {plan.alerta_id} cambio mientras se resolvia")
         if plan.caso is not None and plan.caso["_id"] in self.casos:
             raise ConflictoAlerta(f"Ya existe el caso {plan.caso['_id']}")
+        if plan.agregar_a_caso is not None and plan.agregar_a_caso not in self.casos:
+            raise ConflictoAlerta(f"El caso {plan.agregar_a_caso} ya no esta en investigacion")
         guardado.update(copy.deepcopy(plan.actualizacion["$set"]))
         guardado["historial"] = [
             *guardado["historial"],
@@ -62,6 +64,8 @@ class RepoAlertasFalso:
         ]
         if plan.caso is not None:
             self.casos[plan.caso["_id"]] = copy.deepcopy(plan.caso)
+        if plan.agregar_a_caso is not None:
+            self.casos[plan.agregar_a_caso]["alertas"].append(plan.alerta_id)
         self.escrituras += 1
         return copy.deepcopy(guardado)
 

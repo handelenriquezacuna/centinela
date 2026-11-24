@@ -11,9 +11,15 @@ import pytest_asyncio
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
-from app.api.dependencias import dep_repo_alertas, dep_repo_detalle, dep_repo_reglas
+from app.api.dependencias import (
+    dep_repo_alertas,
+    dep_repo_casos_destino,
+    dep_repo_detalle,
+    dep_repo_reglas,
+)
 from app.main import crear_aplicacion
 from app.repos.detalle import ProtocoloRepoDetalle
+from pruebas.dobles.casos_demo import RepoCasosFalso
 from pruebas.dobles.catalogo_reglas import (
     politica_como_documento,
     reglas_como_documentos,
@@ -33,6 +39,7 @@ async def armar() -> Any:
         alertas = RepoAlertasFalso([alerta])
         creada = crear_aplicacion()
         creada.dependency_overrides[dep_repo_alertas] = lambda: alertas
+        creada.dependency_overrides[dep_repo_casos_destino] = lambda: RepoCasosFalso(alertas)
         creada.dependency_overrides[dep_repo_detalle] = lambda: RepoDetalleFalso(alertas.casos)
         creada.dependency_overrides[dep_repo_reglas] = lambda: RepoReglasFalso(
             reglas_como_documentos(), politica_como_documento()
@@ -211,7 +218,7 @@ async def prueba_datos_invalidos_son_422_con_mensaje(armar: Armar) -> None:
 @pytest.mark.asyncio
 async def prueba_el_panel_enlaza_cada_fila_al_detalle(armar: Armar) -> None:
     http, _ = await armar(alerta_v2())
-    html = (await http.get("/panel")).text
+    html = (await http.get("/panel?vista=alertas")).text
     # El enlace lo pinta el servidor: la fila es abrible sin JavaScript.
     assert '<a href="/detalle/ALR-001">ALR-001</a>' in html
     assert 'role="row"' in html and 'role="columnheader"' in html and 'role="table"' in html

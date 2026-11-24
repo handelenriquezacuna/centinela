@@ -158,6 +158,13 @@ db.alertas.createIndex(
   { agente_id: 1 },
   { name: "idx_alertas_agente" }
 );
+// Casos del panel (T-56): las alertas abiertas de UNA cuenta destino. El fragmento de un
+// caso que pide el SSE por cada alerta nueva entra por aqui: igualdad de cuenta y de
+// estado, sin recorrer las demas alertas abiertas.
+db.alertas.createIndex(
+  { cuenta_destino: 1, estado: 1 },
+  { name: "idx_alertas_destino_estado" }
+);
 
 // ------------------------------------------------------------
 // casos

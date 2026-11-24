@@ -20,12 +20,24 @@ from app.api.errores import (
     ErrorCentinela,
     respuestas_documentadas,
 )
-from app.api.esquemas import PaginaAlertas, PeticionTransicion, ResultadoTransicion
+from app.api.esquemas import (
+    PaginaAlertas,
+    PeticionLote,
+    PeticionTransicion,
+    ResultadoItemLote,
+    ResultadoLote,
+    ResultadoTransicion,
+)
 from app.api.paginacion import acotar_limite
 from app.api.sesion import SesionDep
-from app.modelos import Alerta, EstadoAlerta, Severidad
+from app.modelos import Alerta, EstadoAlerta, Severidad, TransicionInvalida
 from app.modelos.base import asumir_utc
-from app.repos.alertas import ConflictoAlerta, planear_transicion
+from app.repos.alertas import (
+    CasoDeLote,
+    ConflictoAlerta,
+    PlanTransicion,
+    planear_transicion,
+)
 
 enrutador = APIRouter(tags=["alertas"])
 
@@ -142,6 +154,22 @@ async def transicionar_alerta(
     El agente de la accion es el de la sesion (`agente_id` del cuerpo se ignora): el
     historial no se puede firmar a nombre de otro.
     """
+    resultado, _plan = await transicionar_una(alerta_id, peticion, repo, sesion)
+    return resultado
+
+
+async def transicionar_una(
+    alerta_id: str,
+    peticion: PeticionTransicion,
+    repo: RepoAlertasDep,
+    sesion: SesionDep,
+    lote: CasoDeLote | None = None,
+) -> tuple[ResultadoTransicion, PlanTransicion]:
+    """La transicion de una alerta: lo que hace la ruta, y lo que reutiliza el lote.
+
+    Es una funcion y no parametros de la ruta para que `lote` (el caso compartido de una
+    escalacion en lote) no se publique como parametro HTTP.
+    """
     actual = await repo.obtener(alerta_id)
     if actual is None:
         raise ErrorCentinela(
@@ -165,12 +193,118 @@ async def transicionar_alerta(
             agente_id=sesion.agente_id,
             nota=peticion.nota,
             ahora=datetime.now(UTC),
+            lote=lote,
         )
         actualizada = await repo.aplicar_transicion(plan)
     except ConflictoAlerta as fallo:
         raise _conflicto(fallo) from fallo
 
-    return ResultadoTransicion(
-        alerta=Alerta.model_validate(actualizada),
-        caso_id=plan.caso["_id"] if plan.caso is not None else None,
+    caso_id = plan.caso["_id"] if plan.caso is not None else plan.agregar_a_caso
+    return (
+        ResultadoTransicion(alerta=Alerta.model_validate(actualizada), caso_id=caso_id),
+        plan,
     )
+
+
+async def aplicar_lote(
+    ids: list[str],
+    destino: EstadoAlerta,
+    nota: str,
+    repo: RepoAlertasDep,
+    sesion: SesionDep,
+) -> ResultadoLote:
+    """Mueve cada alerta con la misma transicion que la ruta individual, una por una.
+
+    No hay escritura masiva: cada alerta pasa por la maquina de estados y por la
+    escritura condicionada de siempre, asi que un 409 de una (otro agente la resolvio,
+    la transicion no esta en la tabla) no frena ni deshace a las demas. Los repetidos
+    se cuentan una sola vez.
+
+    Escalar en lote (D-57) abre UN solo caso `CAS-xxx` para el lote: la primera alerta
+    que pasa lo crea y las siguientes se agregan a el. Una que falla no entra al caso, y
+    si fallan todas no se crea ninguno.
+    """
+    caso_del_lote = CasoDeLote()
+    unicos = list(dict.fromkeys(ids))
+    resultados: list[ResultadoItemLote] = []
+    for alerta_id in unicos:
+        try:
+            hecho, plan = await transicionar_una(
+                alerta_id,
+                PeticionTransicion(destino=destino, nota=nota),
+                repo,
+                sesion,
+                caso_del_lote,
+            )
+        except (ErrorCentinela, TransicionInvalida) as fallo:
+            if isinstance(fallo, ErrorCentinela):
+                codigo, estado_http, mensaje = (
+                    fallo.codigo.value,
+                    fallo.estado_http,
+                    fallo.mensaje,
+                )
+            else:
+                codigo = CodigoError.TRANSICION_INVALIDA.value
+                estado_http, mensaje = status.HTTP_409_CONFLICT, str(fallo)
+            actual = await repo.obtener(alerta_id)
+            resultados.append(
+                ResultadoItemLote(
+                    alerta_id=alerta_id,
+                    aplicada=False,
+                    estado_http=estado_http,
+                    codigo=codigo,
+                    mensaje=mensaje,
+                    estado_actual=actual["estado"] if actual else None,
+                )
+            )
+            continue
+        if plan.caso is not None:
+            caso_del_lote.caso_id = plan.caso["_id"]
+        resultados.append(
+            ResultadoItemLote(
+                alerta_id=alerta_id,
+                aplicada=True,
+                estado_http=status.HTTP_200_OK,
+                estado_actual=hecho.alerta.estado.value,
+                caso_id=hecho.caso_id,
+            )
+        )
+    aplicadas = sum(1 for r in resultados if r.aplicada)
+    return ResultadoLote(
+        solicitadas=len(unicos),
+        aplicadas=aplicadas,
+        rechazadas=len(unicos) - aplicadas,
+        resultados=resultados,
+    )
+
+
+@enrutador.post(
+    "/alertas/transiciones",
+    response_model=ResultadoLote,
+    summary="Mueve varias alertas al mismo estado, cada una por la maquina de estados",
+    responses=respuestas_documentadas(
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        status.HTTP_500_INTERNAL_SERVER_ERROR,
+    ),
+)
+async def transicionar_lote(
+    peticion: PeticionLote,
+    ajustes: AjustesDep,
+    repo: RepoAlertasDep,
+    sesion: SesionDep,
+) -> ResultadoLote:
+    """Lote con tope `app.lote_maximo` (422 si se pasa). Responde 200 con el detalle.
+
+    El resultado dice cuantas pasaron y, de las que no, el estado HTTP que habrian
+    dado solas (409 si otro agente la resolvio) y el motivo. Quien actua es el agente
+    de la sesion; el permiso es el mismo de la transicion individual.
+    """
+    unicas = list(dict.fromkeys(peticion.alertas))
+    if len(unicas) > ajustes.app.lote_maximo:
+        raise ErrorCentinela(
+            CodigoError.PARAMETROS_INVALIDOS,
+            f"Un lote admite como maximo {ajustes.app.lote_maximo} alertas",
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            [DetalleError(campo="alertas", mensaje=f"maximo {ajustes.app.lote_maximo}")],
+        )
+    return await aplicar_lote(unicas, peticion.destino, peticion.nota, repo, sesion)

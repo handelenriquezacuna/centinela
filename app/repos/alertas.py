@@ -114,6 +114,19 @@ def caso_id_para(alerta_id: str) -> str:
     return PREFIJO_CASO + alerta_id.removeprefix(PREFIJO_ALERTA)
 
 
+@dataclass
+class CasoDeLote:
+    """El caso que une a las alertas escaladas de un mismo lote (T-56, D-57).
+
+    `caso_id` es `None` hasta que la PRIMERA escalacion del lote se aplica: esa abre el
+    caso, en la misma transaccion que mueve su alerta. Las siguientes lo reutilizan.
+    Como el caso nace dentro de la transaccion de una alerta que si pasa, un lote donde
+    todas fallan no deja un caso vacio, y una alerta que falla no queda en el caso.
+    """
+
+    caso_id: str | None = None
+
+
 @dataclass(frozen=True)
 class PlanTransicion:
     """Lo que hay que escribir para mover una alerta. Puro: no toca la base."""
@@ -127,6 +140,8 @@ class PlanTransicion:
     actualizacion: dict[str, Any]
     # Documento del caso, solo al escalar.
     caso: dict[str, Any] | None
+    # Caso ya abierto por otra alerta del mismo lote: esta alerta se agrega a el.
+    agregar_a_caso: str | None = None
 
 
 def planear_transicion(
@@ -136,6 +151,7 @@ def planear_transicion(
     agente_id: str,
     nota: str,
     ahora: datetime,
+    lote: CasoDeLote | None = None,
 ) -> PlanTransicion:
     """Valida y arma la escritura. Lanza `TransicionInvalida` o `ConflictoAlerta`.
 
@@ -143,6 +159,9 @@ def planear_transicion(
     - Resolver (`en_revision -> confirmada/descartada/escalada`) solo lo puede hacer el
       agente que la tomo: si es otro, conflicto. El agente
       es el de la sesion (H-25), no uno que mande el cliente.
+    - Con `lote`, escalar abre UN caso por cuenta destino para todo el lote: la primera
+      alerta lo crea (con la cuenta y el agente) y las demas se agregan a el. Sin `lote`
+      la escalacion es la de siempre, un caso por alerta.
     """
     alerta_id = str(actual["_id"])
     origen = EstadoAlerta(actual["estado"])
@@ -167,12 +186,17 @@ def planear_transicion(
     entrada = {"accion": destino.value, "agente_id": agente_id, "fecha": ahora, "nota": nota}
 
     caso = None
-    if destino == EstadoAlerta.ESCALADA:
+    agregar_a_caso = None
+    if destino == EstadoAlerta.ESCALADA and lote is not None and lote.caso_id is not None:
+        agregar_a_caso = lote.caso_id
+    elif destino == EstadoAlerta.ESCALADA:
         caso = Caso(
             _id=caso_id_para(alerta_id),
             alertas=[alerta_id],
             estado=EstadoCaso.INVESTIGACION,
             fecha_apertura=ahora,
+            cuenta_destino=actual["cuenta_destino"] if lote is not None else None,
+            agente_id=agente_id if lote is not None else None,
         ).a_documento()
 
     return PlanTransicion(
@@ -182,6 +206,7 @@ def planear_transicion(
         filtro=filtro,
         actualizacion={"$set": cambios, "$push": {"historial": entrada}},
         caso=caso,
+        agregar_a_caso=agregar_a_caso,
     )
 
 
@@ -265,6 +290,8 @@ class RepoAlertas:
         alerta ya no esta como se leyo, se lanza dentro de la transaccion y el caso se
         deshace con ella. `with_transaction` reintenta solo los errores transitorios.
         """
+        if plan.agregar_a_caso is not None:
+            return await self._agregar_a_caso(plan)
         if plan.caso is None:
             actualizada = await self._coleccion.find_one_and_update(
                 plan.filtro, plan.actualizacion, return_document=ReturnDocument.AFTER
@@ -297,6 +324,42 @@ class RepoAlertas:
                 f"Ya existe el caso {caso['_id']}; la alerta {plan.alerta_id} no se escalo",
                 estado_actual=plan.origen.value,
             ) from fallo
+
+    async def _agregar_a_caso(self, plan: PlanTransicion) -> dict[str, Any]:
+        """Mueve la alerta y la agrega a un caso ya abierto, en una sola transaccion.
+
+        Si la alerta cambio en el medio, o el caso no esta en investigacion, se lanza
+        dentro de la transaccion: ni la alerta se mueve ni el caso la recibe.
+        """
+        caso_id = plan.agregar_a_caso
+
+        async def agregar(sesion: AsyncClientSession) -> dict[str, Any]:
+            actualizada = await self._coleccion.find_one_and_update(
+                plan.filtro,
+                plan.actualizacion,
+                return_document=ReturnDocument.AFTER,
+                session=sesion,
+            )
+            if actualizada is None:
+                raise _SinCoincidencia
+            recibido = await self._casos.update_one(
+                {"_id": caso_id, "estado": EstadoCaso.INVESTIGACION.value},
+                {"$addToSet": {"alertas": plan.alerta_id}},
+                session=sesion,
+            )
+            if recibido.matched_count == 0:
+                raise ConflictoAlerta(
+                    f"El caso {caso_id} ya no esta en investigacion; la alerta "
+                    f"{plan.alerta_id} no se escalo",
+                    estado_actual=plan.origen.value,
+                )
+            return actualizada
+
+        try:
+            async with self._base.client.start_session() as sesion:
+                return await sesion.with_transaction(agregar)
+        except _SinCoincidencia:
+            raise self._carrera(plan) from None
 
     def _carrera(self, plan: PlanTransicion) -> ConflictoAlerta:
         return ConflictoAlerta(

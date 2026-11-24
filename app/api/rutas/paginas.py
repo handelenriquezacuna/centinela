@@ -26,17 +26,19 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Annotated, Any
 from urllib.parse import parse_qs
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader, Undefined, select_autoescape
 from pydantic import ValidationError
 
+from app.api.casos import acciones_del_caso, casos_para_panel
 from app.api.dependencias import (
     AjustesDep,
     RepoAlertasDep,
+    RepoCasosDestinoDep,
     RepoDetalleDep,
     RepoReglasDep,
     SupervisorDep,
@@ -80,6 +82,7 @@ registrar_formatos(ENTORNO)
 # Para la barra de navegacion y el encabezado: que ve cada rol, y quien es.
 ENTORNO.globals["permite_ruta"] = permite_ruta
 ENTORNO.globals["sesion_actual"] = sesion_actual
+ENTORNO.globals["acciones_del_caso"] = acciones_del_caso
 
 
 def _json_compacto(valor: Any) -> str:
@@ -119,9 +122,39 @@ async def raiz() -> RedirectResponse:
     return RedirectResponse("/panel")
 
 
+VISTAS_PANEL = ("alertas", "casos")
+# D-56: por omision se agrupa por cuenta destino (la mula), que es lo que deja decidir una
+# vez con todo el contexto. La vista por alerta queda a un clic y la eleccion se recuerda
+# en una cookie. En la interfaz se dice "Por cuenta destino" y "Por alerta": "caso" a
+# secas es la coleccion `casos` (CAS-xxx, la escalacion).
+VISTA_POR_OMISION = "casos"
+COOKIE_VISTA = "centinela_vista"
+
+
 @enrutador.get("/panel", response_class=HTMLResponse)
-async def panel(repo: RepoAlertasDep, ajustes: AjustesDep) -> HTMLResponse:
-    return _pagina("paginas/panel.html", "panel", alertas=await _cola(repo, ajustes))
+async def panel(
+    peticion: Request,
+    repo: RepoAlertasDep,
+    repo_casos: RepoCasosDestinoDep,
+    ajustes: AjustesDep,
+    vista: Annotated[str | None, Query()] = None,
+) -> HTMLResponse:
+    elegida = vista if vista in VISTAS_PANEL else peticion.cookies.get(COOKIE_VISTA)
+    if elegida not in VISTAS_PANEL:
+        elegida = VISTA_POR_OMISION
+    if elegida == "casos":
+        limite = min(ajustes.app.pagina_por_omision, ajustes.app.pagina_maxima)
+        casos, total = await casos_para_panel(repo_casos, limite)
+        respuesta = _pagina(
+            "paginas/panel.html", "panel", vista="casos", casos=casos, total_casos=total
+        )
+    else:
+        respuesta = _pagina(
+            "paginas/panel.html", "panel", vista="alertas", alertas=await _cola(repo, ajustes)
+        )
+    if vista in VISTAS_PANEL:
+        respuesta.set_cookie(COOKIE_VISTA, vista, max_age=60 * 60 * 24 * 365, samesite="lax", httponly=True)
+    return respuesta
 
 
 @enrutador.get("/panel/cola", response_class=HTMLResponse)

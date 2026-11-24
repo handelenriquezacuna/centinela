@@ -231,3 +231,8 @@ class Caso(DocumentoBase):
     estado: EstadoCaso = EstadoCaso.INVESTIGACION
     # Opcional porque el validador de `casos` todavia no la declara.
     fecha_apertura: MarcaTiempoUTC | None = None
+    # Solo los casos que abre una escalacion EN LOTE (T-56, D-57) los llevan: la cuenta
+    # destino que agrupa a las alertas y el agente que escalo. La escalacion individual
+    # no los escribe.
+    cuenta_destino: CuentaSinpe | None = None
+    agente_id: AgenteId | None = None

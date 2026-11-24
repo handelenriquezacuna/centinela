@@ -67,6 +67,8 @@ class AjustesApp(BaseModel):
     entorno: str = "dev"
     pagina_por_omision: int = Field(default=50, ge=1)
     pagina_maxima: int = Field(default=200, ge=1)
+    # Tope de alertas por peticion de transicion en lote (T-56): guarda tecnica.
+    lote_maximo: int = Field(default=50, ge=1)
 
     @model_validator(mode="after")
     def omision_no_pasa_el_tope(self) -> AjustesApp:

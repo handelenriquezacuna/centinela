@@ -12,7 +12,7 @@ pytestmark = pytest.mark.mongo
 
 @pytest.mark.asyncio
 async def prueba_get_panel_con_la_base_sembrada(cliente_con_mongo: AsyncClient) -> None:
-    respuesta = await cliente_con_mongo.get("/panel")
+    respuesta = await cliente_con_mongo.get("/panel?vista=alertas")
     assert respuesta.status_code == 200
     ids = re.findall(r'id="alerta-(ALR-\d+)"', respuesta.text)
     assert sorted(ids) == ["ALR-001", "ALR-002", "ALR-003"]

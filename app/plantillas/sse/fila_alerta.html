@@ -15,6 +15,7 @@
      class="fila-alerta severidad-{{ alerta['severidad'] }}"
      data-operacion="{{ operacion }}"
      data-estado="{{ alerta['estado'] }}"
+     data-destino="{{ alerta['cuenta_destino'] }}"
      data-puntaje="{{ alerta['puntaje'] }}"
      data-monto-crc="{{ alerta['monto_crc'] }}">
   <span role="cell" class="alerta-id"><a href="/detalle/{{ alerta['_id'] }}">{{ alerta['_id'] }}</a></span>
