@@ -11,15 +11,14 @@ import { Login } from "./paginas/Login";
 import { NoEncontrada } from "./paginas/NoEncontrada";
 import { Detalle } from "./paginas/Detalle";
 import { Panel } from "./paginas/Panel";
-import { Pendiente } from "./paginas/Pendiente";
 import { RedMulas } from "./paginas/RedMulas";
 import { Reglas } from "./paginas/Reglas";
 import { Tablero } from "./paginas/Tablero";
 
 /**
  * Cada pantalla declara la plantilla de su ruta tal como la tiene la tabla de permisos
- * (`/detalle/{alerta_id}`); `RequiereSesion` la compara con `sesion.paginas`. Las que
- * dicen `Pendiente` las migra la fase 2, cada una con el endpoint que va a leer.
+ * (`/detalle/{alerta_id}`); `RequiereSesion` la compara con `sesion.paginas`. Todas
+ * las pantallas ya estan migradas (fase 2: T-64, T-65 y T-66).
  */
 function protegida(plantilla: string, elemento: ReactNode): ReactNode {
   return <RequiereSesion plantilla={plantilla}>{elemento}</RequiereSesion>;
