@@ -115,7 +115,11 @@ class PeticionLote(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    alertas: list[AlertaId] = Field(min_length=1, description="Identificadores, sin repetir")
+    # Tope duro del cuerpo, antes de contar las unicas contra `app.lote_maximo`: una
+    # lista enorme de repetidas no debe llegar a validarse entera.
+    alertas: list[AlertaId] = Field(
+        min_length=1, max_length=500, description="Identificadores, sin repetir"
+    )
     destino: EstadoAlerta = Field(description="Estado al que pasa cada alerta")
     nota: str = Field(default="", max_length=1000, description="Queda en el historial de cada una")
 
