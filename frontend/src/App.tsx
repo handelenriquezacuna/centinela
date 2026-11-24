@@ -9,8 +9,10 @@ import { RequiereSesion } from "./componentes/RequiereSesion";
 import { Busqueda } from "./paginas/Busqueda";
 import { Login } from "./paginas/Login";
 import { NoEncontrada } from "./paginas/NoEncontrada";
+import { Detalle } from "./paginas/Detalle";
 import { Panel } from "./paginas/Panel";
 import { Pendiente } from "./paginas/Pendiente";
+import { RedMulas } from "./paginas/RedMulas";
 
 /**
  * Cada pantalla declara la plantilla de su ruta tal como la tiene la tabla de permisos
@@ -31,10 +33,7 @@ export const RUTAS: RouteObject[] = [
       { path: "/detalle", element: <Navigate to="/panel" replace /> },
       {
         path: "/detalle/:alertaId",
-        element: protegida(
-          "/detalle/{alerta_id}",
-          <Pendiente titulo="Detalle de alerta" endpoint="GET /api/v1/alertas/{alerta_id}/detalle" />,
-        ),
+        element: protegida("/detalle/{alerta_id}", <Detalle />),
       },
       {
         path: "/busqueda",
@@ -42,14 +41,11 @@ export const RUTAS: RouteObject[] = [
       },
       {
         path: "/red-mulas",
-        element: protegida("/red-mulas", <Pendiente titulo="Red de mulas" endpoint="GET /api/v1/red-mulas/{cuenta}/grafo" />),
+        element: protegida("/red-mulas", <RedMulas />),
       },
       {
         path: "/red-mulas/:cuenta",
-        element: protegida(
-          "/red-mulas/{cuenta}",
-          <Pendiente titulo="Red de mulas" endpoint="GET /api/v1/red-mulas/{cuenta}/grafo y /sankey" />,
-        ),
+        element: protegida("/red-mulas/{cuenta}", <RedMulas />),
       },
       {
         path: "/tablero",
