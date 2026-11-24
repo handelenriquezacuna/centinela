@@ -973,6 +973,12 @@ reconstruir el estado de la cola, no repetir cada evento.
 
 ### Pantallas de la fase 2
 
+Detalle, Sankey y red de mulas (T-64): `paginas/Detalle.tsx`, `paginas/RedMulas.tsx` y los
+componentes `Sankey` (solo dibuja la disposición que calcula el servidor), `RecorridoDinero`
+(Sankey con su tabla de saltos y "Marcar como mula", solo con el permiso `gestionar_listas`
+de `GET /api/v1/sesion`), `GrafoRed` y `DialogoConfirmacion` (`<dialog>` modal nativo: foco,
+Esc y retorno del foco). No agregaron endpoints.
+
 La fase 1 deja migradas el login y el panel por cuenta destino (con su prueba Vitest y la
 e2e `prueba_spa_panel.py`). Las demás rutas de la SPA muestran "Pantalla todavía no
 migrada" con el endpoint que van a leer:
@@ -980,9 +986,9 @@ migrada" con el endpoint que van a leer:
 | Pantalla | Endpoint | E2E HTMX que la cubre hoy |
 |---|---|---|
 | Panel por alerta y atajos `j`/`k`/`x`/`Enter`/`?` (hecho, T-65; la vista elegida se recuerda en `localStorage`, clave `centinela_vista`) | `GET /api/v1/alertas` + canal JSON | `prueba_spa_cola_busqueda.py` (y `prueba_tiempo_real.py` en HTMX) |
-| Detalle de alerta y resolución | `GET /api/v1/alertas/{id}/detalle`, `POST /api/v1/alertas/{id}/transiciones` | `prueba_detalle.py` |
-| Sankey del detalle y marcar mula | `GET /api/v1/red-mulas/{cuenta}/sankey`, `POST /api/v1/listas-riesgo` | `prueba_sankey.py` |
-| Red de mulas | `GET /api/v1/red-mulas/{cuenta}/grafo`, propuestas y baja | `prueba_red_mulas.py` |
+| Detalle de alerta y resolución (migrado, T-64) | `GET /api/v1/alertas/{id}/detalle`, `POST /api/v1/alertas/{id}/transiciones` | `prueba_detalle.py`; en la SPA, `prueba_spa_detalle.py` |
+| Sankey del detalle y marcar mula (migrado, T-64) | `GET /api/v1/red-mulas/{cuenta}/sankey`, `POST /api/v1/listas-riesgo` | `prueba_sankey.py`; en la SPA, `prueba_spa_sankey.py` |
+| Red de mulas (migrado, T-64) | `GET /api/v1/red-mulas/{cuenta}/grafo`, propuestas y baja | `prueba_red_mulas.py`; en la SPA, `prueba_spa_red_mulas.py` |
 | Búsqueda forense y CSV (hecha, T-65) | `GET /api/v1/transacciones`, `GET /api/v1/transacciones/exportar.csv` | `prueba_spa_cola_busqueda.py` |
 | Tablero | `GET /api/v1/tablero`, `GET /api/v1/efectividad` | (contrato) |
 | Reglas y política | `/api/v1/reglas`, `/api/v1/reglas/tipos`, `/api/v1/politica` | (contrato) |
