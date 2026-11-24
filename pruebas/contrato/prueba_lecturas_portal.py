@@ -24,12 +24,13 @@ from app.api.dependencias import (
     dep_repo_tablero,
     dep_supervisor,
 )
-from app.api.graficos import disponer_grafo
+from app.api.graficos import disponer_grafo, graficos_tablero
 from app.api.rutas.inteligencia import dep_repo_red_mulas
 from app.api.rutas.listas_riesgo import dep_repo_listas_riesgo
 from app.api.sankey import disponer_sankey
 from app.deteccion.d1 import NOMBRE_D1
 from app.main import crear_aplicacion
+from app.repos.tablero import resumir
 from app.supervision import Supervisor
 from pruebas.dobles.casos_demo import RepoCasosFalso, caso_de_la_mula
 from pruebas.dobles.catalogo_reglas import (
@@ -281,6 +282,38 @@ async def prueba_el_tablero_con_datos_trae_resumen_y_graficos(armar: Armar) -> N
     assert tablero["resumen"]["total"]["actual"] == 5
     assert {"estado", "severidad", "agente", "hora"} <= set(tablero["graficos"])
     assert (await http.get("/api/v1/tablero", params={"dias": 31})).status_code == 422
+
+
+@pytest.mark.asyncio
+async def prueba_el_tablero_tipado_publica_los_mismos_numeros_y_fechas_con_zona(armar: Armar) -> None:
+    """T-66: los modelos no cambian ningun numero del repo; solo agregan la zona UTC a las fechas."""
+    documentos = documentos_con_comparacion()
+    # pymongo devuelve fechas sin zona (UTC): asi llegan del repo real.
+    for documento in documentos:
+        if "calculado_en" in documento:
+            documento["calculado_en"] = documento["calculado_en"].replace(tzinfo=None)
+    documentos[-1].update(
+        calculado_en=datetime(2026, 11, 20, 3, 30, tzinfo=UTC).replace(tzinfo=None),
+        monto_protegido_crc=1_250_000,
+        decision_cantidad=2,
+        decision_segundos_total=5400,
+        pendientes=3,
+        pendiente_mas_antigua=datetime(2026, 11, 19, 12, 0, tzinfo=UTC).replace(tzinfo=None),
+    )
+    http = await armar(tablero=RepoTableroFalso(documentos))
+    cuerpo = (await http.get("/api/v1/tablero", params={"dias": 1})).json()
+    esperado = resumir(documentos, 1)
+
+    resumen = cuerpo["resumen"]
+    assert resumen["total"] == esperado["total"]
+    assert resumen["actual"]["por_estado"] == esperado["actual"]["por_estado"]
+    assert resumen["kpi"]["monto_protegido_crc"]["actual"] == esperado["kpi"]["monto_protegido_crc"]["actual"]
+    assert isinstance(resumen["kpi"]["monto_protegido_crc"]["actual"], int)
+    assert resumen["kpi"]["tasa_confirmacion"] == esperado["kpi"]["tasa_confirmacion"]
+    assert resumen["kpi"]["tiempo_decision_s"]["actual"] == 2700
+    assert resumen["calculado_en"] == "2026-11-20T03:30:00Z"
+    assert resumen["kpi"]["pendiente_mas_antigua"] == "2026-11-19T12:00:00Z"
+    assert cuerpo["graficos"] == graficos_tablero(esperado)
 
 
 # ---------------------------------------------------------------------------

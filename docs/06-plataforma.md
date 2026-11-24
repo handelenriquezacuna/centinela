@@ -891,7 +891,24 @@ formatos.ts            colones y hora de Costa Rica (casos compartidos con Pytho
 destino.ts             regla anti redireccion abierta (casos compartidos con Python)
 casos.ts               orden y reemplazo de cuentas destino en la lista
 componentes/, paginas/ marco, guardia de sesion, login, panel y las pendientes de fase 2
+tablero/               KPIs, graficos SVG propios (la geometria la da el servidor) y efectividad (T-66)
+reglas/                tarjeta de regla con 409, politica, alta de regla y simulador (T-66)
 ```
+
+### Tablero y reglas en la SPA (T-66)
+
+- **`/tablero`** (supervisor y administrador) lee `GET /api/v1/tablero?dias=` y
+  `GET /api/v1/efectividad`. Las cifras, comparaciones y la geometría de las barras vienen
+  del servidor; la SPA las escribe en español de Costa Rica y no recalcula nada. Los
+  gráficos son SVG propios (sin librería) con su alternativa textual en `aria-label`.
+  Sin rollup dice que falta y da el comando; sin los KPI nuevos dice "sin dato", no cero.
+- **`/reglas`** lee reglas, tipos y política. Quien tiene `editar_reglas` (según
+  `GET /api/v1/sesion`) puede editar umbral, peso, parámetros y activa con
+  `version_esperada`: un 409 dice que otra persona cambió la regla, no escribe nada y
+  recarga lo vigente. También crea reglas de un tipo evaluable, edita la política
+  (umbral, máximo y cortes) con la misma concurrencia y simula una transacción con una
+  regla propuesta (`POST /api/v1/reglas/simular`, sin escribir). El ejemplo TXN-001 del
+  simulador es `frontend/src/reglas/simulacion.ejemplo.json`.
 
 ### Sesión de la SPA
 
@@ -926,7 +943,7 @@ mismas funciones puras que la página HTMX.
 | `GET /casos-destino[?limite=&desplazamiento=]` | panel | Página de cuentas destino con alertas abiertas: totales, víctimas, monto entero, severidad y puntaje máximos, reglas repetidas, alertas (`_id`), sugerencia y acciones de lote | `app/api/casos.py`, `RepoCasosDestino` |
 | `GET /casos-destino/{cuenta}` | panel | Un caso; 404 si ya no tiene abiertas | idem |
 | `GET /deteccion/rezago` | panel | `{atrasada, pendientes, aviso_desde, segundos_para_ponerse_al_dia, estimado, medido_en}`; no consulta la base | `antiguedad_legible` |
-| `GET /tablero?dias=` | tablero | `resumen` de `indicadores_diarios` y la geometría de sus gráficos (objetos abiertos en esta fase) | `app/repos/tablero.py`, `app/api/graficos.py` |
+| `GET /tablero?dias=` | tablero | `resumen` de `indicadores_diarios` (`ResumenVacio` o `ResumenTablero`, discriminado por `vacio`) y la geometría de sus gráficos (`GraficosTablero`), ya tipados (T-66); las fechas salen con zona UTC | `app/repos/tablero.py`, `app/api/graficos.py` |
 | `GET /red-mulas/{cuenta}/sankey?transaccion=&desde=&ventana_minutos=&saltos=` | red_mulas | Disposición del Sankey: nodos, bandas (trazado SVG y grosor entero proporcional a los colones), columnas, víctima en la columna 0 si viene `transaccion`; `sankey: null` con `motivo` si no hay salidas | `app/api/sankey.py` |
 | `GET /red-mulas/{cuenta}/grafo?...` | red_mulas | La red, la posición de nodos y aristas, y las entradas de `listas_riesgo` solo para quien puede darlas de baja | `app/api/graficos.disponer_grafo` |
 

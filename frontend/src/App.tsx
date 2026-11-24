@@ -13,6 +13,8 @@ import { Detalle } from "./paginas/Detalle";
 import { Panel } from "./paginas/Panel";
 import { Pendiente } from "./paginas/Pendiente";
 import { RedMulas } from "./paginas/RedMulas";
+import { Reglas } from "./paginas/Reglas";
+import { Tablero } from "./paginas/Tablero";
 
 /**
  * Cada pantalla declara la plantilla de su ruta tal como la tiene la tabla de permisos
@@ -49,11 +51,11 @@ export const RUTAS: RouteObject[] = [
       },
       {
         path: "/tablero",
-        element: protegida("/tablero", <Pendiente titulo="Tablero" endpoint="GET /api/v1/tablero" />),
+        element: protegida("/tablero", <Tablero />),
       },
       {
         path: "/reglas",
-        element: protegida("/reglas", <Pendiente titulo="Reglas" endpoint="GET /api/v1/reglas y /api/v1/politica" />),
+        element: protegida("/reglas", <Reglas />),
       },
       { path: "*", element: <NoEncontrada /> },
     ],

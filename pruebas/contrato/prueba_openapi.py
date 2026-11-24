@@ -88,12 +88,30 @@ def prueba_el_dinero_de_las_lecturas_del_portal_es_entero() -> None:
         "AristaGrafo",
         "TransaccionDetalle",
         "PerfilDetalle",
+        "KpiPeriodo",
     ):
         for campo, definicion in esquemas[nombre]["properties"].items():
             if not campo.endswith("_crc"):
                 continue
             tipos = {d.get("type") for d in definicion.get("anyOf", [definicion])}
             assert "number" not in tipos and "integer" in tipos, (nombre, campo)
+
+
+def prueba_el_tablero_publica_resumen_y_graficos_tipados() -> None:
+    """T-66: `resumen` y `graficos` dejaron de ser objetos abiertos; la SPA los tipa desde aca."""
+    esquemas = ESQUEMA["components"]["schemas"]
+    tablero = esquemas["RespuestaTablero"]["properties"]
+    opciones = {o["$ref"].rsplit("/", 1)[1] for o in tablero["resumen"]["oneOf"]}
+    assert opciones == {"ResumenVacio", "ResumenTablero"}
+    assert tablero["resumen"]["discriminator"]["propertyName"] == "vacio"
+    grafico = {d.get("$ref", "").rsplit("/", 1)[-1] for d in tablero["graficos"]["anyOf"]}
+    assert "GraficosTablero" in grafico
+    assert set(esquemas["GraficosTablero"]["properties"]) == {"estado", "severidad", "agente", "hora"}
+    assert {"kpi", "total", "calculado_en", "hay_periodo_previo"} <= set(
+        esquemas["ResumenTablero"]["properties"]
+    )
+    for nombre in ("ResumenTablero", "GraficosTablero", "GraficoBarras", "GraficoColumnas"):
+        assert esquemas[nombre].get("additionalProperties") is not True, nombre
 
 
 def prueba_la_sesion_publica_entrar_consultar_y_salir() -> None:
