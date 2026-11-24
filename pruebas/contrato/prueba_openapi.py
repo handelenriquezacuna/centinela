@@ -32,6 +32,7 @@ def prueba_estan_publicadas_las_rutas_decididas() -> None:
         "/api/v1/alertas",
         "/api/v1/alertas/flujo",
         "/api/v1/alertas/{alerta_id}/transiciones",
+        "/api/v1/alertas/transiciones",
         "/api/v1/transacciones",
         "/api/v1/reglas",
         "/api/v1/reglas/tipos",

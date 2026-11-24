@@ -94,6 +94,8 @@ ACCESOS: tuple[Acceso, ...] = (
     # Panel y alertas
     _a("GET", "/panel", Permiso.PANEL),
     _a("GET", "/panel/cola", Permiso.PANEL),
+    _a("GET", "/panel/casos", Permiso.PANEL),
+    _a("GET", "/panel/casos/{cuenta}", Permiso.PANEL),
     _a("GET", "/panel/rezago", Permiso.PANEL),
     _a("GET", "/api/v1/alertas", Permiso.PANEL),
     _a("GET", "/api/v1/alertas/flujo", Permiso.PANEL),
@@ -102,6 +104,8 @@ ACCESOS: tuple[Acceso, ...] = (
     _a("GET", "/detalle/{alerta_id}", Permiso.DETALLE),
     _a("POST", "/detalle/{alerta_id}/transicion", Permiso.RESOLVER),
     _a("POST", "/api/v1/alertas/{alerta_id}/transiciones", Permiso.RESOLVER),
+    _a("POST", "/api/v1/alertas/transiciones", Permiso.RESOLVER),
+    _a("POST", "/panel/lote", Permiso.RESOLVER),
     # Busqueda forense
     _a("GET", "/busqueda", Permiso.BUSCAR),
     _a("GET", "/busqueda/exportar.csv", Permiso.BUSCAR),

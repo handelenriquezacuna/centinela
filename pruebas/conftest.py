@@ -28,9 +28,10 @@ from asgi_lifespan import LifespanManager
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from app.api.dependencias import dep_repo_alertas
+from app.api.dependencias import dep_repo_alertas, dep_repo_casos_destino
 from app.main import crear_aplicacion
 from app.nucleo.config import Ajustes, obtener_ajustes
+from pruebas.dobles.casos_demo import RepoCasosFalso
 from pruebas.dobles.datos_demo import DATOS_DEMO, alertas_como_documentos
 from pruebas.dobles.repos_falsos import RepoAlertasFalso
 from pruebas.sesiones import CLAVE_DE_PRUEBAS, encabezados_de
@@ -148,6 +149,8 @@ def aplicacion(repo_alertas_falso: RepoAlertasFalso) -> FastAPI:
     """Aplicacion con el repositorio de alertas sustituido por el doble."""
     creada = crear_aplicacion()
     creada.dependency_overrides[dep_repo_alertas] = lambda: repo_alertas_falso
+    # /panel abre por cuenta destino (D-56): tambien sin Mongo.
+    creada.dependency_overrides[dep_repo_casos_destino] = lambda: RepoCasosFalso(repo_alertas_falso)
     return creada
 
 

@@ -86,3 +86,20 @@ orden por puntaje. Como el panel abre por estado, no por rango, no se agrega.
 Las cifras de antes y despues vienen de volumenes distintos (264 alertas reales contra
 3000 sinteticas). La comparacion que importa es el plan: COLLSCAN o SORT contra IXSCAN
 sin SORT.
+
+## Casos del panel (T-56)
+
+La vista por caso agrupa las alertas abiertas por `cuenta_destino` con un solo `$group`
+(`app/repos/casos_destino.py`). Medido con `pruebas/integracion/prueba_casos_destino_mongo.py`
+sobre 604 alertas (una de cada tres cerrada), con el indice real de `02-indices.js`:
+
+| consulta | plan | SORT | nReturned | totalDocsExamined |
+|---|---|---|---|---|
+| todos los casos (`$match estado in [nueva, en_revision]` + `$group`) | IXSCAN idx_alertas_estado_puntaje_fecha | no | 204 | 204 |
+| un caso (`cuenta_destino` + `estado`), el fragmento que pide el SSE | IXSCAN idx_alertas_destino_estado | no | 3 | 3 |
+
+En los dos casos `nReturned == totalDocsExamined`: cada documento leido entra al grupo, y
+las 400 alertas cerradas no se tocan. El indice `idx_alertas_destino_estado`
+(`{cuenta_destino: 1, estado: 1}`) es nuevo: sin el, pedir el caso de una cuenta recorreria
+todas las alertas abiertas. El orden de los casos (severidad maxima, puntaje maximo, mas
+antigua) se hace sobre los grupos, no sobre las alertas.

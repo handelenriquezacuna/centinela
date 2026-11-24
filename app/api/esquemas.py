@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.deteccion import ContextoEvaluacion, PoliticaDeteccion
 from app.deteccion.evaluador import CorteSeveridad
 from app.modelos.alertas import Alerta
-from app.modelos.base import AgenteId, MarcaTiempoUTC, ModeloCentinela
+from app.modelos.base import AgenteId, AlertaId, MarcaTiempoUTC, ModeloCentinela
 from app.modelos.estados import EstadoAlerta, Severidad
 from app.modelos.transaccional import Regla, Transaccion
 from app.supervision import (
@@ -104,6 +104,45 @@ class ResultadoTransicion(BaseModel):
 
     alerta: Alerta
     caso_id: str | None = Field(default=None, examples=["CAS-003"])
+
+
+class PeticionLote(BaseModel):
+    """Mover varias alertas al mismo estado (T-56), cada una por la maquina de estados.
+
+    No es un `update_many`: cada alerta se valida y se escribe sola, con la misma funcion
+    que `POST /alertas/{id}/transiciones`. La cantidad maxima la fija `app.lote_maximo`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Tope duro del cuerpo, antes de contar las unicas contra `app.lote_maximo`: una
+    # lista enorme de repetidas no debe llegar a validarse entera.
+    alertas: list[AlertaId] = Field(
+        min_length=1, max_length=500, description="Identificadores, sin repetir"
+    )
+    destino: EstadoAlerta = Field(description="Estado al que pasa cada alerta")
+    nota: str = Field(default="", max_length=1000, description="Queda en el historial de cada una")
+
+
+class ResultadoItemLote(BaseModel):
+    """Que paso con una alerta del lote."""
+
+    alerta_id: str = Field(examples=["ALR-001"])
+    aplicada: bool
+    estado_http: int = Field(description="200 si paso; si no, el estado que habria dado sola", examples=[200, 409])
+    codigo: str | None = Field(default=None, description="Codigo de error estable, si no paso")
+    mensaje: str = ""
+    estado_actual: str | None = Field(default=None, description="Estado de la alerta tras el intento")
+    caso_id: str | None = Field(default=None, description="Caso abierto, solo al escalar")
+
+
+class ResultadoLote(BaseModel):
+    """Cuantas pasaron y cuales no, con el motivo. Siempre 200 si el lote se proceso."""
+
+    solicitadas: int
+    aplicadas: int
+    rechazadas: int
+    resultados: list[ResultadoItemLote]
 
 
 class Salud(BaseModel):

@@ -843,6 +843,16 @@ recrearColeccion("casos", {
       bsonType: "date",
       description: "ISODate UTC de cuando se abrio el caso. Opcional: el modelo Pydantic la declara, CONTRATO-IDS.md no da un valor real para CAS-001"
     },
+    cuenta_destino: {
+      bsonType: "string",
+      pattern: "^[0-9]{4}-[0-9]{4}$",
+      description: "Cuenta SINPE destino que agrupa las alertas. Solo la escalacion en lote (T-56) la escribe"
+    },
+    agente_id: {
+      bsonType: "string",
+      pattern: "^AGT-[0-9]{3,}$",
+      description: "Agente que abrio el caso. Solo la escalacion en lote (T-56) lo escribe"
+    },
     esquema_version: {
       bsonType: "int",
       minimum: 1,

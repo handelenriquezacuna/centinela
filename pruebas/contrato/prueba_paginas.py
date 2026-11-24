@@ -15,10 +15,12 @@ from httpx import ASGITransport, AsyncClient
 from app.api.dependencias import (
     dep_repo_alertas,
     dep_repo_busqueda,
+    dep_repo_casos_destino,
     dep_repo_reglas,
     dep_repo_tablero,
 )
 from app.main import crear_aplicacion
+from pruebas.dobles.casos_demo import RepoCasosFalso
 from pruebas.dobles.catalogo_reglas import (
     politica_como_documento,
     reglas_como_documentos,
@@ -68,6 +70,7 @@ def repo_reglas() -> RepoReglasFalso:
 def aplicacion(repo_alertas_falso: RepoAlertasFalso, repo_reglas: RepoReglasFalso) -> FastAPI:
     creada = crear_aplicacion()
     creada.dependency_overrides[dep_repo_alertas] = lambda: repo_alertas_falso
+    creada.dependency_overrides[dep_repo_casos_destino] = lambda: RepoCasosFalso(repo_alertas_falso)
     creada.dependency_overrides[dep_repo_reglas] = lambda: repo_reglas
     # Busqueda y tablero con sus dobles: una prueba sin la marca mongo no toca la base.
     creada.dependency_overrides[dep_repo_busqueda] = lambda: RepoBusquedaFalso([], [])
@@ -118,7 +121,7 @@ async def prueba_la_raiz_redirige_al_panel(cliente: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def prueba_el_panel_ordena_por_severidad_y_luego_fecha(cliente: AsyncClient) -> None:
-    html = (await cliente.get("/panel")).text
+    html = (await cliente.get("/panel?vista=alertas")).text
     orden = re.findall(r'id="alerta-(ALR-\d+)"', html)
     # critica (mas reciente primero), alta, media
     assert orden == ["ALR-004", "ALR-001", "ALR-002", "ALR-003"]
@@ -126,7 +129,7 @@ async def prueba_el_panel_ordena_por_severidad_y_luego_fecha(cliente: AsyncClien
 
 @pytest.mark.asyncio
 async def prueba_el_panel_se_conecta_al_canal_y_se_resincroniza(cliente: AsyncClient) -> None:
-    html = (await cliente.get("/panel")).text
+    html = (await cliente.get("/panel?vista=alertas")).text
     assert 'sse-connect="/api/v1/alertas/flujo"' in html
     assert 'sse-swap="alerta"' in html
     assert 'hx-trigger="sse:resincronizar"' in html
@@ -136,7 +139,7 @@ async def prueba_el_panel_se_conecta_al_canal_y_se_resincroniza(cliente: AsyncCl
 
 @pytest.mark.asyncio
 async def prueba_la_fila_se_formatea_y_escapa(cliente: AsyncClient) -> None:
-    html = (await cliente.get("/panel")).text
+    html = (await cliente.get("/panel?vista=alertas")).text
     assert "₡125.000" in html
     assert "24/10/2026 06:00" in html  # 12:00 UTC es 06:00 en Costa Rica
     assert "<b>Rodriguez" not in html
@@ -157,7 +160,7 @@ async def prueba_la_cola_es_un_fragmento_con_las_mismas_filas(cliente: AsyncClie
 async def prueba_la_cola_respeta_el_tope_de_pagina(
     cliente: AsyncClient, repo_alertas_falso: RepoAlertasFalso
 ) -> None:
-    await cliente.get("/panel")
+    await cliente.get("/panel?vista=alertas")
     assert repo_alertas_falso.llamadas[-1]["limite"] <= 200
 
 

@@ -20,6 +20,7 @@ from app.nucleo.config import Ajustes, obtener_ajustes
 from app.nucleo.db import obtener_base as _base_del_cliente
 from app.repos.alertas import ProtocoloRepoAlertas, RepoAlertas
 from app.repos.busqueda import ProtocoloRepoBusqueda, RepoBusqueda
+from app.repos.casos_destino import ProtocoloRepoCasosDestino, RepoCasosDestino
 from app.repos.detalle import ProtocoloRepoDetalle, RepoDetalle
 from app.repos.flujo_alertas import ProtocoloFlujoAlertas, RepoFlujoAlertas
 from app.repos.red_mulas import RepoRedMulas
@@ -63,6 +64,12 @@ def dep_repo_alertas(
     base: Annotated[AsyncDatabase, Depends(dep_base)],
 ) -> ProtocoloRepoAlertas:
     return RepoAlertas(base)
+
+
+def dep_repo_casos_destino(
+    base: Annotated[AsyncDatabase, Depends(dep_base)],
+) -> ProtocoloRepoCasosDestino:
+    return RepoCasosDestino(base)
 
 
 def dep_repo_busqueda(
@@ -122,6 +129,7 @@ def dep_supervisor(peticion: Request) -> Supervisor:
 AjustesDep = Annotated[Ajustes, Depends(dep_ajustes)]
 BaseDep = Annotated[AsyncDatabase, Depends(dep_base)]
 RepoAlertasDep = Annotated[ProtocoloRepoAlertas, Depends(dep_repo_alertas)]
+RepoCasosDestinoDep = Annotated[ProtocoloRepoCasosDestino, Depends(dep_repo_casos_destino)]
 RepoBusquedaDep = Annotated[ProtocoloRepoBusqueda, Depends(dep_repo_busqueda)]
 RepoReglasDep = Annotated[ProtocoloRepoReglas, Depends(dep_repo_reglas)]
 RepoDetalleDep = Annotated[ProtocoloRepoDetalle, Depends(dep_repo_detalle)]

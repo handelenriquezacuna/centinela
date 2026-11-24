@@ -1,0 +1,97 @@
+{# Un caso: alertas abiertas hacia la misma cuenta destino. Es la unidad que el SSE vuelve a
+   pedir (GET /panel/casos/{cuenta}) y lo que POST /panel/lote devuelve. Las alertas son
+   filas de tabla con casilla; el id de la fila es `alerta-<ALR>` como en la vista por alerta.
+   Sin `caso` (ya no tiene abiertas) solo queda el resultado del lote. #}
+{% set cuenta_id = (caso.cuenta_destino if caso else cuenta) %}
+<section id="caso-{{ cuenta_id }}" class="caso{% if caso %} severidad-{{ caso.severidad_max }}{% else %} caso-resuelto{% endif %}"
+         data-destino="{{ cuenta_id }}"
+         {%- if caso %} data-rango="{{ {'CRITICA': 3, 'ALTA': 2, 'MEDIA': 1}.get(caso.severidad_max, 0) }}"
+         data-puntaje="{{ caso.puntaje_max }}" data-antigua="{{ caso.mas_antigua.timestamp() | int }}"{% endif %}
+         aria-label="Alertas hacia la cuenta destino {{ cuenta_id }}">
+  {% if error %}
+  <div class="mensaje mensaje-error" role="alert">{{ error }}</div>
+  {% endif %}
+  {% if resumen %}
+  <div class="mensaje {{ 'mensaje-ok' if not resumen.rechazadas else 'mensaje-error' }}" role="status" data-resultado-lote>
+    <p><strong>Pasaron {{ resumen.aplicadas }} de {{ resumen.solicitadas }}</strong> a {{ resumen.destino }}.</p>
+    {% if resumen.rechazadas %}
+    <p>No pasaron:</p>
+    <ul>
+      {% for r in resumen.rechazadas %}
+      <li><span class="id-corto">{{ r.alerta_id }}</span> ({{ r.estado_http }}): {{ r.motivo }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% for caso_abierto in resumen.casos_abiertos %}
+    <p>Caso de investigación abierto: <span class="id-corto">{{ caso_abierto }}</span></p>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if caso %}
+  {% set acciones = acciones_del_caso(caso) %}
+  <header class="caso-cabecera">
+    <h3 class="caso-titulo">Cuenta <span class="id-corto">{{ caso.cuenta_destino }}</span>
+      {% if caso.en_lista_riesgo %}<span class="insignia es-critica" title="Vigente en listas de riesgo">En lista de riesgo</span>{% endif %}
+    </h3>
+    <dl class="caso-resumen">
+      <div><dt>Alertas</dt><dd class="caso-alertas">{{ caso.total_alertas }}</dd></div>
+      <div><dt>Víctimas</dt><dd class="caso-victimas">{{ caso.victimas }}</dd></div>
+      <div><dt>Monto total</dt><dd class="caso-monto">{{ caso.monto_total_crc | colones }}</dd></div>
+      <div><dt>Severidad máxima</dt><dd class="caso-severidad">{{ caso.severidad_max | etiqueta }}</dd></div>
+      <div><dt>Puntaje máximo</dt><dd>{{ caso.puntaje_max }}</dd></div>
+      <div><dt>Más antigua (hora CR)</dt><dd>{{ caso.mas_antigua | hora_costa_rica }}</dd></div>
+      <div><dt>Reglas que más se repiten</dt><dd>{% for codigo, veces in caso.reglas %}{{ codigo }} ({{ veces }}){{ ", " if not loop.last }}{% else %}-{% endfor %}</dd></div>
+    </dl>
+    {% if caso.sugerencia %}
+    <p class="caso-sugerencia" data-sugerencia>Sugerencia: {{ caso.sugerencia }} <small>Decide el agente; nada se cierra solo.</small></p>
+    {% endif %}
+  </header>
+  <form id="lote-{{ caso.cuenta_destino }}" class="form-lote" hx-post="/panel/lote"
+        hx-target="#caso-{{ caso.cuenta_destino }}" hx-swap="outerHTML">
+    <input type="hidden" name="cuenta" value="{{ caso.cuenta_destino }}">
+    <input type="hidden" name="destino" value="">
+    <input type="hidden" name="nota" value="">
+    <div role="table" aria-label="Alertas hacia la cuenta destino {{ caso.cuenta_destino }}">
+      <div role="rowgroup">
+        <div class="caso-encabezado" role="row">
+          <span role="columnheader"><input type="checkbox" data-seleccionar-todo
+            aria-label="Seleccionar todas las alertas de la cuenta destino {{ caso.cuenta_destino }}"></span>
+          <span role="columnheader">Alerta</span><span role="columnheader">Severidad</span>
+          <span role="columnheader">Puntaje</span><span role="columnheader">Cliente</span>
+          <span role="columnheader">Origen</span><span role="columnheader">Monto</span>
+          <span role="columnheader">Creada (hora CR)</span><span role="columnheader">Estado</span>
+        </div>
+      </div>
+      <div role="rowgroup">
+        {% for alerta in caso.alertas %}
+        <div id="alerta-{{ alerta['_id'] }}" role="row" class="fila-caso severidad-{{ alerta['severidad'] }}"
+             data-navegable data-estado="{{ alerta['estado'] }}" data-puntaje="{{ alerta['puntaje'] }}"
+             data-monto-crc="{{ alerta['monto_crc'] }}" data-destino="{{ alerta['cuenta_destino'] }}">
+          <span role="cell"><input type="checkbox" name="alerta" value="{{ alerta['_id'] }}"
+            aria-label="Seleccionar {{ alerta['_id'] }}"></span>
+          <span role="cell" class="alerta-id"><a href="/detalle/{{ alerta['_id'] }}">{{ alerta['_id'] }}</a></span>
+          <span role="cell" class="alerta-severidad">{{ alerta['severidad'] | etiqueta }}</span>
+          <span role="cell" class="alerta-puntaje">{{ alerta['puntaje'] }}</span>
+          <span role="cell" class="alerta-cliente">{{ alerta['cliente_nombre'] }}</span>
+          <span role="cell" class="alerta-cuentas">{{ alerta['cuenta_origen'] }}</span>
+          <span role="cell" class="alerta-monto">{{ alerta['monto_crc'] | colones }}</span>
+          <span role="cell" class="alerta-fecha">{{ alerta['fecha_creacion'] | hora_costa_rica }}</span>
+          <span role="cell" class="alerta-estado">{{ alerta['estado'] | etiqueta }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% if caso.alertas_ocultas %}
+    <p class="nota-tecnica">Se muestran las {{ caso.alertas | length }} alertas de mayor puntaje; hay {{ caso.alertas_ocultas }} más hacia esta cuenta.</p>
+    {% endif %}
+    <div class="grupo-botones acciones-lote">
+      <span class="caso-seleccion" aria-live="polite"><span data-conteo>0</span> seleccionadas</span>
+      {% for destino, rotulo, clase in acciones %}
+      <button type="button" class="boton {{ clase }}" data-accion-lote="{{ destino }}" data-rotulo="{{ rotulo }}">{{ rotulo }}</button>
+      {% endfor %}
+    </div>
+  </form>
+  {% else %}
+  <p class="nota-tecnica">La cuenta {{ cuenta_id }} ya no tiene alertas abiertas.</p>
+  {% endif %}
+</section>

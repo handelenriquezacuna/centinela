@@ -4,13 +4,23 @@
 <div class="titulo-pantalla">
   <div>
     <h1>Panel de alertas</h1>
-    <p class="subtitulo">Cola ordenada por severidad (crítica primero) y luego por fecha.
+    <p class="subtitulo">{% if vista == "casos" %}Por cuenta destino: alertas abiertas agrupadas por la cuenta que las recibe, de mayor a menor severidad.{% else %}Cola ordenada por severidad (crítica primero) y luego por fecha.{% endif %}
       <span class="estado-canal">Canal: <strong id="estado-canal" aria-live="polite">conectando</strong></span></p>
     <p id="aviso-nuevas" class="subtitulo" aria-live="polite"></p>
   </div>
   <div class="grupo-botones">
+    <nav class="conmutador-vista" aria-label="Vista de la cola">
+      <a href="/panel?vista=casos"{% if vista == "casos" %} aria-current="page"{% endif %}>Por cuenta destino</a>
+      <a href="/panel?vista=alertas"{% if vista != "casos" %} aria-current="page"{% endif %}>Por alerta</a>
+    </nav>
+    {% if vista == "casos" %}
+    <button type="button" class="boton boton-secundario"
+            hx-get="/panel/casos" hx-target="#casos" hx-swap="innerHTML">Actualizar cuentas</button>
+    {% else %}
     <button type="button" class="boton boton-secundario"
             hx-get="/panel/cola" hx-target="#cola" hx-swap="innerHTML">Actualizar cola</button>
+    {% endif %}
+    <button type="button" class="boton boton-secundario" id="abrir-ayuda" aria-haspopup="dialog">Atajos (?)</button>
   </div>
 </div>
 
@@ -18,6 +28,34 @@
 <div id="aviso-rezago" role="status" aria-live="polite"
      hx-get="/panel/rezago" hx-trigger="load, every 10s" hx-swap="innerHTML"></div>
 
+{% if vista == "casos" %}
+<section class="tarjeta" aria-label="Alertas agrupadas por cuenta destino" hx-ext="sse" sse-connect="/api/v1/alertas/flujo">
+  {# Una alerta que llega no trae fila aqui: casos.js pide el fragmento del caso afectado. #}
+  <div id="entrada-sse" sse-swap="alerta" hx-swap="none" hidden></div>
+  <div hx-get="/panel/casos" hx-trigger="sse:resincronizar" hx-target="#casos" hx-swap="innerHTML"></div>
+  <p class="subtitulo" id="resumen-casos">{{ casos | length }} de {{ total_casos }} cuentas destino con alertas abiertas.</p>
+  <p id="aviso-lote" class="visualmente-oculto" aria-live="polite"></p>
+  <div id="casos">
+{% include "paginas/casos.html" %}
+  </div>
+  <p id="casos-vacio" class="cola-vacia"{% if casos %} hidden{% endif %}>No hay cuentas destino con alertas abiertas.</p>
+</section>
+
+<dialog id="dialogo-lote" aria-labelledby="dialogo-lote-titulo" class="dialogo">
+  <form method="dialog" id="form-dialogo-lote">
+    <h2 id="dialogo-lote-titulo">Confirmar acción</h2>
+    <p id="dialogo-lote-texto"></p>
+    <div class="campo">
+      <label for="dialogo-lote-motivo">Motivo (se agrega al historial de cada alerta)</label>
+      <textarea id="dialogo-lote-motivo" rows="3" maxlength="900" placeholder="Opcional"></textarea>
+    </div>
+    <div class="grupo-botones">
+      <button type="submit" value="cancelar" class="boton boton-secundario">Cancelar</button>
+      <button type="submit" value="confirmar" class="boton boton-primario" id="dialogo-lote-confirmar">Confirmar</button>
+    </div>
+  </form>
+</dialog>
+{% else %}
 <section class="tarjeta" aria-label="Cola de alertas" hx-ext="sse" sse-connect="/api/v1/alertas/flujo">
   {# El evento `resincronizar` no trae fila: pide la cola entera, que es lo que promete H-17. #}
   <div hx-get="/panel/cola" hx-trigger="sse:resincronizar" hx-target="#cola" hx-swap="innerHTML"></div>
@@ -36,5 +74,23 @@
   </div>
   <p id="cola-vacia" class="cola-vacia"{% if alertas %} hidden{% endif %}>No hay alertas en la cola.</p>
 </section>
+{% endif %}
+
+<dialog id="ayuda-atajos" aria-labelledby="ayuda-atajos-titulo" class="dialogo">
+  <form method="dialog">
+    <h2 id="ayuda-atajos-titulo">Atajos de teclado</h2>
+    <dl class="atajos">
+      <div><dt><kbd>j</kbd> / <kbd>k</kbd></dt><dd>Bajar / subir una alerta</dd></div>
+      <div><dt><kbd>x</kbd></dt><dd>Seleccionar o quitar la alerta (vista por cuenta destino)</dd></div>
+      <div><dt><kbd>Enter</kbd></dt><dd>Abrir el detalle de la alerta</dd></div>
+      <div><dt><kbd>?</kbd></dt><dd>Mostrar u ocultar esta ayuda</dd></div>
+      <div><dt><kbd>Esc</kbd></dt><dd>Cerrar un diálogo</dd></div>
+    </dl>
+    <p class="nota-tecnica">Los atajos no se activan mientras escribes en un campo.</p>
+    <button type="submit" class="boton boton-secundario">Cerrar</button>
+  </form>
+</dialog>
 {% endblock %}
-{% block scripts %}<script src="/estaticos/panel.js"></script>{% endblock %}
+{% block scripts %}<script src="/estaticos/panel.js"></script>
+<script src="/estaticos/casos.js"></script>
+<script src="/estaticos/atajos.js"></script>{% endblock %}

@@ -24,6 +24,8 @@ app:
   # protegen al servidor de una peticion que pida un millon de documentos.
   pagina_por_omision: 50
   pagina_maxima: 200
+  # Alertas que acepta una transicion en lote: otra guarda tecnica, no una regla de negocio.
+  lote_maximo: 50
 
 servidor:
   host: 127.0.0.1
