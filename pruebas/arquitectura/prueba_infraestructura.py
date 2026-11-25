@@ -66,6 +66,17 @@ def prueba_ningun_volumen_fija_un_nombre_a_mano(compose: dict) -> None:
     assert not con_nombre, f"volumenes con nombre fijado a mano: {con_nombre}"
 
 
+def prueba_los_nodos_y_la_api_se_reinician_solos(compose: dict) -> None:
+    """Tras reiniciar Docker Desktop, sin esta politica los nodos quedan Exited (137)
+    y el replica set se cae hasta que alguien corre `up` a mano."""
+    servicios = compose["services"]
+
+    for nodo in (*NODOS, "app"):
+        assert servicios[nodo].get("restart") == "unless-stopped", (
+            f"{nodo} no declara restart: unless-stopped"
+        )
+
+
 def prueba_los_tres_nodos_declaran_su_volumen(compose: dict) -> None:
     """Sin volumen, los datos viven en la capa de escritura del contenedor y un
     `down` normal se los lleva."""

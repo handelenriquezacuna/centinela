@@ -53,6 +53,9 @@ VARIABLES = {
     "centinela_pruebas": "MONGO_CLAVE_PRUEBAS",
 }
 CLAVES = {usuario: secrets.token_urlsafe(16) for usuario in VARIABLES}
+PUERTO_INTENTOS = 3
+# Docker avisa asi cuando el puerto publicado ya lo tiene otro proceso (segun el sistema).
+MARCAS_PUERTO_OCUPADO = ("address already in use", "port is already allocated", "bind for")
 
 
 def _docker(*argumentos: str, tiempo: int = 180) -> subprocess.CompletedProcess[str]:
@@ -69,6 +72,17 @@ def _puerto_libre() -> int:
     with socket.socket() as sonda:
         sonda.bind(("127.0.0.1", 0))
         return int(sonda.getsockname()[1])
+
+
+def _puerto_ocupado(salida: str) -> bool:
+    """Docker avisa asi que el puerto publicado ya lo tiene otro proceso. El texto depende
+    del sistema, por eso se buscan varias formas."""
+    minuscula = salida.lower()
+    return any(marca in minuscula for marca in MARCAS_PUERTO_OCUPADO)
+
+
+class _PuertoOcupado(Exception):
+    """Otro proceso tomo el puerto entre la sonda y el `docker run`."""
 
 
 def _nombre_nodo() -> str:
@@ -103,76 +117,105 @@ def _cliente(usuario: str | None, puerto: int) -> MongoClient[Any]:
     )
 
 
+def _limpiar_nodo(nombre: str) -> None:
+    _docker("rm", "-f", nombre)
+    _docker("volume", "rm", "-f", nombre)
+
+
+def _arrancar(nombre: str, secretos: Path, puerto: int, *, sin_auth: bool) -> None:
+    _docker("rm", "-f", nombre)
+    entorno = ["-e", "CENTINELA_SIN_AUTH=1"] if sin_auth else []
+    resultado = _docker(
+        "run", "-d", "--name", nombre, *entorno,
+        "-v", f"{nombre}:/data/db",
+        "-v", f"{RAIZ / 'infra' / 'mongo-entrada.sh'}:/entrada/mongo-entrada.sh:ro",
+        "-v", f"{secretos}:/secretos:ro",
+        "-v", f"{RAIZ / 'scripts' / 'semilla'}:/semilla:ro",
+        "-p", f"127.0.0.1:{puerto}:{puerto}",
+        "--entrypoint", "bash",
+        "mongo:8", "/entrada/mongo-entrada.sh",
+        "mongod", "--replSet", "rsfraude", "--port", str(puerto), "--bind_ip_all",
+    )
+    if resultado.returncode == 0:
+        return
+    if _puerto_ocupado(resultado.stderr):
+        raise _PuertoOcupado(resultado.stderr)
+    saltar_o_fallar(f"no se pudo levantar el nodo de Mongo: {resultado.stderr}")
+
+
+def _esperar(nombre: str, puerto: int, consulta: str, esperado: str, segundos: int = 90) -> None:
+    limite = time.monotonic() + segundos
+    while time.monotonic() < limite:
+        salida = _docker(
+            "exec", nombre, "mongosh", "--port", str(puerto), "--quiet", "--eval", consulta
+        )
+        if salida.returncode == 0 and salida.stdout.strip() == esperado:
+            return
+        time.sleep(2)
+    raise AssertionError(f"el nodo no llego a '{esperado}' ({consulta})")
+
+
+def _montar_nodo(nombre: str, secretos: Path, puerto: int) -> None:
+    """Dos fases, igual que `python tareas.py asegurar`: primero sin keyfile para crear los
+    usuarios, despues con keyfile y la autenticacion encendida."""
+    _arrancar(nombre, secretos, puerto, sin_auth=True)
+    _esperar(nombre, puerto, "db.adminCommand({ping: 1}).ok", "1")
+    _docker(
+        "exec", nombre, "mongosh", "--port", str(puerto), "--quiet", "--eval",
+        f'rs.initiate({{_id: "rsfraude", members: [{{_id: 0, host: "localhost:{puerto}"}}]}})',
+    )
+    _esperar(nombre, puerto, "db.hello().isWritablePrimary", "true")
+    _correr_script_usuarios(puerto, como_admin=False)
+
+    _arrancar(nombre, secretos, puerto, sin_auth=False)  # ahora con keyfile: auth encendida
+    _esperar(nombre, puerto, "db.adminCommand({ping: 1}).ok", "1")
+    limite = time.monotonic() + 90
+    while True:
+        try:
+            with _cliente("centinela_admin", puerto) as admin:
+                admin[BASE]["prueba_roles"].drop()
+                admin[BASE].create_collection("prueba_roles")
+                admin[BASE].create_collection("prueba_roles_destino")
+                admin[BASE]["prueba_roles"].insert_one({"_id": "base", "valor": 1})
+            return
+        except Exception:
+            if time.monotonic() > limite:
+                raise
+            time.sleep(2)
+
+
 @pytest.fixture(scope="module")
 def nodo(tmp_path_factory: pytest.TempPathFactory) -> Iterator[int]:
-    """Nodo unico con keyfile y los usuarios de H-25. Devuelve el puerto."""
+    """Nodo unico con keyfile y los usuarios de H-25. Devuelve el puerto.
+
+    Si Docker no puede publicar el puerto (otro proceso lo tomo justo despues de la sonda),
+    se borra lo que quedo a medias, junto con el volumen, y se reintenta con otro puerto,
+    hasta PUERTO_INTENTOS veces.
+    """
     if shutil.which("docker") is None:
         saltar_o_fallar("docker no esta en el PATH; la prueba de roles levanta su propio nodo")
 
-    puerto = _puerto_libre()
     nombre = _nombre_nodo()
     secretos = tmp_path_factory.mktemp("secretos")
     keyfile = secretos / "keyfile"
     keyfile.write_text(base64.b64encode(secrets.token_bytes(756)).decode() + "\n")
     keyfile.chmod(0o400)
 
-    def arrancar(*, sin_auth: bool) -> None:
-        _docker("rm", "-f", nombre)
-        entorno = ["-e", "CENTINELA_SIN_AUTH=1"] if sin_auth else []
-        resultado = _docker(
-            "run", "-d", "--name", nombre, *entorno,
-            "-v", f"{nombre}:/data/db",
-            "-v", f"{RAIZ / 'infra' / 'mongo-entrada.sh'}:/entrada/mongo-entrada.sh:ro",
-            "-v", f"{secretos}:/secretos:ro",
-            "-v", f"{RAIZ / 'scripts' / 'semilla'}:/semilla:ro",
-            "-p", f"127.0.0.1:{puerto}:{puerto}",
-            "--entrypoint", "bash",
-            "mongo:8", "/entrada/mongo-entrada.sh",
-            "mongod", "--replSet", "rsfraude", "--port", str(puerto), "--bind_ip_all",
-        )
-        if resultado.returncode != 0:
-            saltar_o_fallar(f"no se pudo levantar el nodo de Mongo: {resultado.stderr}")
-
-    def esperar(consulta: str, esperado: str, segundos: int = 90) -> None:
-        limite = time.monotonic() + segundos
-        while time.monotonic() < limite:
-            salida = _docker(
-                "exec", nombre, "mongosh", "--port", str(puerto), "--quiet", "--eval", consulta
-            )
-            if salida.returncode == 0 and salida.stdout.strip() == esperado:
-                return
-            time.sleep(2)
-        raise AssertionError(f"el nodo no llego a '{esperado}' ({consulta})")
-
     try:
-        arrancar(sin_auth=True)
-        esperar("db.adminCommand({ping: 1}).ok", "1")
-        _docker(
-            "exec", nombre, "mongosh", "--port", str(puerto), "--quiet", "--eval",
-            f'rs.initiate({{_id: "rsfraude", members: [{{_id: 0, host: "localhost:{puerto}"}}]}})',
-        )
-        esperar("db.hello().isWritablePrimary", "true")
-        _correr_script_usuarios(puerto, como_admin=False)
-
-        arrancar(sin_auth=False)  # ahora con keyfile: la autenticacion queda encendida
-        esperar("db.adminCommand({ping: 1}).ok", "1")
-        limite = time.monotonic() + 90
-        while True:
+        for intento in range(1, PUERTO_INTENTOS + 1):
+            puerto = _puerto_libre()
             try:
-                with _cliente("centinela_admin", puerto) as admin:
-                    admin[BASE]["prueba_roles"].drop()
-                    admin[BASE].create_collection("prueba_roles")
-                    admin[BASE].create_collection("prueba_roles_destino")
-                    admin[BASE]["prueba_roles"].insert_one({"_id": "base", "valor": 1})
+                _montar_nodo(nombre, secretos, puerto)
                 break
-            except Exception:
-                if time.monotonic() > limite:
-                    raise
-                time.sleep(2)
+            except _PuertoOcupado as error:
+                _limpiar_nodo(nombre)
+                if intento == PUERTO_INTENTOS:
+                    saltar_o_fallar(
+                        f"el puerto estuvo ocupado en {PUERTO_INTENTOS} intentos: {error}"
+                    )
         yield puerto
     finally:
-        _docker("rm", "-f", nombre)
-        _docker("volume", "rm", "-f", nombre)
+        _limpiar_nodo(nombre)
 
 
 def _denegado(accion: Callable[[], Any]) -> None:
