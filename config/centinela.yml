@@ -94,11 +94,12 @@ sesion:
   cookie_segura: false
   nombre_cookie: centinela_sesion
 
-# Interfaz de las rutas de pagina (T-61). `htmx`: las paginas Jinja de siempre. `spa`: el
-# index.html de la SPA React construida con `python tareas.py front` en app/estaticos/spa/.
-# Bandera de migracion: pasa a `spa` cuando la fase 2 tenga paridad con las e2e.
+# Interfaz de las rutas de pagina (T-61, T-67). `spa` (por omision): el index.html de la
+# SPA React construida en app/estaticos/spa/ (`python tareas.py front`; `arriba` y `dev`
+# la construyen si falta). `htmx`: las paginas Jinja, respaldo hasta T-68 (2 dic). Volver a
+# htmx en un paso, sin tocar este archivo: CENTINELA_PORTAL__INTERFAZ=htmx
 portal:
-  interfaz: htmx
+  interfaz: spa
 
 registro:
   nivel: INFO

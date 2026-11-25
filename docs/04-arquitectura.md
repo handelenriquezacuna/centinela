@@ -199,7 +199,7 @@ flowchart LR
     M[(MongoDB)] -.-> D1[Detección D1]
     D1 --> M
     M -. "Change Stream<br/>de alertas" .-> API[API FastAPI]
-    API == SSE ==> UI[Portal: Jinja y HTMX,<br/>luego SPA React T-61]
+    API == SSE ==> UI[Portal: Jinja y HTMX,<br/>SPA React desde T-67]
     API --> M
     style API fill:#1a4d2e,color:#fff
     style UI fill:#1a4d2e,color:#fff
@@ -248,9 +248,11 @@ purga del histórico. Aquí el sistema se vuelve defendible, no solo demostrable
 
 ## 6b. El portal: SPA React servida por el monolito (T-61)
 
-Decisiones D-60 a D-63. La migración desde Jinja + HTMX se hace en la rama
-`feature/H-17-portal-react`; `dev` sigue con HTMX hasta que esa rama se fusione con
-paridad de las e2e. Si el 2 de diciembre no hay paridad, la defensa va con HTMX.
+Decisiones D-60 a D-63, D-69 y D-71. Las siete pantallas se migraron en las fases 1, 2A,
+2B y 2C, y desde T-67 la SPA es **el portal por omisión** (`portal.interfaz: spa`), con
+todos los recorridos de la defensa en e2e contra ella. Jinja + HTMX queda vivo como
+**respaldo hasta el 2 de diciembre**: se vuelve a él en un paso, sin tocar archivos, con
+`CENTINELA_PORTAL__INTERFAZ=htmx`. T-68 lo retira.
 
 ```mermaid
 flowchart LR
@@ -288,7 +290,8 @@ flowchart LR
 | Tiempo real | `EventSource` sobre `GET /api/v1/alertas/eventos`: el mismo canal que el de HTMX (mismo change stream, mismo `id`, misma reanudación, mismo `resincronizar`) con cuerpo JSON |
 | Sesión | `POST /api/v1/sesion` deja la cookie HttpOnly y SameSite=Strict; la SPA nunca guarda el token. 401 y 403 en la forma única del error; sin sesión se vuelve al login con el destino, con la misma regla anti redirección abierta |
 | Permisos | La tabla única de `app/seguridad/permisos.py`. La SPA recibe en `GET /api/v1/sesion` qué páginas puede abrir el rol y no copia la tabla |
-| Convivencia | `portal.interfaz` (`htmx` o `spa`) elige qué interfaz sirven las rutas de página. Mientras dure la migración, los fragmentos HTMX siguen registrados con las dos |
+| Convivencia | `portal.interfaz` elige qué interfaz sirven las rutas de página: `spa` por omisión, `htmx` como respaldo hasta T-68. Mientras viva el respaldo, los fragmentos HTMX siguen registrados con las dos |
+| Imagen | `infra/Dockerfile` en dos etapas: Node 26.8.1 (la de `frontend/.nvmrc`) hace `npm ci` y el build; la imagen que corre solo copia `app/estaticos/spa/` y no lleva Node. Corre con un usuario sin privilegios y con `HEALTHCHECK` sobre `/salud` |
 
 ## 7. Calendario de etapas
 
@@ -341,7 +344,7 @@ paquetes por semana en `sc609-reparto-semanal` del cerebro.**
 | **Change Stream** | Suscripción al flujo de cambios de MongoDB. Es cómo el motor se entera de una transacción nueva sin preguntar cada segundo |
 | **oplog** | Bitácora de operaciones del replica set. Es lo que hace posibles los Change Streams |
 | **SSE** | *Server-Sent Events.* Flujo HTTP de una sola dirección, del servidor al navegador. Es cómo la alerta nueva llega al panel. Se eligió sobre WebSocket porque el panel solo necesita recibir, y el navegador reconecta solo |
-| **HTMX** | Biblioteca que deja al servidor devolver HTML e insertarlo en la página, en vez de devolver JSON y armar la pantalla en el navegador. Fue el portal hasta T-61; queda mientras dure la migración a la SPA |
+| **HTMX** | Biblioteca que deja al servidor devolver HTML e insertarlo en la página, en vez de devolver JSON y armar la pantalla en el navegador. Fue el portal hasta T-67; queda como respaldo (`CENTINELA_PORTAL__INTERFAZ=htmx`) hasta T-68 |
 | **SPA** | *Single Page Application.* La página se carga una vez y React cambia de pantalla sin pedir HTML nuevo; los datos llegan como JSON. La de Centinela se construye con Vite y la sirve el mismo FastAPI |
 | **Token de reanudación** | Marca de posición en un Change Stream. El canal SSE la manda como identificador del evento; el navegador la devuelve al reconectar y el servidor retoma desde ahí. Si el oplog ya rodó, el token deja de servir y el panel vuelve a pedir su cola completa |
 | **Replica set** | Grupo de nodos con los mismos datos. Obligatorio para Change Streams y transacciones |

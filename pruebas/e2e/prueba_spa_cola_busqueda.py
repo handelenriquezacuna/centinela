@@ -1,6 +1,6 @@
 """Recorridos de la SPA para el panel "Por alerta", los atajos, la busqueda y la sesion (T-65).
 
-Contra `servidor_spa` (`portal.interfaz: spa`), igual que `prueba_spa_panel.py`. Selectores
+Contra `servidor_e2e` (la SPA, interfaz por omision desde T-67), igual que `prueba_spa_panel.py`. Selectores
 por rol, etiqueta accesible o `data-*`, los mismos que usan las e2e HTMX.
 """
 
@@ -13,11 +13,8 @@ import re
 import pytest
 from playwright.sync_api import Page, expect
 
+from pruebas.e2e.apoyo import DESTINO_NUEVO, insertar_transaccion_de_riesgo
 from pruebas.e2e.conftest import AGENTE, CONTRASENA, con_base
-from pruebas.e2e.prueba_tiempo_real import (
-    DESTINO_NUEVO,
-    _insertar_transaccion_de_riesgo,
-)
 
 pytestmark = pytest.mark.e2e
 
@@ -31,9 +28,9 @@ def _entrar(page: Page, base: str, ruta: str = "/panel") -> None:
 
 
 def prueba_la_vista_por_alerta_recibe_la_fila_sola_y_la_ordena_por_puntaje(
-    page: Page, servidor_spa: str
+    page: Page, servidor_e2e: str
 ) -> None:
-    _entrar(page, servidor_spa)
+    _entrar(page, servidor_e2e)
     page.get_by_role("link", name="Por alerta").click()
     expect(page).to_have_url(re.compile(r"/panel\?vista=alertas$"))
     expect(page.get_by_role("link", name="Por alerta")).to_have_attribute("aria-current", "page")
@@ -47,7 +44,7 @@ def prueba_la_vista_por_alerta_recibe_la_fila_sola_y_la_ordena_por_puntaje(
     expect(nueva).to_have_count(0)
     page.evaluate("window.__sinRecargar = true")
 
-    con_base(_insertar_transaccion_de_riesgo)
+    con_base(insertar_transaccion_de_riesgo)
 
     # D1 detecta, el change stream empuja la alerta como JSON y la SPA la inserta.
     expect(nueva).to_have_count(1, timeout=20_000)
@@ -63,12 +60,12 @@ def prueba_la_vista_por_alerta_recibe_la_fila_sola_y_la_ordena_por_puntaje(
     expect(page.locator("#aviso-nuevas")).to_contain_text("Alerta nueva o actualizada")
 
     # La eleccion de vista se recuerda: /panel sin parametro vuelve a la cola por alerta.
-    page.goto(f"{servidor_spa}/panel")
+    page.goto(f"{servidor_e2e}/panel")
     expect(page.locator("#cola")).to_be_attached()
 
 
-def prueba_atajos_j_k_enter_y_ayuda_en_el_panel(page: Page, servidor_spa: str) -> None:
-    _entrar(page, servidor_spa, "/panel?vista=alertas")
+def prueba_atajos_j_k_enter_y_ayuda_en_el_panel(page: Page, servidor_e2e: str) -> None:
+    _entrar(page, servidor_e2e, "/panel?vista=alertas")
     filas = page.locator("#cola [role='row']")
     expect(filas.first).to_be_visible()
     primera = filas.first.get_attribute("id")
@@ -93,8 +90,8 @@ def prueba_atajos_j_k_enter_y_ayuda_en_el_panel(page: Page, servidor_spa: str) -
     expect(page).to_have_url(re.compile(rf"/detalle/{alerta_id}$"))
 
 
-def prueba_los_atajos_se_ignoran_al_escribir_en_la_busqueda(page: Page, servidor_spa: str) -> None:
-    _entrar(page, servidor_spa, "/busqueda")
+def prueba_los_atajos_se_ignoran_al_escribir_en_la_busqueda(page: Page, servidor_e2e: str) -> None:
+    _entrar(page, servidor_e2e, "/busqueda")
     cuenta = page.get_by_label(re.compile("Cuenta"))
     cuenta.fill("")
     cuenta.press_sequentially("jk?x")
@@ -102,9 +99,9 @@ def prueba_los_atajos_se_ignoran_al_escribir_en_la_busqueda(page: Page, servidor
 
 
 def prueba_la_busqueda_filtra_pagina_y_exporta_el_csv_con_los_mismos_filtros(
-    page: Page, servidor_spa: str
+    page: Page, servidor_e2e: str
 ) -> None:
-    _entrar(page, servidor_spa, "/busqueda")
+    _entrar(page, servidor_e2e, "/busqueda")
     expect(page.get_by_role("heading", name="Búsqueda forense")).to_be_visible()
     expect(page.get_by_role("table")).to_be_visible()
 
@@ -137,31 +134,31 @@ def prueba_la_busqueda_filtra_pagina_y_exporta_el_csv_con_los_mismos_filtros(
 
 
 def prueba_la_busqueda_avisa_de_un_monto_con_decimales_sin_pedir_nada(
-    page: Page, servidor_spa: str
+    page: Page, servidor_e2e: str
 ) -> None:
-    _entrar(page, servidor_spa, "/busqueda?monto_max=9.5")
+    _entrar(page, servidor_e2e, "/busqueda?monto_max=9.5")
     expect(page.get_by_role("alert")).to_contain_text("debe ser un entero en colones")
 
 
-def prueba_cerrar_sesion_la_borra_y_la_navegacion_sigue_el_rol(page: Page, servidor_spa: str) -> None:
-    _entrar(page, servidor_spa)
+def prueba_cerrar_sesion_la_borra_y_la_navegacion_sigue_el_rol(page: Page, servidor_e2e: str) -> None:
+    _entrar(page, servidor_e2e)
     nav = page.get_by_role("navigation", name="Navegación principal")
     expect(nav.get_by_role("link", name="Panel")).to_be_visible()
     expect(nav.get_by_role("link", name="Búsqueda")).to_be_visible()
     # Un agente no ve el tablero y, si lo pide, la SPA dice acceso denegado.
     expect(nav.get_by_role("link", name="Tablero")).to_have_count(0)
-    page.goto(f"{servidor_spa}/tablero")
+    page.goto(f"{servidor_e2e}/tablero")
     expect(page.get_by_role("heading", name="Acceso denegado")).to_be_visible()
 
     page.get_by_role("button", name="Salir").click()
     expect(page).to_have_url(re.compile(r"/login$"))
     assert not [c for c in page.context.cookies() if c["name"] == "centinela_sesion"]
-    page.goto(f"{servidor_spa}/panel")
+    page.goto(f"{servidor_e2e}/panel")
     expect(page).to_have_url(re.compile(r"/login\?siguiente=/panel$"))
 
 
-def prueba_una_ruta_que_no_existe_muestra_la_pagina_404_propia(page: Page, servidor_spa: str) -> None:
-    _entrar(page, servidor_spa)
+def prueba_una_ruta_que_no_existe_muestra_la_pagina_404_propia(page: Page, servidor_e2e: str) -> None:
+    _entrar(page, servidor_e2e)
     page.get_by_role("link", name="Búsqueda").click()
     page.evaluate("history.pushState({}, '', '/no-existe'); dispatchEvent(new PopStateEvent('popstate'))")
     expect(page.get_by_role("heading", name="Página no encontrada")).to_be_visible()

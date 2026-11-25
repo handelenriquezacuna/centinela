@@ -63,8 +63,8 @@
 # package-lock.json, nada mas; el cache es el de npm, por el hash del lock. Compuertas:
 # lint, typecheck, Vitest, `npm audit --audit-level=high` (cero hallazgos altos o
 # criticos) y el build, que escribe app/estaticos/spa/. El build va ANTES de las e2e: la
-# prueba de la SPA lo sirve con portal.interfaz=spa y, en modo estricto, falta de build es
-# falla.
+# SPA es la interfaz por omision (T-67), el servidor e2e principal la sirve y, en modo
+# estricto, falta de build es falla.
 #
 # Lo que a proposito NO esta aqui: pruebas de rendimiento y de resiliencia. La
 # resiliencia (que el replica set elija otro primario si el actual cae, y que D1 no

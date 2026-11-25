@@ -49,7 +49,7 @@ async def armar() -> AsyncIterator[Armar]:
         red: RepoRedMulasFalso | None = None,
         listas: RepoListasRiesgoFalso | None = None,
     ) -> AsyncClient:
-        creada = crear_aplicacion()
+        creada = crear_aplicacion("htmx")
         alertas = RepoAlertasFalso([alerta_v2()])
         creada.dependency_overrides[dep_repo_alertas] = lambda: alertas
         creada.dependency_overrides[dep_repo_detalle] = lambda: RepoDetalleFalso(alertas.casos)

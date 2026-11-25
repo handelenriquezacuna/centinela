@@ -13,6 +13,13 @@ from pruebas.e2e.conftest import AGENTE, CONTRASENA, iniciar_sesion
 pytestmark = pytest.mark.e2e
 
 
+def prueba_este_directorio_va_contra_el_respaldo_htmx(page: Page) -> None:
+    """Guarda del orden: estas pruebas tienen que ir contra el servidor HTMX, no la SPA."""
+    page.goto("/login")
+    expect(page.locator("form[action='/login']")).to_have_count(1)
+    expect(page.locator("script[src^='/estaticos/spa/']")).to_have_count(0)
+
+
 def prueba_credencial_correcta_entra_al_panel(page: Page) -> None:
     iniciar_sesion(page, AGENTE)
 
@@ -32,7 +39,7 @@ def prueba_credencial_incorrecta_muestra_el_error_y_no_entra(page: Page) -> None
 
 
 def prueba_siguiente_con_otro_sitio_no_saca_al_usuario_del_portal(
-    page: Page, base_url: str
+    page: Page, servidor_htmx: str
 ) -> None:
     page.goto("/login?siguiente=//otro.sitio")
     page.get_by_label("Identificador").fill(AGENTE)
@@ -40,4 +47,4 @@ def prueba_siguiente_con_otro_sitio_no_saca_al_usuario_del_portal(
     page.get_by_role("button", name="Entrar").click()
 
     expect(page).to_have_url(re.compile(r"/panel$"))
-    assert urlsplit(page.url).netloc == urlsplit(base_url).netloc
+    assert urlsplit(page.url).netloc == urlsplit(servidor_htmx).netloc

@@ -68,7 +68,7 @@ def repo_reglas() -> RepoReglasFalso:
 
 @pytest.fixture
 def aplicacion(repo_alertas_falso: RepoAlertasFalso, repo_reglas: RepoReglasFalso) -> FastAPI:
-    creada = crear_aplicacion()
+    creada = crear_aplicacion("htmx")
     creada.dependency_overrides[dep_repo_alertas] = lambda: repo_alertas_falso
     creada.dependency_overrides[dep_repo_casos_destino] = lambda: RepoCasosFalso(repo_alertas_falso)
     creada.dependency_overrides[dep_repo_reglas] = lambda: repo_reglas

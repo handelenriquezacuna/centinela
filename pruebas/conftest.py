@@ -13,6 +13,11 @@ Dos cosas importantes que estan resueltas aqui y no en cada prueba:
    vuelven fallas. Es lo que usa el CI: alli "Mongo no responde" o "la base no esta
    sembrada" es un error del workflow, no una razon para salir en verde. Sin la
    variable, en local, todo sigue igual.
+4. Las apps de estas fixtures se arman con `crear_aplicacion("htmx")`, no con la interfaz
+   por omision (`spa` desde T-67): las pruebas de contrato de paginas verifican el HTML
+   del respaldo HTMX y no deben depender de que exista el build de la SPA. La SPA servida
+   tiene las suyas en `contrato/prueba_portal_spa.py` (con un index falso) y en las e2e.
+   La API JSON es la misma con las dos interfaces. T-68 quita el argumento con HTMX.
 """
 
 from __future__ import annotations
@@ -147,7 +152,7 @@ def repo_alertas_falso() -> RepoAlertasFalso:
 @pytest.fixture
 def aplicacion(repo_alertas_falso: RepoAlertasFalso) -> FastAPI:
     """Aplicacion con el repositorio de alertas sustituido por el doble."""
-    creada = crear_aplicacion()
+    creada = crear_aplicacion("htmx")
     creada.dependency_overrides[dep_repo_alertas] = lambda: repo_alertas_falso
     # /panel abre por cuenta destino (D-56): tambien sin Mongo.
     creada.dependency_overrides[dep_repo_casos_destino] = lambda: RepoCasosFalso(repo_alertas_falso)
@@ -259,7 +264,7 @@ async def cliente_con_mongo(
     os.environ["CENTINELA_MONGO__BASE"] = ajustes.mongo.base
     obtener_ajustes.cache_clear()
     try:
-        creada = crear_aplicacion()
+        creada = crear_aplicacion("htmx")
         async with LifespanManager(creada) as gestionada, AsyncClient(
             transport=ASGITransport(app=gestionada.app),
             base_url="http://pruebas",

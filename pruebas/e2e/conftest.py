@@ -11,8 +11,10 @@ Orden de la sesion, y no otro:
    Todo ANTES de arrancar el servidor: D1 empieza desde "ahora" y no debe procesar el demo.
 2. Se arranca `uvicorn` en un puerto libre, como subproceso, con la URI y la base de la
    prueba por variables de entorno (la unica forma de moverlas: `app/nucleo/config.py`).
-   Las pruebas de la SPA (T-61) piden ademas `servidor_spa`: otro `uvicorn` sobre la misma
-   base con `portal.interfaz: spa`, mientras convivan las dos interfaces.
+   Es `servidor_e2e`, con la interfaz por omision: la SPA (T-67). Necesita el build
+   (`python tareas.py front`). Las e2e del respaldo HTMX viven en `htmx/` y van contra
+   `servidor_htmx`, otro `uvicorn` sobre la misma base con `portal.interfaz: htmx`,
+   mientras HTMX exista (lo retira T-68).
 3. Se espera a que D1 haya abierto su change stream (aparece su token en
    `deteccion_estado`); una insercion anterior se perderia.
 
@@ -204,36 +206,39 @@ def _uvicorn(uri: str, *, interfaz: str) -> Iterator[str]:
                 proceso.kill()
 
 
+INDICE_SPA = RUTA_RAIZ / "app" / "estaticos" / "spa" / "index.html"
+
+
 @pytest.fixture(scope="session")
 def servidor_e2e() -> Iterator[str]:
-    """URL base del `uvicorn` de la prueba, con la base sembrada y D1 escuchando."""
+    """URL base del `uvicorn` de la prueba: la SPA, con la base sembrada y D1 escuchando.
+
+    Sin el build la SPA responde 503, asi que falta de build es un salto en local y una
+    falla con `CENTINELA_EXIGIR_MONGO=1` (el CI construye antes de las e2e).
+    """
+    if not INDICE_SPA.is_file():
+        saltar_o_fallar("falta el build de la SPA (app/estaticos/spa/index.html): python tareas.py front")
     uri = _uri()
     _sembrar(uri)
     con_base(_cargar_agentes_y_demo, uri)
     try:
-        with _uvicorn(uri, interfaz="htmx") as url:
+        with _uvicorn(uri, interfaz="spa") as url:
             yield url
     finally:
         con_base(_borrar_base, uri)
 
 
-INDICE_SPA = RUTA_RAIZ / "app" / "estaticos" / "spa" / "index.html"
-
-
 @pytest.fixture(scope="session")
-def servidor_spa(servidor_e2e: str) -> Iterator[str]:
-    """Otro `uvicorn` sobre la MISMA base, con `portal.interfaz: spa` (T-61).
+def servidor_htmx(servidor_e2e: str) -> Iterator[str]:
+    """Otro `uvicorn` sobre la MISMA base, con `portal.interfaz: htmx` (respaldo, T-67).
 
-    Existe mientras dure la migracion: las e2e HTMX siguen contra `servidor_e2e` y las de
-    la SPA van contra este. Los dos procesos corren D1 sobre la misma base; el indice
-    unico de `alertas.transaccion_id` hace que una transaccion siga dando UNA alerta (lo
-    mismo que prueba la resiliencia de T-52). El canal SSE de este servidor ve las alertas
-    que escriba cualquiera de los dos: lee el change stream, no un bus en memoria.
-    Necesita el build: `python tareas.py front` (el CI lo corre antes de las e2e).
+    Existe mientras viva el respaldo HTMX (T-68 lo retira): las e2e de `htmx/` van contra
+    este. Los dos procesos corren D1 sobre la misma base; el indice unico de
+    `alertas.transaccion_id` hace que una transaccion siga dando UNA alerta (lo mismo que
+    prueba la resiliencia de T-52). El canal SSE de este servidor ve las alertas que
+    escriba cualquiera de los dos: lee el change stream, no un bus en memoria.
     """
-    if not INDICE_SPA.is_file():
-        saltar_o_fallar("falta el build de la SPA (app/estaticos/spa/index.html): python tareas.py front")
-    with _uvicorn(_uri(), interfaz="spa") as url:
+    with _uvicorn(_uri(), interfaz="htmx") as url:
         yield url
 
 
@@ -272,8 +277,16 @@ def base_restaurada(servidor_e2e: str) -> None:
 
 @pytest.fixture(scope="session")
 def base_url(servidor_e2e: str) -> str:
-    """pytest-playwright resuelve `page.goto("/ruta")` contra esta URL."""
+    """pytest-playwright resuelve `page.goto("/ruta")` contra esta URL: la SPA."""
     return servidor_e2e
+
+
+@pytest.fixture(scope="session")
+def browser_context_args(
+    browser_context_args: dict[str, Any], servidor_e2e: str
+) -> dict[str, Any]:
+    """Los contextos de este nivel van a la SPA, explicito (`htmx/` lo cambia por el suyo)."""
+    return {**browser_context_args, "base_url": servidor_e2e}
 
 
 @pytest.hookimpl(hookwrapper=True, tryfirst=True)

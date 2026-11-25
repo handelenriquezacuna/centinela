@@ -1,6 +1,6 @@
 """Detalle de la alerta en la SPA (T-64): tomar y confirmar, con dialogo y con conflicto.
 
-Contra `servidor_spa`. Es el mismo recorrido de `prueba_detalle.py` (HTMX), con el dialogo
+Contra `servidor_e2e` (la SPA). Es el mismo recorrido de `prueba_detalle.py` (HTMX), con el dialogo
 accesible de la SPA en lugar del `confirm` del navegador.
 """
 
@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from playwright.sync_api import Page, expect
 
-from pruebas.e2e.apoyo_spa import entrar_en_spa
+from pruebas.e2e.apoyo import entrar_en_spa
 from pruebas.e2e.conftest import AGENTE, SUPERVISOR, con_base
 
 pytestmark = pytest.mark.e2e
@@ -31,8 +31,8 @@ async def _otro_agente_la_toma(base: Any) -> None:
     )
 
 
-def prueba_tomar_y_confirmar_una_alerta_en_la_spa(page: Page, servidor_spa: str) -> None:
-    entrar_en_spa(page, servidor_spa, AGENTE, f"/detalle/{ALERTA}")
+def prueba_tomar_y_confirmar_una_alerta_en_la_spa(page: Page, servidor_e2e: str) -> None:
+    entrar_en_spa(page, servidor_e2e, AGENTE, f"/detalle/{ALERTA}")
     expect(page.get_by_role("heading", name=ALERTA)).to_be_visible()
     page.evaluate("window.__sinRecargar = true")
     insignia = page.locator("#insignia-estado")
@@ -63,8 +63,8 @@ def prueba_tomar_y_confirmar_una_alerta_en_la_spa(page: Page, servidor_spa: str)
     assert acciones == ["nueva", "en_revision", "confirmada"]
 
 
-def prueba_cancelar_el_dialogo_no_cierra_la_alerta(page: Page, servidor_spa: str) -> None:
-    entrar_en_spa(page, servidor_spa, AGENTE, f"/detalle/{ALERTA}")
+def prueba_cancelar_el_dialogo_no_cierra_la_alerta(page: Page, servidor_e2e: str) -> None:
+    entrar_en_spa(page, servidor_e2e, AGENTE, f"/detalle/{ALERTA}")
     page.locator("button[data-destino='en_revision']").click()
     expect(page.locator("#insignia-estado")).to_have_class("insignia insignia-estado es-en_revision")
     page.locator("button[data-destino='descartada']").click()
@@ -77,8 +77,8 @@ def prueba_cancelar_el_dialogo_no_cierra_la_alerta(page: Page, servidor_spa: str
     expect(page.locator("button[data-destino='descartada']")).to_be_focused()
 
 
-def prueba_si_otro_agente_la_tomo_se_avisa_del_conflicto(page: Page, servidor_spa: str) -> None:
-    entrar_en_spa(page, servidor_spa, AGENTE, f"/detalle/{ALERTA}")
+def prueba_si_otro_agente_la_tomo_se_avisa_del_conflicto(page: Page, servidor_e2e: str) -> None:
+    entrar_en_spa(page, servidor_e2e, AGENTE, f"/detalle/{ALERTA}")
     expect(page.locator("button[data-destino='en_revision']")).to_be_visible()
 
     con_base(_otro_agente_la_toma)  # ocurre mientras esta pantalla sigue abierta
