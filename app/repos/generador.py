@@ -20,6 +20,7 @@ from typing import Any
 from pymongo.asynchronous.database import AsyncDatabase
 
 from app.repos.carga_demo import a_entero_64
+from app.repos.ids_transaccion import siguiente_numero_transaccion
 
 _ID_GENERADO_CLIENTE = {"_id": {"$regex": r"^CLI-[0-9]{4,}$"}}
 _ID_GENERADO_RIESGO = {"_id": {"$regex": r"^RSK-[0-9]{4,}$"}}
@@ -44,6 +45,10 @@ class RepoGenerador:
             "clientes": await self._base["clientes"].delete_many(_ID_GENERADO_CLIENTE),
         }
         return {nombre: resultado.deleted_count for nombre, resultado in borrados.items()}
+
+    async def siguiente_numero_transaccion(self) -> int:
+        """Primer numero de `TXN-NNNNNN` para esta corrida: el siguiente al mayor existente."""
+        return await siguiente_numero_transaccion(self._base)
 
     async def insertar_lote(self, coleccion: str, documentos: Sequence[Mapping[str, Any]]) -> int:
         """Inserta un lote con `insert_many` (sin orden: los lotes son independientes)."""

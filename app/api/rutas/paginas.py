@@ -65,6 +65,7 @@ from app.modelos import (
     EstadoAlerta,
     TransicionInvalida,
 )
+from app.supervision.rezago import aviso_por_atraso, aviso_por_conteo
 
 enrutador = APIRouter(include_in_schema=False)
 
@@ -184,9 +185,12 @@ async def rezago(supervisor: SupervisorDep, ajustes: AjustesDep) -> HTMLResponse
         medida = supervisor.informe().tarea(NOMBRE_D1).rezago
     except KeyError:
         pass
-    atrasada = medida is not None and medida.pendientes > ajustes.deteccion.rezago_aviso_desde
+    por_conteo = aviso_por_conteo(medida, ajustes.deteccion.rezago_aviso_desde)
+    por_atraso = aviso_por_atraso(medida, ajustes.deteccion.rezago_aviso_atraso_segundos)
     html = ENTORNO.get_template("paginas/aviso_rezago.html").render(
-        atrasada=atrasada,
+        atrasada=por_conteo or por_atraso,
+        por_conteo=por_conteo,
+        atraso=antiguedad_legible(medida.atraso_segundos) if medida else "",
         pendientes=f"{medida.pendientes:,}".replace(",", " ") if medida else 0,
         estimado=antiguedad_legible(medida.segundos_para_ponerse_al_dia) if medida else "",
     )

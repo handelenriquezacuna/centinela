@@ -68,11 +68,12 @@ class Resumen:
         return self.transacciones / self.segundos if self.segundos else 0.0
 
 
-def generar_conjunto(ajustes: AjustesGenerador) -> Conjunto:
+def generar_conjunto(ajustes: AjustesGenerador, *, primer_numero: int = 1) -> Conjunto:
     """Todo el conjunto en memoria, determinista respecto de `ajustes.semilla`.
 
     Cada etapa tiene su propio generador aleatorio derivado de la semilla, asi agregar
-    o quitar una etapa no mueve los numeros de las otras.
+    o quitar una etapa no mueve los numeros de las otras. `primer_numero` solo desplaza la
+    numeracion de las transacciones (TXN-NNNNNN); el contenido no cambia.
     """
     poblacion = generar_poblacion(ajustes, random.Random(f"{ajustes.semilla}:poblacion"))
 
@@ -93,6 +94,7 @@ def generar_conjunto(ajustes: AjustesGenerador) -> Conjunto:
     transacciones = ordenar_y_numerar(
         legitimas + fraude,
         {cuenta.cuenta_id: cuenta.cuenta_sinpe for cuenta in poblacion.cuentas},
+        primer_numero=primer_numero,
     )
 
     return Conjunto(
@@ -114,11 +116,14 @@ async def ejecutar(
     repo: RepoGenerador, ajustes: AjustesGenerador, *, limpiar: bool = True
 ) -> Resumen:
     """Genera y escribe. Con `ritmo_por_segundo` > 0 reparte la insercion en el tiempo."""
-    conjunto = generar_conjunto(ajustes)
     resumen = Resumen()
 
+    # Primero se limpia lo generado antes y despues se numera: asi continua despues del
+    # mayor TXN de seis digitos que queda (la demo o lo insertado a mano), y lo nuevo es
+    # siempre mayor que lo que D1 ya evaluo.
     if limpiar:
         await repo.limpiar_generado()
+    conjunto = generar_conjunto(ajustes, primer_numero=await repo.siguiente_numero_transaccion())
 
     resumen.clientes = await repo.insertar_lote("clientes", conjunto.clientes)
     resumen.cuentas = await repo.insertar_lote("cuentas", conjunto.cuentas)

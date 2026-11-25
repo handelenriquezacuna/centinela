@@ -93,9 +93,15 @@ export interface Pagina<T> {
 }
 
 export interface AvisoRezago {
+  /** Pendientes sobre `aviso_desde` o atraso sobre `aviso_atraso_desde`. */
   atrasada: boolean;
+  /** La causa es el conteo de pendientes; si es falso, solo el atraso en segundos. */
+  por_conteo: boolean;
   pendientes: number | null;
   aviso_desde: number;
+  atraso_segundos: number | null;
+  aviso_atraso_desde: number;
+  atraso_legible: string;
   segundos_para_ponerse_al_dia: number | null;
   estimado: string;
   medido_en: string | null;

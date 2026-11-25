@@ -227,9 +227,25 @@ class PaginaCasosDestino(Pagina):
 class AvisoRezago(BaseModel):
     """El aviso de D1 atrasado (T-57). Lee la ultima medicion; no consulta la base."""
 
-    atrasada: bool = Field(description="Pendientes por encima de deteccion.rezago_aviso_desde")
+    atrasada: bool = Field(
+        description=(
+            "Pendientes por encima de deteccion.rezago_aviso_desde o atraso por encima de "
+            "deteccion.rezago_aviso_atraso_segundos"
+        )
+    )
+    por_conteo: bool = Field(
+        default=False,
+        description="La causa es el conteo de pendientes; si no, solo el atraso en segundos",
+    )
     pendientes: int | None = Field(default=None, description="Nulo sin medicion")
     aviso_desde: int = Field(ge=0)
+    atraso_segundos: float | None = Field(
+        default=None, description="Segundos detras de la ingesta; 0 al dia; nulo sin medicion"
+    )
+    aviso_atraso_desde: float = Field(
+        default=15.0, ge=0, description="deteccion.rezago_aviso_atraso_segundos"
+    )
+    atraso_legible: str = Field(default="", description="El atraso en palabras: '2 min'")
     segundos_para_ponerse_al_dia: float | None = None
     estimado: str = Field(default="", description="El estimado en palabras: '2 min'")
     medido_en: MarcaTiempoUTC | None = None

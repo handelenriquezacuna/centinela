@@ -35,7 +35,9 @@ El contrato, y por que cada pieza:
   token, D1 pregunta cuantas transacciones hay posteriores a la ultima que termino y la
   antiguedad de la mas vieja (consulta por indice de `_id`, en `app/repos/`). `/estado`
   lo publica y el panel avisa si pasa el umbral. Es la unica forma de ver que D1, que
-  evalua de a una, se esta quedando atras ante una carga por lotes.
+  evalua de a una, se esta quedando atras ante una carga por lotes. Junto al conteo se
+  publica `atraso_segundos` (ahora menos la insercion del ultimo evento procesado; 0 si la
+  vuelta del cursor llega vacia): una red de seguridad que no depende del orden de ids.
 - **Latido por vuelta**, con o sin evento. `/estado` mide el retraso desde el ultimo
   latido: un D1 sano sin trafico late cada `espera_cursor_ms`; uno atascado deja de
   latir y pasa a `retrasada`.
@@ -283,6 +285,11 @@ def latencia_ms(insertada_en: datetime | None, escrita_en: datetime) -> float | 
     return (escrita_en - insertada_en).total_seconds() * 1000
 
 
+def atraso_segundos(insertada_en: datetime, ahora: datetime) -> float:
+    """Segundos entre la insercion del evento y `ahora`; un desfase negativo cuenta como 0."""
+    return max(0.0, round((ahora - insertada_en).total_seconds(), 1))
+
+
 async def _procesar_con_reintentos(
     repo: ProtocoloRepoDeteccion,
     supervisor: Supervisor,
@@ -349,6 +356,9 @@ class _Vigilancia:
     fallos_seguidos: int = 0
     # Reloj monotono de la ultima medicion de rezago; `None` = todavia no se midio.
     rezago_medido_en: float | None = None
+    # Atraso por tiempo (segundos) del ultimo evento procesado, o 0 si la ultima vuelta
+    # llego vacia; `None` hasta la primera vuelta. No depende del orden de los `_id`.
+    atraso_segundos: float | None = None
 
 
 async def _medir_rezago(
@@ -384,7 +394,13 @@ async def _medir_rezago(
         if medido.mas_vieja is not None
         else None
     )
-    supervisor.registrar_rezago(nombre, medido.pendientes, antiguedad, ahora)
+    supervisor.registrar_rezago(
+        nombre,
+        medido.pendientes,
+        antiguedad,
+        ahora,
+        atraso_segundos=vigilancia.atraso_segundos,
+    )
 
 
 async def _consumir(
@@ -423,6 +439,8 @@ async def _consumir(
                 await repo.guardar_token(nombre, vuelta.token, transaccion_id=transaccion_id)
                 hay_token_guardado = True
                 supervisor.contar_evaluada(nombre)
+                if vuelta.insertada_en is not None:
+                    vigilancia.atraso_segundos = atraso_segundos(vuelta.insertada_en, reloj())
                 registro_log.debug("%s: %s", transaccion_id, resultado or "descartada")
             elif not hay_token_guardado and vuelta.token is not None:
                 # Arranque sin token: se guarda el de la primera vuelta vacia, para que
@@ -431,6 +449,9 @@ async def _consumir(
                 # vacia no tiene escrituras pendientes.
                 await repo.guardar_token(nombre, vuelta.token, transaccion_id=None)
                 hay_token_guardado = True
+            if vuelta.documento is None:
+                # La vuelta llego vacia: el cursor espero y no habia nada. D1 esta al dia.
+                vigilancia.atraso_segundos = 0.0
             vigilancia.fallos_seguidos = 0
             supervisor.latir(nombre)
             await _medir_rezago(

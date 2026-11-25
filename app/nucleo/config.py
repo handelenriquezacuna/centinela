@@ -152,6 +152,9 @@ class AjustesDeteccion(BaseModel):
       evaluar (T-57). Es una consulta barata por indice, pero no se hace por evento.
     - `rezago_aviso_desde`: desde cuantas transacciones sin evaluar el panel muestra el
       aviso "Deteccion atrasada". Es operacion, no una regla de negocio.
+    - `rezago_aviso_atraso_segundos`: desde cuantos segundos de atraso (ahora menos la
+      insercion del ultimo evento que D1 termino) el panel muestra el mismo aviso, aunque
+      el conteo de pendientes diga poco. No depende del orden de los ids.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -162,6 +165,7 @@ class AjustesDeteccion(BaseModel):
     espera_maxima_segundos: float = Field(default=10.0, gt=0)
     rezago_intervalo_segundos: float = Field(default=2.0, gt=0)
     rezago_aviso_desde: int = Field(default=500, ge=1)
+    rezago_aviso_atraso_segundos: float = Field(default=15.0, gt=0)
 
     @model_validator(mode="after")
     def el_tope_supera_la_espera_inicial(self) -> AjustesDeteccion:

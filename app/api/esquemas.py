@@ -212,6 +212,13 @@ class RezagoTarea(BaseModel):
         default=None,
         description="Estimado a ritmo constante; nulo sin ritmo medido o si D1 no avanza",
     )
+    atraso_segundos: float | None = Field(
+        default=None,
+        description=(
+            "Atraso por tiempo: ahora menos la insercion del ultimo evento que D1 termino; "
+            "0 si la vuelta del cursor llego vacia; nulo sin vueltas todavia"
+        ),
+    )
     medido_en: datetime = Field(description="Cuando se tomo la medicion, en UTC")
 
 
@@ -327,6 +334,7 @@ class EstadoFuncional(BaseModel):
                     antiguedad_segundos=fila.rezago.antiguedad_segundos,
                     ritmo_por_segundo=fila.rezago.ritmo_por_segundo,
                     segundos_para_ponerse_al_dia=fila.rezago.segundos_para_ponerse_al_dia,
+                    atraso_segundos=fila.rezago.atraso_segundos,
                     medido_en=fila.rezago.medido_en,
                 )
                 if fila.rezago is not None
