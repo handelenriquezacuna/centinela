@@ -176,6 +176,9 @@ AJUSTES_RAPIDOS = AjustesDeteccion(
     espera_inicial_segundos=0.05,
     espera_maxima_segundos=0.2,
     rezago_intervalo_segundos=0.2,
+    # Evento por evento a proposito (T-62): con lotes de 200 D1 evalua las 600 de la
+    # prueba en menos de una medicion de rezago y no habria atraso que observar.
+    lote_maximo=1,
 )
 
 
