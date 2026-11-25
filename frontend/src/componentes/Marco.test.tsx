@@ -10,7 +10,7 @@ import { EventSourceFalso } from "../pruebas/eventSourceFalso";
 import type { SesionActual } from "../api/tipos";
 import { vi } from "vitest";
 
-const SIN_REZAGO = { atrasada: false, pendientes: 0, aviso_desde: 500, segundos_para_ponerse_al_dia: null, estimado: "", medido_en: null };
+const SIN_REZAGO = { atrasada: false, por_conteo: false, pendientes: 0, aviso_desde: 500, atraso_segundos: 0, aviso_atraso_desde: 15, atraso_legible: "", segundos_para_ponerse_al_dia: null, estimado: "", medido_en: null };
 
 function montar(ruta: string) {
   const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } });

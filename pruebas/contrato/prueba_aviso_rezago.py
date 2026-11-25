@@ -70,8 +70,58 @@ async def prueba_estado_publica_el_rezago_de_d1(
         "antiguedad_segundos": 95.0,
         "ritmo_por_segundo": None,
         "segundos_para_ponerse_al_dia": None,
+        "atraso_segundos": None,
         "medido_en": "2026-11-23T12:00:00Z",
     }
+
+
+@pytest.mark.asyncio
+async def prueba_estado_publica_el_atraso_en_segundos(
+    cliente: AsyncClient, supervisor: Supervisor
+) -> None:
+    supervisor.registrar_rezago(NOMBRE_D1, 0, None, AHORA, atraso_segundos=42.5)
+
+    fila = next(
+        t for t in (await cliente.get("/estado")).json()["tareas"] if t["nombre"] == NOMBRE_D1
+    )
+
+    assert fila["rezago"]["atraso_segundos"] == 42.5
+
+
+@pytest.mark.asyncio
+async def prueba_solo_con_atraso_el_aviso_lo_dice_sin_inventar_un_conteo(
+    cliente: AsyncClient, supervisor: Supervisor
+) -> None:
+    """La red de seguridad: el conteo dice 0 (ids fuera de orden) pero D1 va atrasada."""
+    supervisor.registrar_rezago(NOMBRE_D1, 0, None, AHORA, atraso_segundos=125.0)
+
+    texto = (await cliente.get("/panel/rezago")).text
+
+    assert "Detección atrasada" in texto
+    assert "va unos 2 min detrás de la ingesta" in texto
+    assert "transacciones por evaluar" not in texto
+
+
+@pytest.mark.asyncio
+async def prueba_con_conteo_y_atraso_gana_el_mensaje_del_conteo(
+    cliente: AsyncClient, supervisor: Supervisor
+) -> None:
+    supervisor.registrar_rezago(NOMBRE_D1, _umbral() + 1, None, AHORA, atraso_segundos=125.0)
+
+    texto = (await cliente.get("/panel/rezago")).text
+
+    assert "transacciones por evaluar" in texto
+    assert "detrás de la ingesta" not in texto
+
+
+@pytest.mark.asyncio
+async def prueba_en_el_umbral_de_atraso_no_hay_aviso(
+    cliente: AsyncClient, supervisor: Supervisor
+) -> None:
+    desde = obtener_ajustes().deteccion.rezago_aviso_atraso_segundos
+    supervisor.registrar_rezago(NOMBRE_D1, 0, None, AHORA, atraso_segundos=desde)
+
+    assert "Detección atrasada" not in (await cliente.get("/panel/rezago")).text
 
 
 @pytest.mark.asyncio

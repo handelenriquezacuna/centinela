@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -354,3 +354,66 @@ async def prueba_una_medicion_que_falla_no_detiene_la_deteccion() -> None:
     assert repo.bitacora == ["alerta:TXN-001", "token:TXN-001", "token:TXN-002"]
     assert informe.rezago is None
     assert informe.ultimo_error is None
+
+
+# ---------------------------------------------------------------------------
+# Atraso en segundos (T-69): la red de seguridad que no depende del orden de los ids
+# ---------------------------------------------------------------------------
+
+
+def _evento_insertado(numero: int, transaccion_id: str, atras_segundos: float) -> EventoTransaccion:
+    return EventoTransaccion(
+        token=token(numero),
+        documento=_documento(transaccion_id),
+        insertada_en=AHORA - timedelta(seconds=atras_segundos),
+    )
+
+
+async def _correr_midiendo_siempre(repo: RepoDeteccionFalso) -> InformeTarea:
+    """Como `_correr`, pero midiendo en cada vuelta: la ultima vuelta decide el atraso."""
+    ajustes = AJUSTES.model_copy(update={"rezago_intervalo_segundos": 1e-9})
+    supervisor = Supervisor(tolerancia_segundos=30)
+    supervisor.lanzar(NOMBRE_D1, d1(repo, supervisor, ajustes=ajustes, reloj=lambda: AHORA))
+    try:
+        await asyncio.wait_for(repo.agotado.wait(), timeout=5)
+        return supervisor.informe().tarea(NOMBRE_D1)
+    finally:
+        await supervisor.detener()
+
+
+@pytest.mark.asyncio
+async def prueba_el_atraso_es_ahora_menos_la_insercion_del_ultimo_evento() -> None:
+    repo = RepoDeteccionFalso([_evento_insertado(1, "TXN-001", 40.0)])
+
+    informe = await _correr(repo)
+
+    assert informe.rezago is not None
+    assert informe.rezago.atraso_segundos == 40.0
+    assert informe.rezago.pendientes == 0, "el conteo puede decir 0 y el atraso no"
+
+
+@pytest.mark.asyncio
+async def prueba_la_vuelta_vacia_deja_el_atraso_en_cero() -> None:
+    repo = RepoDeteccionFalso([_evento_insertado(1, "TXN-001", 40.0), _evento(2, None)])
+
+    informe = await _correr_midiendo_siempre(repo)
+
+    assert informe.rezago is not None
+    assert informe.rezago.atraso_segundos == 0.0
+
+
+@pytest.mark.asyncio
+async def prueba_un_evento_sin_hora_de_insercion_no_inventa_atraso() -> None:
+    repo = RepoDeteccionFalso([_evento(1, "TXN-001")])
+
+    informe = await _correr(repo)
+
+    assert informe.rezago is not None
+    assert informe.rezago.atraso_segundos is None
+
+
+def prueba_un_desfase_negativo_cuenta_como_cero() -> None:
+    from app.deteccion.d1 import atraso_segundos
+
+    assert atraso_segundos(AHORA + timedelta(seconds=3), AHORA) == 0.0
+    assert atraso_segundos(AHORA - timedelta(seconds=2.26), AHORA) == 2.3

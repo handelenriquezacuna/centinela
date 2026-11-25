@@ -50,6 +50,12 @@ from app.repos.flujo_alertas import (
     CHANGE_STREAM_HISTORY_LOST,
     TokenDeReanudacionInvalido,
 )
+from app.repos.ids_transaccion import (
+    ID_MAXIMO,
+    ID_MINIMO,
+    PATRON_ID_DE_SEIS,
+    es_id_de_seis_digitos,
+)
 from app.repos.rasgos_grafo import RepoRasgosGrafo
 from app.repos.reglas import leer_politica_vigente
 
@@ -110,16 +116,27 @@ def _hora_de_insercion(cambio: Mapping[str, Any]) -> datetime | None:
 
 
 def filtro_pendientes(ultima_transaccion_id: str) -> dict[str, Any]:
-    """Transacciones posteriores a la ultima que D1 termino: `_id` mayor.
+    """Transacciones posteriores a la ultima que D1 termino: ids de seis digitos mayores.
 
-    Los identificadores `TXN-NNNNNN` se asignan en orden cronologico y de insercion (el
-    generador y el contrato de ids), de modo que el orden por `_id` es el orden en que
-    D1 las recibe. El indice por `_id` ya existe: contar es recorrer claves, sin leer un
-    solo documento (`totalDocsExamined` 0), y la mas vieja es leer una (`nReturned` 1,
-    `totalDocsExamined` 1). El orden lexicografico es el numerico mientras el numero
-    tenga el mismo ancho (seis digitos del contrato).
+    Contrato de ids (`app/repos/ids_transaccion.py`): lo que entra despues de la siembra
+    se numera `TXN-NNNNNN`, el siguiente al mayor de seis digitos, en orden de insercion.
+    El orden por `_id` es entonces el orden en que D1 las recibe, y el de texto coincide
+    con el numerico porque el ancho es fijo.
+
+    Solo cuentan ids de seis digitos. Si `ultima_transaccion_id` no lo es (D1 proceso una
+    de la demo sembrada, `TXN-007`), el limite inferior es `TXN-000000`; sin ese recorte,
+    `"TXN-000500" > "TXN-007"` es falso y una carga masiva se veria con rezago 0.
+
+    El rango de texto no basta: `"TXN-001" > "TXN-000500"` es verdadero (el id de tres
+    digitos queda entre los de seis en el indice), y la demo sembrada se contaria como
+    pendiente para siempre. El `$regex` anclado deja fuera todo id que no sea de seis
+    digitos; MongoDB lo evalua sobre la clave del indice, antes de leer el documento: el
+    conteo sigue siendo un recorrido del indice de `_id` sin leer un solo documento
+    (`totalDocsExamined` 0; el plan pasa de COUNT_SCAN a IXSCAN), y la mas vieja es leer
+    una (`nReturned` 1, `totalDocsExamined` 1).
     """
-    return {"_id": {"$gt": ultima_transaccion_id}}
+    desde = ultima_transaccion_id if es_id_de_seis_digitos(ultima_transaccion_id) else ID_MINIMO
+    return {"_id": {"$gt": desde, "$lte": ID_MAXIMO, "$regex": PATRON_ID_DE_SEIS}}
 
 
 @dataclass(frozen=True)

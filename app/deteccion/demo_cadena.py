@@ -33,6 +33,7 @@ from datetime import UTC, datetime, timedelta
 
 from app.deteccion.evaluador import RasgoRed
 from app.modelos import Transaccion
+from app.repos.ids_transaccion import id_transaccion
 
 VICTIMA = "8712-4455"  # CTA-001, Maria Rodriguez: la del caso
 OTRA_VICTIMA = "6210-3387"  # CTA-002: la que transfiere despues, la que dispara R-11
@@ -75,7 +76,7 @@ def armar_cadena(
 
     def txn(n: int, origen: str, destino: str, monto: int, fecha: datetime) -> Transaccion:
         return Transaccion(
-            _id=f"TXN-{n:06d}",
+            _id=id_transaccion(n),
             cuenta_origen=cuentas[origen],
             sinpe_origen=origen,
             cuenta_destino=destino,

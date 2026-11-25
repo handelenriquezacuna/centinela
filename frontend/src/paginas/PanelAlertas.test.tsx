@@ -10,7 +10,7 @@ import { alertaDeCaso, casoDestino } from "../pruebas/datos";
 import { EventSourceFalso } from "../pruebas/eventSourceFalso";
 import { Panel } from "./Panel";
 
-const SIN_REZAGO = { atrasada: false, pendientes: 0, aviso_desde: 500, segundos_para_ponerse_al_dia: null, estimado: "", medido_en: null };
+const SIN_REZAGO = { atrasada: false, por_conteo: false, pendientes: 0, aviso_desde: 500, atraso_segundos: 0, aviso_atraso_desde: 15, atraso_legible: "", segundos_para_ponerse_al_dia: null, estimado: "", medido_en: null };
 
 function alerta(id: string, campos: Partial<Alerta> = {}): Alerta {
   return {
@@ -135,7 +135,7 @@ describe("Panel por alerta", () => {
   it("muestra el aviso de rezago y la cola vacia", async () => {
     instalarApiFalsa({
       "GET /api/v1/alertas": pagina(),
-      "GET /api/v1/deteccion/rezago": { cuerpo: { ...SIN_REZAGO, atrasada: true, pendientes: 9988, estimado: "2 min" } },
+      "GET /api/v1/deteccion/rezago": { cuerpo: { ...SIN_REZAGO, atrasada: true, por_conteo: true, pendientes: 9988, estimado: "2 min" } },
     });
     montar();
     expect(await screen.findByText("No hay alertas en la cola.")).toBeInTheDocument();

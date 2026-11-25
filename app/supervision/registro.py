@@ -236,8 +236,12 @@ class Supervisor:
         medido_en: datetime,
         *,
         monotono: float | None = None,
+        atraso_segundos: float | None = None,
     ) -> None:
         """Ultima medicion del rezago de la tarea (T-57). Reemplaza a la anterior.
+
+        `atraso_segundos` es el atraso medido por tiempo (ahora menos la insercion del
+        ultimo evento procesado; 0 con la vuelta vacia), no por conteo de ids.
 
         El ritmo sale de cuantas transacciones evaluo la tarea desde la medicion anterior.
         `monotono` es para las pruebas; por omision, `time.monotonic()`.
@@ -258,6 +262,7 @@ class Supervisor:
             antiguedad_segundos=antiguedad_segundos,
             medido_en=medido_en,
             ritmo_por_segundo=medido_ritmo,
+            atraso_segundos=atraso_segundos,
         )
 
     def anotar_error(self, nombre: str, fallo: BaseException) -> None:

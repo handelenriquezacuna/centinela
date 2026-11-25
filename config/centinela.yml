@@ -77,6 +77,9 @@ deteccion:
   # Es operacion, no una regla de negocio: no decide que es fraude.
   rezago_intervalo_segundos: 2
   rezago_aviso_desde: 500
+  # Red de seguridad independiente del orden de los ids: el mismo aviso si D1 va mas de
+  # estos segundos detras de la ingesta (ahora menos la insercion del ultimo evento).
+  rezago_aviso_atraso_segundos: 15
 
 # Disparador D3 (H-22): recalcula los indicadores del dia actual en indicadores_diarios.
 indicadores:

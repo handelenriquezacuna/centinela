@@ -92,6 +92,39 @@ async def armar() -> AsyncIterator[Armar]:
         await gestor.__aexit__(None, None, None)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("pendientes", "atraso", "atrasada", "por_conteo"),
+    [
+        (0, 16.0, True, False),  # el conteo dice 0 pero D1 va 16 s detras: la red de seguridad
+        (0, 15.0, False, False),
+        (0, 0.0, False, False),
+        (501, 0.0, True, True),
+        (501, 60.0, True, True),
+    ],
+)
+async def prueba_el_aviso_de_rezago_tambien_mira_el_atraso_en_segundos(
+    armar: Armar,
+    supervisor: Supervisor,
+    pendientes: int,
+    atraso: float,
+    atrasada: bool,
+    por_conteo: bool,
+) -> None:
+    supervisor.registrar_rezago(
+        NOMBRE_D1,
+        pendientes,
+        None,
+        datetime(2026, 11, 23, 18, 0, tzinfo=UTC),
+        atraso_segundos=atraso,
+    )
+    http = await armar(supervisor=supervisor)
+    aviso = (await http.get("/api/v1/deteccion/rezago")).json()
+
+    assert aviso["atrasada"] is atrasada and aviso["por_conteo"] is por_conteo
+    assert aviso["atraso_segundos"] == atraso and aviso["aviso_atraso_desde"] == 15.0
+
+
 # ---------------------------------------------------------------------------
 # Detalle
 # ---------------------------------------------------------------------------
@@ -251,8 +284,12 @@ async def prueba_sin_medicion_el_aviso_no_inventa_pendientes(
     aviso = (await http.get("/api/v1/deteccion/rezago")).json()
     assert aviso == {
         "atrasada": False,
+        "por_conteo": False,
         "pendientes": None,
         "aviso_desde": 500,
+        "atraso_segundos": None,
+        "aviso_atraso_desde": 15.0,
+        "atraso_legible": "",
         "segundos_para_ponerse_al_dia": None,
         "estimado": "",
         "medido_en": None,
