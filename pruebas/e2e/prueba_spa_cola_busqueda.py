@@ -37,7 +37,7 @@ def prueba_la_vista_por_alerta_recibe_la_fila_sola_y_la_ordena_por_puntaje(
     expect(page.locator("#cola")).to_be_attached()
     expect(page.locator("#estado-canal")).to_have_text("en vivo")
 
-    filas = page.locator("#cola [role='row']")
+    filas = page.locator("#cola tr")
     antes = filas.count()
     assert antes > 0
     nueva = filas.filter(has_text=DESTINO_NUEVO)
@@ -66,7 +66,7 @@ def prueba_la_vista_por_alerta_recibe_la_fila_sola_y_la_ordena_por_puntaje(
 
 def prueba_atajos_j_k_enter_y_ayuda_en_el_panel(page: Page, servidor_e2e: str) -> None:
     _entrar(page, servidor_e2e, "/panel?vista=alertas")
-    filas = page.locator("#cola [role='row']")
+    filas = page.locator("#cola tr")
     expect(filas.first).to_be_visible()
     primera = filas.first.get_attribute("id")
     segunda = filas.nth(1).get_attribute("id")
@@ -112,7 +112,7 @@ def prueba_la_busqueda_filtra_pagina_y_exporta_el_csv_con_los_mismos_filtros(
     fila = page.locator("tbody tr[data-transaccion='TXN-001']")
     expect(fila).to_have_count(1)
     expect(fila).to_contain_text("₡280.000")
-    expect(fila.locator("td.hora")).to_have_text(re.compile(r"^\d{2}/\d{2}/\d{4} \d{2}:\d{2}$"))
+    expect(fila.locator("time.hora")).to_have_text(re.compile(r"^\d{2}/\d{2}/\d{4} \d{2}:\d{2}$"))
     expect(page.locator("#total-resultados")).to_have_text("1 resultados")
     # La tabla tiene nombre y encabezados para un lector de pantalla.
     expect(page.get_by_role("table", name="Transacciones que cumplen los filtros")).to_be_visible()

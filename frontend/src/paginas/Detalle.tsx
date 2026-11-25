@@ -4,22 +4,21 @@ import { Link, useParams } from "react-router";
 
 import { ErrorApi, pedir } from "../api/cliente";
 import { useSesion } from "../api/sesion";
+import type { Alerta, Pagina } from "../api/tipos";
 import type { AccionDisponible, DetalleAlerta, ResultadoTransicion } from "../api/tiposDetalle";
-import { DialogoConfirmacion } from "../componentes/DialogoConfirmacion";
+import { BarraDecision } from "../componentes/BarraDecision";
+import { Cargando } from "../componentes/Cargando";
+import { EncabezadoPagina } from "../componentes/EncabezadoPagina";
+import { FechaCR } from "../componentes/FechaCR";
+import { MarcoPagina } from "../componentes/MarcoPagina";
+import { MontoColones } from "../componentes/MontoColones";
 import { RecorridoDinero } from "../componentes/RecorridoDinero";
-import { colones, etiqueta, horaCostaRica } from "../formatos";
+import { VistaError } from "../componentes/VistaError";
+import type { ResultadoAviso } from "../componentes/AvisoRegion";
+import { etiqueta } from "../formatos";
+import { CLAVE_COLA } from "./PanelAlertas";
 
-const CLASE_BOTON: Record<string, string> = {
-  en_revision: "boton-primario",
-  confirmada: "boton-confirmar",
-  descartada: "boton-descartar",
-  escalada: "boton-escalar",
-};
-
-interface Aviso {
-  texto: string;
-  error: boolean;
-}
+const ESTADOS_ABIERTOS: ReadonlySet<string> = new Set(["nueva", "en_revision"]);
 
 function claveDetalle(alertaId: string) {
   return ["detalle", alertaId] as const;
@@ -38,22 +37,44 @@ export function Detalle() {
   });
 
   if (consulta.isPending) {
-    return <p role="status">Cargando la alerta…</p>;
+    return <Cargando texto="Cargando la alerta…" />;
   }
   if (consulta.isError) {
     const noExiste = consulta.error instanceof ErrorApi && consulta.error.estado === 404;
     return (
-      <>
-        <p className="migaja">
-          <Link to="/panel">Panel</Link> / Alerta {alertaId}
-        </p>
-        <div className="mensaje mensaje-error" role="alert" id="detalle-error">
-          {noExiste ? `No existe la alerta ${alertaId}.` : `No se pudo cargar la alerta: ${consulta.error.message}`}
-        </div>
-      </>
+      <MarcoPagina id="detalle">
+        <EncabezadoPagina
+          id="detalle"
+          titulo={`Alerta ${alertaId}`}
+          migas={[{ rotulo: "Panel", a: "/panel" }, { rotulo: `Alerta ${alertaId}` }]}
+        />
+        <VistaError
+          error={{
+            texto: noExiste ? `No existe la alerta ${alertaId}.` : `No se pudo cargar la alerta: ${consulta.error.message}`,
+            detalles: [],
+          }}
+          alReintentar={noExiste ? undefined : () => void consulta.refetch()}
+        />
+      </MarcoPagina>
     );
   }
-  return <DetalleCargado detalle={consulta.data} />;
+  return <DetalleCargado key={alertaId} detalle={consulta.data} />;
+}
+
+/**
+ * La alerta que sigue en la cola, en el orden del servidor (puntaje y fecha), sin contar
+ * las ya cerradas ni la actual; tras la ultima vuelve a la primera. `undefined` mientras se lee;
+ * `null` si no queda ninguna.
+ */
+function useSiguienteAlerta(actual: string): string | null | undefined {
+  const cola = useQuery({ queryKey: CLAVE_COLA, queryFn: () => pedir<Pagina<Alerta>>("/api/v1/alertas") });
+  if (cola.isPending) return undefined;
+  if (cola.isError) return null;
+  const abiertas = cola.data.elementos.filter((a) => ESTADOS_ABIERTOS.has(a.estado) || a._id === actual);
+  const posicion = abiertas.findIndex((a) => a._id === actual);
+  // Las que siguen a la actual; si era la ultima, la cola vuelve a empezar por la mas urgente.
+  const ordenadas = posicion === -1 ? abiertas : [...abiertas.slice(posicion + 1), ...abiertas.slice(0, posicion)];
+  return ordenadas.find((a) => a._id !== actual && ESTADOS_ABIERTOS.has(a.estado))?._id ?? null;
 }
 
 function DetalleCargado({ detalle }: { detalle: DetalleAlerta }) {
@@ -62,35 +83,40 @@ function DetalleCargado({ detalle }: { detalle: DetalleAlerta }) {
   const nombreAgente = alerta.agente_id ? nombres[alerta.agente_id] : undefined;
   const instante = transaccion?.fecha ?? alerta.fecha_creacion;
   const consultaRed = `?desde=${encodeURIComponent(instante)}`;
+  const decision = useResolver(detalle);
+  const siguiente = useSiguienteAlerta(alerta._id);
   return (
-    <>
+    <MarcoPagina id="detalle">
       <link rel="stylesheet" href="/estaticos/detalle.css" />
-      <p className="migaja">
-        <Link to="/panel">Panel</Link> / Alerta {alerta._id}
-      </p>
+      <EncabezadoPagina
+        id="detalle"
+        titulo={`Alerta ${alerta._id}`}
+        migas={[{ rotulo: "Panel", a: "/panel" }, { rotulo: `Alerta ${alerta._id}` }]}
+        descripcion={
+          <>
+            Transacción <span className="id-corto">{alerta.transaccion_id}</span> · creada <FechaCR valor={alerta.fecha_creacion} formato="con_zona" />
+          </>
+        }
+      />
 
-      <div className="titulo-pantalla">
-        <div>
-          <h1>Alerta {alerta._id}</h1>
-          <p className="subtitulo">
-            Transacción <span className="id-corto">{alerta.transaccion_id}</span> · creada {horaCostaRica(alerta.fecha_creacion)} (hora CR)
-          </p>
-        </div>
-      </div>
+      <BarraDecision
+        alertaId={alerta._id}
+        estado={alerta.estado}
+        severidad={alerta.severidad}
+        acciones={detalle.acciones}
+        ocupado={decision.ocupado}
+        alResolver={decision.resolver}
+        resultado={decision.resultado}
+        actuaComo={decision.actuaComo}
+        siguiente={siguiente}
+        casoId={detalle.caso_id}
+      />
 
       <section className="tarjeta" aria-label="Resumen de la alerta">
         <div className="resumen-alerta">
-          <div>
-            <span className={`insignia es-${alerta.severidad.toLowerCase()}`}>Severidad {etiqueta(alerta.severidad).toLowerCase()}</span>
-          </div>
           <div className="puntaje">
             {alerta.puntaje}
             <small>puntaje / {puntaje.maximo}</small>
-          </div>
-          <div>
-            <span id="insignia-estado" className={`insignia insignia-estado es-${alerta.estado}`}>
-              {etiqueta(alerta.estado)}
-            </span>
           </div>
           <div>
             <dl className="lista-datos">
@@ -131,7 +157,9 @@ function DetalleCargado({ detalle }: { detalle: DetalleAlerta }) {
           </div>
           <div>
             <dt>Monto</dt>
-            <dd className="monto">{colones(alerta.monto_crc)}</dd>
+            <dd>
+              <MontoColones valor={alerta.monto_crc} />
+            </dd>
           </div>
           {transaccion ? (
             <div>
@@ -141,7 +169,9 @@ function DetalleCargado({ detalle }: { detalle: DetalleAlerta }) {
           ) : null}
           <div>
             <dt>Fecha y hora (hora CR)</dt>
-            <dd className="hora">{horaCostaRica(instante)}</dd>
+            <dd>
+              <FechaCR valor={instante} />
+            </dd>
           </div>
         </dl>
         {!transaccion ? <p className="nota-tecnica">No se encontró la transacción; se muestran los datos copiados en la alerta.</p> : null}
@@ -176,11 +206,15 @@ function DetalleCargado({ detalle }: { detalle: DetalleAlerta }) {
               </div>
               <div>
                 <dt>Monto promedio</dt>
-                <dd className="monto">{colones(perfil.promedio_crc)}</dd>
+                <dd>
+                  <MontoColones valor={perfil.promedio_crc} />
+                </dd>
               </div>
               <div>
                 <dt>Monto máximo</dt>
-                <dd className="monto">{colones(perfil.maximo_crc)}</dd>
+                <dd>
+                  <MontoColones valor={perfil.maximo_crc} />
+                </dd>
               </div>
               <div>
                 <dt>Horario habitual</dt>
@@ -276,7 +310,8 @@ function DetalleCargado({ detalle }: { detalle: DetalleAlerta }) {
           <p>Política usada por la alerta: no registrada{detalle.es_v2 ? "" : " (alerta v1)"}.</p>
         )}
         {politica.origen !== "ninguna" ? (
-          <>
+          <details className="cortes-plegados">
+            <summary>Ver los cortes de severidad</summary>
             <p className="nota-tecnica" id="origen-cortes">
               {politica.origen === "usada"
                 ? "Los cortes de abajo son los de la política usada por la alerta."
@@ -318,132 +353,9 @@ function DetalleCargado({ detalle }: { detalle: DetalleAlerta }) {
             <p className="nota-tecnica">
               Umbral de creación de alerta: {puntaje.umbral}. Puntaje máximo: {puntaje.maximo}.
             </p>
-          </>
+          </details>
         ) : (
           <p className="nota-tecnica">No hay política vigente en la base.</p>
-        )}
-      </section>
-
-      <Resolver detalle={detalle} />
-    </>
-  );
-}
-
-/** Resolver la alerta (con confirmacion si cierra) e historial. */
-function Resolver({ detalle }: { detalle: DetalleAlerta }) {
-  const { alerta } = detalle;
-  const clienteConsultas = useQueryClient();
-  const { data: sesion } = useSesion();
-  const [nota, setNota] = useState("");
-  const [aviso, setAviso] = useState<Aviso | null>(null);
-  const [pendiente, setPendiente] = useState<AccionDisponible | null>(null);
-  const nombres = detalle.nombres_agentes;
-
-  const transicion = useMutation({
-    mutationFn: (accion: AccionDisponible) =>
-      pedir<ResultadoTransicion>(`/api/v1/alertas/${encodeURIComponent(alerta._id)}/transiciones`, {
-        metodo: "POST",
-        cuerpo: { destino: accion.destino, nota: nota.trim(), estado_esperado: alerta.estado },
-      }),
-    onSuccess: (_resultado, accion) => {
-      setNota("");
-      setAviso({ texto: `Listo: la alerta pasó a ${etiqueta(accion.destino)}`, error: false });
-      void clienteConsultas.invalidateQueries({ queryKey: claveDetalle(alerta._id) });
-    },
-    onError: (fallo) => {
-      const conflicto = fallo instanceof ErrorApi && fallo.estado === 409;
-      setAviso({
-        texto: conflicto
-          ? `La alerta cambió antes de que aplicaras la acción: otro agente la tomó o resolvió, o la acción ya no es válida desde su estado actual. Se muestra el estado vigente, sin cambios tuyos. Detalle: ${fallo.message}`
-          : fallo instanceof ErrorApi
-            ? `${fallo.estado}: ${fallo.message}`
-            : "No se pudo aplicar la acción",
-        error: true,
-      });
-      // Lo que se ve tiene que ser lo que hay ahora, no lo que se veia.
-      void clienteConsultas.invalidateQueries({ queryKey: claveDetalle(alerta._id) });
-    },
-  });
-
-  function elegir(accion: AccionDisponible) {
-    setAviso(null);
-    if (accion.cierra) setPendiente(accion);
-    else transicion.mutate(accion);
-  }
-
-  function resolver(confirmada: boolean) {
-    const accion = pendiente;
-    setPendiente(null);
-    if (confirmada && accion) transicion.mutate(accion);
-  }
-
-  const yo = sesion?.agente_id;
-  return (
-    <div id="acciones">
-      <section className="tarjeta" aria-label="Resolver alerta">
-        <h2 className="seccion-titulo">Resolver alerta</h2>
-        <div aria-live="polite">
-          {aviso ? (
-            <div className={`mensaje ${aviso.error ? "mensaje-error" : "mensaje-ok"}`} role={aviso.error ? "alert" : "status"} id="aviso-resolver">
-              {aviso.texto}
-            </div>
-          ) : null}
-        </div>
-        {detalle.caso_id ? (
-          <p className="mensaje mensaje-ok" id="caso-creado">
-            Caso abierto: <span className="id-corto">{detalle.caso_id}</span> (en investigación)
-          </p>
-        ) : null}
-        {detalle.acciones.length > 0 ? (
-          <>
-            <div id="form-resolver" className="form-regla">
-              {yo ? (
-                <p className="nota-tecnica" id="actuas-como">
-                  Actúas como{" "}
-                  <strong>
-                    {yo}
-                    {nombres[yo] ? ` (${nombres[yo]})` : ""}
-                  </strong>
-                  : tu nombre queda en el historial.
-                </p>
-              ) : null}
-              <div className="campo">
-                <label htmlFor="nota-resolucion">Nota (se agrega al historial)</label>
-                <input
-                  type="text"
-                  id="nota-resolucion"
-                  name="nota"
-                  maxLength={1000}
-                  placeholder="Motivo de la decisión (opcional)"
-                  value={nota}
-                  onChange={(e) => setNota(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="grupo-botones">
-              {detalle.acciones.map((accion) => (
-                <div className="accion-boton" key={accion.destino}>
-                  <button
-                    type="button"
-                    className={`boton ${CLASE_BOTON[accion.destino] ?? ""}`}
-                    data-destino={accion.destino}
-                    aria-describedby={`ayuda-${accion.destino}`}
-                    disabled={transicion.isPending}
-                    onClick={() => elegir(accion)}
-                  >
-                    {accion.rotulo}
-                  </button>
-                  <small id={`ayuda-${accion.destino}`} className="ayuda-boton">
-                    {accion.ayuda}
-                  </small>
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <p className="nota-tecnica">
-            La alerta está {etiqueta(alerta.estado).toLowerCase()}: es un estado terminal y no admite más acciones.
-          </p>
         )}
       </section>
 
@@ -452,7 +364,9 @@ function Resolver({ detalle }: { detalle: DetalleAlerta }) {
         <ol className="historial">
           {alerta.historial.map((accion, i) => (
             <li className="historial-item" key={`${accion.fecha}-${i}`}>
-              <div className="cuando">{horaCostaRica(accion.fecha)} (hora CR)</div>
+              <div className="cuando">
+                <FechaCR valor={accion.fecha} formato="con_zona" />
+              </div>
               <div className="quien">
                 {accion.agente_id ? `${nombres[accion.agente_id] ?? ""} ${accion.agente_id}`.trim() : "Sistema"}
               </div>
@@ -464,20 +378,59 @@ function Resolver({ detalle }: { detalle: DetalleAlerta }) {
           ))}
         </ol>
       </section>
-
-      <DialogoConfirmacion
-        abierto={pendiente !== null}
-        titulo={pendiente ? `${pendiente.rotulo}: confirmar` : "Confirmar acción"}
-        etiquetaConfirmar={pendiente?.rotulo ?? "Confirmar"}
-        alResolver={resolver}
-      >
-        {pendiente ? (
-          <p>
-            ¿{pendiente.rotulo}? Esta acción cierra la alerta {alerta._id} y no se puede deshacer.
-            {nota.trim() ? ` Nota: «${nota.trim()}».` : ""}
-          </p>
-        ) : null}
-      </DialogoConfirmacion>
-    </div>
+    </MarcoPagina>
   );
+}
+
+/**
+ * Aplica una transicion de la maquina de estados con el estado que la persona vio
+ * (`estado_esperado`): si otra persona se adelanto, el servidor responde conflicto, se
+ * dice con palabras y la pantalla vuelve a leer lo vigente.
+ */
+function useResolver(detalle: DetalleAlerta) {
+  const { alerta } = detalle;
+  const clienteConsultas = useQueryClient();
+  const { data: sesion } = useSesion();
+  const [resultado, setResultado] = useState<ResultadoAviso>(null);
+  const nombres = detalle.nombres_agentes;
+
+  const transicion = useMutation({
+    mutationFn: ({ accion, nota }: { accion: AccionDisponible; nota: string }) =>
+      pedir<ResultadoTransicion>(`/api/v1/alertas/${encodeURIComponent(alerta._id)}/transiciones`, {
+        metodo: "POST",
+        cuerpo: { destino: accion.destino, nota, estado_esperado: alerta.estado },
+      }),
+    onSuccess: (_resultado, { accion }) => {
+      setResultado({ tipo: "ok", texto: `Listo: la alerta pasó a ${etiqueta(accion.destino)}` });
+      void clienteConsultas.invalidateQueries({ queryKey: claveDetalle(alerta._id) });
+      void clienteConsultas.invalidateQueries({ queryKey: CLAVE_COLA });
+    },
+    onError: (fallo) => {
+      const conflicto = fallo instanceof ErrorApi && fallo.estado === 409;
+      setResultado({
+        tipo: "error",
+        error: {
+          texto: conflicto
+            ? `La alerta cambió antes de que aplicaras la acción: otro agente la tomó o resolvió, o la acción ya no es válida desde su estado actual. Se muestra el estado vigente, sin cambios tuyos. Detalle: ${fallo.message}`
+            : fallo instanceof ErrorApi
+              ? fallo.message
+              : "No se pudo aplicar la acción",
+          detalles: [],
+        },
+      });
+      // Lo que se ve tiene que ser lo que hay ahora, no lo que se veia.
+      void clienteConsultas.invalidateQueries({ queryKey: claveDetalle(alerta._id) });
+    },
+  });
+
+  const yo = sesion?.agente_id;
+  return {
+    ocupado: transicion.isPending,
+    resultado,
+    actuaComo: yo ? `${yo}${nombres[yo] ? ` (${nombres[yo]})` : ""}` : null,
+    resolver: (accion: AccionDisponible, nota: string) => {
+      setResultado(null);
+      transicion.mutate({ accion, nota });
+    },
+  };
 }

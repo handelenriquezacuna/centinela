@@ -357,3 +357,31 @@ describe("Reglas: politica", () => {
     expect(await screen.findByText(/La política cambió mientras se editaba/)).toBeInTheDocument();
   });
 });
+
+describe("Reglas: estados", () => {
+  it("sin politica vigente lo dice con palabras y deja reintentar; el catalogo vacio tiene su vista", async () => {
+    instalarApiFalsa({
+      ...rutasBase(() => []),
+      "GET /api/v1/politica": errorApi(404, "no_encontrado", "No hay politica"),
+    });
+    montar();
+    expect(await screen.findByText(/No hay una política vigente en la base/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reintentar" })).toBeInTheDocument();
+    expect(await screen.findByText("No hay reglas en la base.")).toBeInTheDocument();
+  });
+
+  it("el texto de la pantalla no habla de codigos HTTP", async () => {
+    instalarApiFalsa(rutasBase());
+    montar();
+    await screen.findByText("Política vigente");
+    expect(document.body.textContent).not.toMatch(/\b409\b/);
+  });
+
+  it("el formulario de la politica ordena los cortes por severidad dentro de un grupo", async () => {
+    instalarApiFalsa(rutasBase());
+    montar();
+    const grupo = await screen.findByRole("group", { name: /Cortes de severidad/ });
+    expect(within(grupo).getAllByRole("spinbutton")).toHaveLength(6);
+    expect(within(grupo).getByLabelText("Desde (Media)")).toHaveValue(40);
+  });
+});

@@ -2,6 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 
 import { pedir } from "../api/cliente";
 import type { ReporteEfectividad } from "../api/tipos";
+import { Cargando } from "../componentes/Cargando";
+import { TarjetaMetrica } from "../componentes/TarjetaMetrica";
+import { VistaError } from "../componentes/VistaError";
+import { VistaVacia } from "../componentes/VistaVacia";
 import { porcentaje } from "../formatos";
 
 /** Una fraccion 0..1 como porcentaje; sin denominador, "sin dato" (no 0 ni 100). */
@@ -17,11 +21,12 @@ export function Efectividad() {
       <h2 id="titulo-efectividad" className="seccion-titulo">
         Efectividad del motor
       </h2>
-      {consulta.isPending ? <p role="status">Cargando la efectividad…</p> : null}
+      {consulta.isPending ? <Cargando texto="Cargando la efectividad…" /> : null}
       {consulta.isError ? (
-        <p className="mensaje mensaje-error" role="alert">
-          No se pudo leer la efectividad: {consulta.error.message}
-        </p>
+        <VistaError
+          error={{ texto: `No se pudo leer la efectividad: ${consulta.error.message}`, detalles: [] }}
+          alReintentar={() => void consulta.refetch()}
+        />
       ) : null}
       {consulta.data ? <Reporte reporte={consulta.data} /> : null}
     </section>
@@ -31,30 +36,21 @@ export function Efectividad() {
 export function Reporte({ reporte }: { reporte: ReporteEfectividad }) {
   if (reporte.transacciones_etiquetadas === 0) {
     return (
-      <p className="nota-tecnica" id="efectividad-sin-datos">
-        No hay transacciones etiquetadas por el generador con que medir. Alertas sin etiqueta: {reporte.alertas_sin_etiqueta}.
-      </p>
+      <div id="efectividad-sin-datos">
+        <VistaVacia
+          titulo="No hay transacciones etiquetadas con que medir."
+          texto={`Las etiquetas las pone el generador de datos de prueba. Alertas sin etiqueta: ${reporte.alertas_sin_etiqueta}.`}
+        />
+      </div>
     );
   }
   return (
     <>
-      <div className="cifras">
-        <div id="efectividad-precision">
-          <span className="cifra-grande">{razon(reporte.precision)}</span>
-          <div>Precisión</div>
-        </div>
-        <div id="efectividad-exhaustividad">
-          <span className="cifra-grande">{razon(reporte.exhaustividad)}</span>
-          <div>Exhaustividad</div>
-        </div>
-        <div>
-          <span className="cifra-grande">{reporte.detectados}</span>
-          <div>Fraudes detectados de {reporte.fraudes}</div>
-        </div>
-        <div>
-          <span className="cifra-grande">{reporte.falsos_positivos}</span>
-          <div>Falsos positivos de {reporte.legitimas} legítimas</div>
-        </div>
+      <div className="metricas">
+        <TarjetaMetrica id="efectividad-precision" rotulo="Precisión" valor={razon(reporte.precision)} estado={reporte.precision === null ? "sin_datos" : "normal"} />
+        <TarjetaMetrica id="efectividad-exhaustividad" rotulo="Exhaustividad" valor={razon(reporte.exhaustividad)} estado={reporte.exhaustividad === null ? "sin_datos" : "normal"} />
+        <TarjetaMetrica rotulo={`Fraudes detectados de ${reporte.fraudes}`} valor={reporte.detectados} />
+        <TarjetaMetrica rotulo={`Falsos positivos de ${reporte.legitimas} legítimas`} valor={reporte.falsos_positivos} />
       </div>
       <table className="tabla-simple" id="tabla-efectividad">
         <caption className="visualmente-oculto">Exhaustividad por patrón de fraude</caption>

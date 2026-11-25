@@ -81,4 +81,25 @@ describe("Tablero", () => {
     montar();
     expect(await screen.findByText("No se pudo leer el tablero: Tu rol no permite esta operación")).toBeInTheDocument();
   });
+
+  it("sin periodo anterior lo dice una sola vez, no en cada cifra", async () => {
+    const datos = structuredClone(TABLERO_CON_DATOS) as { resumen: { hay_periodo_previo: boolean } };
+    datos.resumen.hay_periodo_previo = false;
+    instalarApiFalsa({ "GET /api/v1/tablero": { cuerpo: datos }, "GET /api/v1/efectividad": { cuerpo: EFECTIVIDAD } });
+    montar();
+
+    await screen.findByText("₡2.500.000");
+    expect(screen.getAllByText(/periodo anterior con el que comparar/)).toHaveLength(1);
+    expect(document.body.textContent).not.toMatch(/sin periodo anterior con que comparar/);
+  });
+
+  it("no usa la palabra rollup en la pantalla", async () => {
+    instalarApiFalsa({
+      "GET /api/v1/tablero": { cuerpo: { dias: 7, periodos: [1, 7, 14, 30], comando_recalculo: "python tareas.py indicadores", resumen: { vacio: true, dias: 7 }, graficos: null } },
+      "GET /api/v1/efectividad": { cuerpo: { ...EFECTIVIDAD, transacciones_etiquetadas: 0 } },
+    });
+    montar();
+    await screen.findByRole("heading", { name: "Sin indicadores" });
+    expect(document.body.textContent?.toLowerCase()).not.toContain("rollup");
+  });
 });

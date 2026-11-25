@@ -3,11 +3,25 @@ import { useState, type FormEvent } from "react";
 
 import { pedir } from "../api/cliente";
 import type { EdicionRegla, ListaReglas, Regla } from "../api/tipos";
-import { horaCostaRica } from "../formatos";
-import { Aviso, type Resultado } from "./Aviso";
+import { FechaCR } from "../componentes/FechaCR";
+import { TablaDatos, type Columna } from "../componentes/TablaDatos";
+import { VistaVacia } from "../componentes/VistaVacia";
+import { AvisoRegion, type ResultadoAviso } from "../componentes/AvisoRegion";
+import { FormularioCampo } from "../componentes/FormularioCampo";
 import { leerParametros, mensajeDeError, parametrosATexto, sonIguales } from "./errores";
 
 export const CLAVE_REGLAS = ["reglas"] as const;
+
+type VersionAnterior = Regla["versiones_anteriores"][number];
+
+const COLUMNAS_VERSIONES: Columna<VersionAnterior>[] = [
+  { clave: "version", titulo: "Versión", celda: (v) => v.version },
+  { clave: "umbral", titulo: "Umbral", celda: (v) => v.umbral },
+  { clave: "peso", titulo: "Peso", celda: (v) => v.peso },
+  { clave: "activa", titulo: "Activa", celda: (v) => (v.activa ? "Sí" : "No") },
+  { clave: "parametros", titulo: "Parámetros", celda: (v) => <code>{parametrosATexto(v.parametros)}</code> },
+  { clave: "reemplazada", titulo: "Reemplazada (hora CR)", celda: (v) => <FechaCR valor={v.reemplazada_en} /> },
+];
 
 interface Propiedades {
   regla: Regla;
@@ -21,7 +35,7 @@ interface Propiedades {
  */
 export function ReglaTarjeta({ regla, puedeEditar }: Propiedades) {
   const clienteConsultas = useQueryClient();
-  const [resultado, setResultado] = useState<Resultado>(null);
+  const [resultado, setResultado] = useState<ResultadoAviso>(null);
 
   async function guardar(cambios: EdicionRegla) {
     try {
@@ -63,40 +77,20 @@ export function ReglaTarjeta({ regla, puedeEditar }: Propiedades) {
         Umbral <strong>{regla.umbral}</strong> · peso <strong>{regla.peso}</strong> · parámetros{" "}
         <code>{parametrosATexto(regla.parametros)}</code>
       </p>
-      <Aviso resultado={resultado} />
+      <AvisoRegion resultado={resultado} />
       {puedeEditar ? <FormularioRegla key={regla.version} regla={regla} alGuardar={guardar} alInvalido={(texto) => setResultado({ tipo: "error", error: { texto, detalles: [] } })} /> : null}
       <details>
         <summary>Versiones anteriores ({anteriores.length})</summary>
         {anteriores.length > 0 ? (
-          <table className="tabla-simple">
-            <caption className="visualmente-oculto">Versiones anteriores de {regla.codigo}</caption>
-            <thead>
-              <tr>
-                <th scope="col">Versión</th>
-                <th scope="col">Umbral</th>
-                <th scope="col">Peso</th>
-                <th scope="col">Activa</th>
-                <th scope="col">Parámetros</th>
-                <th scope="col">Reemplazada (hora CR)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {anteriores.map((v) => (
-                <tr key={v.version}>
-                  <td>{v.version}</td>
-                  <td>{v.umbral}</td>
-                  <td>{v.peso}</td>
-                  <td>{v.activa ? "Sí" : "No"}</td>
-                  <td>
-                    <code>{parametrosATexto(v.parametros)}</code>
-                  </td>
-                  <td>{horaCostaRica(v.reemplazada_en)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <TablaDatos
+            leyenda={`Versiones anteriores de ${regla.codigo}`}
+            columnas={COLUMNAS_VERSIONES}
+            filas={anteriores}
+            clave={(v) => String(v.version)}
+            estado="listo"
+          />
         ) : (
-          <p className="subtitulo">Esta regla nunca se ha editado.</p>
+          <VistaVacia titulo="Esta regla nunca se ha editado." />
         )}
       </details>
     </section>
@@ -115,7 +109,6 @@ function FormularioRegla({ regla, alGuardar, alInvalido }: PropiedadesFormulario
   const [activa, setActiva] = useState(regla.activa ? "true" : "false");
   const [parametros, setParametros] = useState(parametrosATexto(regla.parametros));
   const [enviando, setEnviando] = useState(false);
-  const id = regla._id;
 
   async function enviar(evento: FormEvent) {
     evento.preventDefault();
@@ -147,24 +140,22 @@ function FormularioRegla({ regla, alGuardar, alInvalido }: PropiedadesFormulario
 
   return (
     <form className="form-regla" noValidate onSubmit={(e) => void enviar(e)} aria-label={`Editar ${regla.codigo}`}>
-      <div className="campo">
-        <label htmlFor={`umbral-${id}`}>Umbral</label>
-        <input id={`umbral-${id}`} type="number" step="any" min="0" value={umbral} onChange={(e) => setUmbral(e.target.value)} />
-      </div>
-      <div className="campo">
-        <label htmlFor={`peso-${id}`}>Peso (0-100)</label>
-        <input id={`peso-${id}`} type="number" step="1" min="0" max="100" value={peso} onChange={(e) => setPeso(e.target.value)} />
-      </div>
-      <div className="campo">
-        <label htmlFor={`activa-${id}`}>Activa</label>
-        <select id={`activa-${id}`} value={activa} onChange={(e) => setActiva(e.target.value)}>
+      <FormularioCampo etiqueta="Umbral">
+        <input type="number" step="any" min="0" value={umbral} onChange={(e) => setUmbral(e.target.value)} />
+      </FormularioCampo>
+      <FormularioCampo etiqueta="Peso (0-100)">
+        <input type="number" step="1" min="0" max="100" value={peso} onChange={(e) => setPeso(e.target.value)} />
+      </FormularioCampo>
+      <FormularioCampo etiqueta="Activa">
+        <select value={activa} onChange={(e) => setActiva(e.target.value)}>
           <option value="true">Sí</option>
           <option value="false">No</option>
         </select>
-      </div>
-      <div className="campo campo-parametros">
-        <label htmlFor={`parametros-${id}`}>Parámetros (JSON)</label>
-        <input id={`parametros-${id}`} type="text" value={parametros} onChange={(e) => setParametros(e.target.value)} />
+      </FormularioCampo>
+      <div className="campo-parametros">
+        <FormularioCampo etiqueta="Parámetros (JSON)">
+          <input type="text" value={parametros} onChange={(e) => setParametros(e.target.value)} />
+        </FormularioCampo>
       </div>
       <div className="campo campo-acciones">
         <button type="submit" className="boton boton-primario" disabled={enviando}>

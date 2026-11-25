@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
-import { ErrorApi, pedir } from "../api/cliente";
+import { pedir } from "../api/cliente";
 import type { ElementoTransaccion, Pagina } from "../api/tipos";
 import {
   CAMPOS_FILTRO,
@@ -15,7 +15,19 @@ import {
   validarFiltros,
   type Filtros,
 } from "../busqueda";
-import { colones, etiqueta, horaCostaRica } from "../formatos";
+import { Cargando } from "../componentes/Cargando";
+import { EncabezadoPagina } from "../componentes/EncabezadoPagina";
+import { FechaCR } from "../componentes/FechaCR";
+import { FiltroBarra } from "../componentes/FiltroBarra";
+import { FormularioCampo } from "../componentes/FormularioCampo";
+import { Insignia } from "../componentes/Insignia";
+import { MarcoPagina } from "../componentes/MarcoPagina";
+import { MontoColones } from "../componentes/MontoColones";
+import { TablaDatos, type Columna } from "../componentes/TablaDatos";
+import { VistaError } from "../componentes/VistaError";
+import { VistaVacia } from "../componentes/VistaVacia";
+import { etiqueta } from "../formatos";
+import { mensajeDeError } from "../reglas/errores";
 
 /** Resumen del explain que la API manda con `depurar=true`. */
 interface Plan {
@@ -69,8 +81,7 @@ export function Busqueda() {
     enabled: errores.length === 0,
   });
 
-  function enviar(evento: FormEvent) {
-    evento.preventDefault();
+  function buscar() {
     fijarParametros(parametrosDe(borrador, limiteElegido, conPlan, 0));
   }
 
@@ -81,100 +92,63 @@ export function Busqueda() {
     fijarParametros({});
   }
 
-  function enlacePagina(nuevoDesplazamiento: number): string {
-    return `/busqueda?${new URLSearchParams(parametrosDe(filtros, String(limite), depurar, nuevoDesplazamiento)).toString()}`;
-  }
-
   const csv = `${RUTA_CSV}?${new URLSearchParams(parametrosDeApi(filtros)).toString()}`;
   const pagina = resultado.data;
   const primero = desplazamiento + 1;
   const ultimo = desplazamiento + (pagina?.elementos.length ?? 0);
-  const hayAnterior = desplazamiento > 0;
-  const haySiguiente = pagina !== undefined && desplazamiento + pagina.limite < pagina.total;
+  const errorApi = resultado.error
+    ? mensajeDeError(resultado.error, "La búsqueda")
+    : null;
 
   return (
-    <>
-      <div className="titulo-pantalla">
-        <div>
-          <h1>Búsqueda forense</h1>
-          <p className="subtitulo">Filtros combinables sobre el histórico de transacciones. Las fechas son días de Costa Rica.</p>
-        </div>
-      </div>
+    <MarcoPagina id="busqueda" ancho="ancho">
+      <EncabezadoPagina
+        id="busqueda"
+        titulo="Búsqueda forense"
+        descripcion="Filtros combinables sobre el histórico de transacciones. Las fechas son días de Costa Rica."
+      />
 
       <section className="tarjeta" aria-label="Filtros de búsqueda">
         <h2 className="seccion-titulo">Filtros</h2>
         {errores.length > 0 ? (
-          <div className="nota-tecnica" role="alert">
-            <strong>La búsqueda tiene parámetros inválidos:</strong>
-            <ul>
-              {errores.map((e) => (
-                <li key={`${e.campo}-${e.mensaje}`}>
-                  {e.campo}: {e.mensaje}
-                </li>
-              ))}
-            </ul>
-          </div>
+          <VistaError
+            error={{
+              texto: "La búsqueda tiene parámetros inválidos:",
+              detalles: errores.map((e) => `${e.campo}: ${e.mensaje}`),
+            }}
+          />
         ) : null}
-        {resultado.error ? (
-          <div className="nota-tecnica" role="alert">
-            <strong>{resultado.error.message}</strong>
-            {resultado.error instanceof ErrorApi && resultado.error.detalles.length > 0 ? (
-              <ul>
-                {resultado.error.detalles.map((d) => (
-                  <li key={`${d.campo}-${d.mensaje}`}>
-                    {d.campo}: {d.mensaje}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-        ) : null}
-        <form className="barra-filtros" onSubmit={enviar} role="search" aria-label="Búsqueda forense">
-          <div className="campo">
-            <label htmlFor="b-desde">Fecha desde</label>
-            <input type="date" id="b-desde" value={borrador.desde} onChange={(e) => setBorrador({ ...borrador, desde: e.target.value })} />
-          </div>
-          <div className="campo">
-            <label htmlFor="b-hasta">Fecha hasta</label>
-            <input type="date" id="b-hasta" value={borrador.hasta} onChange={(e) => setBorrador({ ...borrador, hasta: e.target.value })} />
-          </div>
-          <div className="campo">
-            <label htmlFor="b-monto-min">Monto mínimo (₡)</label>
+        <FiltroBarra rotulo="Búsqueda forense" alBuscar={buscar} alLimpiar={limpiar}>
+          <FormularioCampo etiqueta="Fecha desde">
+            <input type="date" value={borrador.desde} onChange={(e) => setBorrador({ ...borrador, desde: e.target.value })} />
+          </FormularioCampo>
+          <FormularioCampo etiqueta="Fecha hasta">
+            <input type="date" value={borrador.hasta} onChange={(e) => setBorrador({ ...borrador, hasta: e.target.value })} />
+          </FormularioCampo>
+          <FormularioCampo etiqueta="Monto mínimo (₡)">
+            <input type="number" step="1" min="0" value={borrador.monto_min} onChange={(e) => setBorrador({ ...borrador, monto_min: e.target.value })} />
+          </FormularioCampo>
+          <FormularioCampo etiqueta="Monto máximo (₡)">
             <input
               type="number"
-              id="b-monto-min"
-              step="1"
-              min="0"
-              value={borrador.monto_min}
-              onChange={(e) => setBorrador({ ...borrador, monto_min: e.target.value })}
-            />
-          </div>
-          <div className="campo">
-            <label htmlFor="b-monto-max">Monto máximo (₡)</label>
-            <input
-              type="number"
-              id="b-monto-max"
               step="1"
               min="0"
               placeholder="Sin tope"
               value={borrador.monto_max}
               onChange={(e) => setBorrador({ ...borrador, monto_max: e.target.value })}
             />
-          </div>
-          <div className="campo">
-            <label htmlFor="b-cuenta">Cuenta (origen o destino)</label>
+          </FormularioCampo>
+          <FormularioCampo etiqueta="Cuenta (origen o destino)">
             <input
               type="text"
-              id="b-cuenta"
               placeholder="CTA-001 o 8712-4455"
               maxLength={32}
               value={borrador.cuenta}
               onChange={(e) => setBorrador({ ...borrador, cuenta: e.target.value })}
             />
-          </div>
-          <div className="campo">
-            <label htmlFor="b-canal">Canal</label>
-            <select id="b-canal" value={borrador.canal} onChange={(e) => setBorrador({ ...borrador, canal: e.target.value })}>
+          </FormularioCampo>
+          <FormularioCampo etiqueta="Canal">
+            <select value={borrador.canal} onChange={(e) => setBorrador({ ...borrador, canal: e.target.value })}>
               <option value="">Todos</option>
               {CANALES.map((canal) => (
                 <option key={canal} value={canal}>
@@ -182,14 +156,9 @@ export function Busqueda() {
                 </option>
               ))}
             </select>
-          </div>
-          <div className="campo">
-            <label htmlFor="b-estado-alerta">Estado de la alerta asociada</label>
-            <select
-              id="b-estado-alerta"
-              value={borrador.estado_alerta}
-              onChange={(e) => setBorrador({ ...borrador, estado_alerta: e.target.value })}
-            >
+          </FormularioCampo>
+          <FormularioCampo etiqueta="Estado de la alerta asociada">
+            <select value={borrador.estado_alerta} onChange={(e) => setBorrador({ ...borrador, estado_alerta: e.target.value })}>
               <option value="">Cualquiera</option>
               {ESTADOS_ALERTA.map((estado) => (
                 <option key={estado} value={estado}>
@@ -197,45 +166,31 @@ export function Busqueda() {
                 </option>
               ))}
             </select>
-          </div>
-          <div className="campo">
-            <label htmlFor="b-limite">Resultados por página</label>
-            <select id="b-limite" value={limiteElegido} onChange={(e) => setLimiteElegido(e.target.value)}>
+          </FormularioCampo>
+          <FormularioCampo etiqueta="Resultados por página">
+            <select value={limiteElegido} onChange={(e) => setLimiteElegido(e.target.value)}>
               {OPCIONES_LIMITE.map((opcion) => (
                 <option key={opcion} value={opcion}>
                   {opcion}
                 </option>
               ))}
             </select>
-          </div>
-          <div className="campo">
+          </FormularioCampo>
+          <div className="campo campo-casilla">
             <label htmlFor="b-depurar">
-              <input
-                type="checkbox"
-                id="b-depurar"
-                style={{ width: "auto", marginRight: "6px" }}
-                checked={conPlan}
-                onChange={(e) => setConPlan(e.target.checked)}
-              />
+              <input type="checkbox" id="b-depurar" checked={conPlan} onChange={(e) => setConPlan(e.target.checked)} />
               Mostrar plan de ejecución
             </label>
           </div>
-          <div className="campo campo-acciones">
-            <button type="submit" className="boton boton-primario">
-              Buscar
-            </button>
-            <button type="button" className="boton boton-secundario" onClick={limpiar}>
-              Limpiar
-            </button>
-          </div>
-        </form>
+        </FiltroBarra>
       </section>
 
-      {resultado.isPending && errores.length === 0 ? <p role="status">Buscando…</p> : null}
+      {resultado.isPending && errores.length === 0 ? <Cargando texto="Buscando…" /> : null}
+      {errorApi ? <VistaError error={errorApi} alReintentar={() => void resultado.refetch()} /> : null}
 
       {pagina ? (
         <section className="tarjeta" aria-label="Resultados de búsqueda">
-          <div className="titulo-pantalla" style={{ marginBottom: "var(--espacio-3)" }}>
+          <div className="titulo-pantalla resultados-cabecera">
             <div>
               <strong id="total-resultados">{pagina.total} resultados</strong>
               {pagina.elementos.length > 0 ? (
@@ -276,89 +231,43 @@ export function Busqueda() {
             </p>
           ) : null}
 
-          {pagina.elementos.length > 0 ? (
-            <>
-              <table className="tabla-responsiva">
-                <caption className="visualmente-oculto">Transacciones que cumplen los filtros</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Transacción</th>
-                    <th scope="col">Fecha y hora (CR)</th>
-                    <th scope="col">Cuenta origen</th>
-                    <th scope="col">Cuenta destino</th>
-                    <th scope="col">Monto</th>
-                    <th scope="col">Canal</th>
-                    <th scope="col">Alerta relacionada</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pagina.elementos.map((t) => (
-                    <tr key={t.transaccion_id} data-transaccion={t.transaccion_id} data-monto-crc={t.monto_crc}>
-                      <td data-etiqueta="Transacción" className="id-corto">
-                        {t.transaccion_id}
-                      </td>
-                      <td data-etiqueta="Fecha y hora (CR)" className="hora">
-                        {horaCostaRica(t.fecha)}
-                      </td>
-                      <td data-etiqueta="Cuenta origen" className="id-corto">
-                        {t.cuenta_origen}
-                      </td>
-                      <td data-etiqueta="Cuenta destino" className="id-corto">
-                        {t.cuenta_destino}
-                      </td>
-                      <td data-etiqueta="Monto" className="monto">
-                        {colones(t.monto_crc)}
-                      </td>
-                      <td data-etiqueta="Canal">{etiqueta(t.canal)}</td>
-                      <td data-etiqueta="Alerta relacionada">
-                        {t.alerta_id ? (
-                          <Link to={`/detalle/${t.alerta_id}`}>
-                            <span className={`insignia insignia-estado es-${t.alerta_estado ?? ""}`}>
-                              {t.alerta_id} · {etiqueta(t.alerta_estado)}
-                            </span>
-                          </Link>
-                        ) : (
-                          <span className="insignia insignia-estado">Sin alerta</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <nav className="paginacion" aria-label="Paginación de resultados">
-                <span>
-                  Mostrando {primero} a {ultimo} de {pagina.total}
-                </span>
-                <div className="controles">
-                  {hayAnterior ? (
-                    <Link to={enlacePagina(Math.max(desplazamiento - limite, 0))} aria-label="Página anterior">
-                      Anterior
-                    </Link>
-                  ) : (
-                    <a href="#anterior" aria-disabled="true" onClick={(e) => e.preventDefault()}>
-                      Anterior
-                    </a>
-                  )}
-                  {haySiguiente ? (
-                    <Link to={enlacePagina(desplazamiento + limite)} aria-label="Página siguiente">
-                      Siguiente
-                    </Link>
-                  ) : (
-                    <a href="#siguiente" aria-disabled="true" onClick={(e) => e.preventDefault()}>
-                      Siguiente
-                    </a>
-                  )}
-                </div>
-              </nav>
-            </>
-          ) : (
-            <p className="cola-vacia">No hay transacciones que cumplan los filtros.</p>
-          )}
+          <TablaDatos
+            leyenda="Transacciones que cumplen los filtros"
+            columnas={COLUMNAS}
+            filas={pagina.elementos}
+            clave={(t) => t.transaccion_id}
+            estado="listo"
+            atributosFila={(t) => ({ "data-transaccion": t.transaccion_id, "data-monto-crc": t.monto_crc })}
+            paginacion={{ desplazamiento, limite: pagina.limite, total: pagina.total }}
+            alCambiarPagina={(nuevo) => fijarParametros(parametrosDe(filtros, String(limite), depurar, nuevo))}
+            vacia={<VistaVacia titulo="No hay transacciones que cumplan los filtros." texto="Pruebe con menos filtros o con otro rango de fechas." />}
+          />
         </section>
       ) : null}
-    </>
+    </MarcoPagina>
   );
 }
+
+const COLUMNAS: Columna<ElementoTransaccion>[] = [
+  { clave: "transaccion", titulo: "Transacción", celda: (t) => t.transaccion_id, clase: "id-corto" },
+  { clave: "fecha", titulo: "Fecha y hora (CR)", celda: (t) => <FechaCR valor={t.fecha} /> },
+  { clave: "origen", titulo: "Cuenta origen", celda: (t) => t.cuenta_origen, clase: "id-corto" },
+  { clave: "destino", titulo: "Cuenta destino", celda: (t) => t.cuenta_destino, clase: "id-corto" },
+  { clave: "monto", titulo: "Monto", celda: (t) => <MontoColones valor={t.monto_crc} /> },
+  { clave: "canal", titulo: "Canal", celda: (t) => etiqueta(t.canal) },
+  {
+    clave: "alerta",
+    titulo: "Alerta relacionada",
+    celda: (t) =>
+      t.alerta_id ? (
+        <Link to={`/detalle/${t.alerta_id}`}>
+          <Insignia tipo="estado" valor={t.alerta_estado ?? ""} texto={`${t.alerta_id} · ${etiqueta(t.alerta_estado)}`} />
+        </Link>
+      ) : (
+        <span className="insignia insignia-estado">Sin alerta</span>
+      ),
+  },
+];
 
 /** Los filtros con valor, mas el limite, el plan y el desplazamiento: la URL de la busqueda. */
 function parametrosDe(filtros: Filtros, limite: string, depurar: boolean, desplazamiento: number): Record<string, string> {

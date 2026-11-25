@@ -126,14 +126,20 @@ describe("Busqueda forense", () => {
     expect(screen.getByText("cuenta: cuenta desconocida")).toBeInTheDocument();
   });
 
-  it("pagina con enlaces que conservan los filtros y respetan el limite", async () => {
-    instalarApiFalsa({ "GET /api/v1/transacciones": pagina([transaccion(1), transaccion(2)], 30, { limite: 10 }) });
+  it("pagina con botones que conservan los filtros y respetan el limite", async () => {
+    const usuario = userEvent.setup();
+    const api = instalarApiFalsa({ "GET /api/v1/transacciones": pagina([transaccion(1), transaccion(2)], 30, { limite: 10 }) });
     montar("/busqueda?cuenta=CTA-001&limite=10");
 
-    const siguiente = await screen.findByRole("link", { name: "Página siguiente" });
-    expect(siguiente.getAttribute("href")).toBe("/busqueda?cuenta=CTA-001&limite=10&desplazamiento=10");
-    expect(screen.queryByRole("link", { name: "Página anterior" })).not.toBeInTheDocument();
-    expect(screen.getByText("Mostrando 1 a 2 de 30")).toBeInTheDocument();
+    const siguiente = await screen.findByRole("button", { name: "Siguiente" });
+    expect(screen.getByRole("button", { name: "Anterior" })).toBeDisabled();
+    expect(screen.getByText("1 a 10 de 30")).toBeInTheDocument();
+
+    await usuario.click(siguiente);
+
+    await waitFor(() => expect(api.pedidos.length).toBe(2));
+    const parametros = new URLSearchParams(api.pedidos[1]?.ruta.split("?")[1]);
+    expect(Object.fromEntries(parametros)).toMatchObject({ cuenta: "CTA-001", limite: "10", desplazamiento: "10" });
   });
 
   it("sin coincidencias no ofrece exportar", async () => {

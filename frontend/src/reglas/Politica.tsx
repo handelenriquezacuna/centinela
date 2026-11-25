@@ -3,11 +3,29 @@ import { useState, type FormEvent } from "react";
 
 import { pedir } from "../api/cliente";
 import type { CorteSeveridad, EdicionPolitica, PoliticaVigente } from "../api/tipos";
-import { etiqueta, horaCostaRica } from "../formatos";
-import { Aviso, type Resultado } from "./Aviso";
+import { FechaCR } from "../componentes/FechaCR";
+import { TablaDatos, type Columna } from "../componentes/TablaDatos";
+import { VistaVacia } from "../componentes/VistaVacia";
+import { etiqueta } from "../formatos";
+import { AvisoRegion, type ResultadoAviso } from "../componentes/AvisoRegion";
+import { FormularioCampo } from "../componentes/FormularioCampo";
 import { mensajeDeError } from "./errores";
 
 export const CLAVE_POLITICA = ["politica"] as const;
+
+const COLUMNAS_CORTES: Columna<CorteSeveridad>[] = [
+  { clave: "severidad", titulo: "Severidad", celda: (c) => etiqueta(c.severidad) },
+  { clave: "desde", titulo: "Desde", celda: (c) => c.puntaje_minimo },
+  { clave: "hasta", titulo: "Hasta", celda: (c) => c.puntaje_maximo },
+];
+
+const COLUMNAS_VERSIONES: Columna<PoliticaVigente["versiones_anteriores"][number]>[] = [
+  { clave: "version", titulo: "Versión", celda: (v) => v.version },
+  { clave: "umbral", titulo: "Umbral", celda: (v) => v.umbral_alerta },
+  { clave: "maximo", titulo: "Máximo", celda: (v) => v.puntaje_maximo },
+  { clave: "cortes", titulo: "Cortes", celda: (v) => v.cortes_severidad.map((c) => `${etiqueta(c.severidad)} ${c.puntaje_minimo}-${c.puntaje_maximo}`).join("; ") },
+  { clave: "reemplazada", titulo: "Reemplazada (hora CR)", celda: (v) => <FechaCR valor={v.reemplazada_en} /> },
+];
 
 interface Propiedades {
   politica: PoliticaVigente;
@@ -16,12 +34,12 @@ interface Propiedades {
 
 /**
  * Politica de deteccion: umbral de alerta, puntaje maximo y cortes de severidad.
- * Misma concurrencia optimista que una regla (`version_esperada`, 409). Rige en la
- * siguiente evaluacion de D1.
+ * Misma concurrencia optimista que una regla (`version_esperada`). Rige en la
+ * siguiente evaluacion del detector.
  */
 export function Politica({ politica, puedeEditar }: Propiedades) {
   const clienteConsultas = useQueryClient();
-  const [resultado, setResultado] = useState<Resultado>(null);
+  const [resultado, setResultado] = useState<ResultadoAviso>(null);
 
   async function guardar(cambios: EdicionPolitica) {
     try {
@@ -47,7 +65,7 @@ export function Politica({ politica, puedeEditar }: Propiedades) {
         Umbral de alerta <strong id="politica-umbral">{politica.umbral_alerta}</strong> · puntaje máximo{" "}
         <strong>{politica.puntaje_maximo}</strong> · <span id="politica-version">versión {politica.version}</span>
       </p>
-      <Aviso resultado={resultado} />
+      <AvisoRegion resultado={resultado} />
       {puedeEditar ? (
         <FormularioPolitica
           key={politica.version}
@@ -56,54 +74,14 @@ export function Politica({ politica, puedeEditar }: Propiedades) {
           alInvalido={(texto) => setResultado({ tipo: "error", error: { texto, detalles: [] } })}
         />
       ) : (
-        <table className="tabla-simple">
-          <caption className="visualmente-oculto">Cortes de severidad</caption>
-          <thead>
-            <tr>
-              <th scope="col">Severidad</th>
-              <th scope="col">Desde</th>
-              <th scope="col">Hasta</th>
-            </tr>
-          </thead>
-          <tbody>
-            {politica.cortes_severidad.map((c) => (
-              <tr key={c.severidad}>
-                <td>{etiqueta(c.severidad)}</td>
-                <td>{c.puntaje_minimo}</td>
-                <td>{c.puntaje_maximo}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <TablaDatos leyenda="Cortes de severidad" columnas={COLUMNAS_CORTES} filas={politica.cortes_severidad} clave={(c) => c.severidad} estado="listo" />
       )}
       <details>
         <summary>Versiones anteriores de la política ({anteriores.length})</summary>
         {anteriores.length > 0 ? (
-          <table className="tabla-simple">
-            <caption className="visualmente-oculto">Versiones anteriores de la política</caption>
-            <thead>
-              <tr>
-                <th scope="col">Versión</th>
-                <th scope="col">Umbral</th>
-                <th scope="col">Máximo</th>
-                <th scope="col">Cortes</th>
-                <th scope="col">Reemplazada (hora CR)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {anteriores.map((v) => (
-                <tr key={v.version}>
-                  <td>{v.version}</td>
-                  <td>{v.umbral_alerta}</td>
-                  <td>{v.puntaje_maximo}</td>
-                  <td>{v.cortes_severidad.map((c) => `${etiqueta(c.severidad)} ${c.puntaje_minimo}-${c.puntaje_maximo}`).join("; ")}</td>
-                  <td>{horaCostaRica(v.reemplazada_en)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <TablaDatos leyenda="Versiones anteriores de la política" columnas={COLUMNAS_VERSIONES} filas={anteriores} clave={(v) => String(v.version)} estado="listo" />
         ) : (
-          <p className="subtitulo">La política nunca se ha editado.</p>
+          <VistaVacia titulo="La política nunca se ha editado." />
         )}
       </details>
     </section>
@@ -158,24 +136,24 @@ function FormularioPolitica({ politica, alGuardar, alInvalido }: PropiedadesForm
   }
 
   return (
-    <form className="form-regla" noValidate onSubmit={(e) => void enviar(e)} aria-label="Editar la política">
-      <div className="campo">
-        <label htmlFor="politica-umbral-alerta">Umbral de alerta</label>
-        <input id="politica-umbral-alerta" type="number" step="1" min="0" value={umbral} onChange={(e) => setUmbral(e.target.value)} />
-      </div>
-      <div className="campo">
-        <label htmlFor="politica-puntaje-maximo">Puntaje máximo</label>
-        <input id="politica-puntaje-maximo" type="number" step="1" min="1" value={maximo} onChange={(e) => setMaximo(e.target.value)} />
-      </div>
-      <fieldset className="campo">
+    <form className="form-regla form-politica" noValidate onSubmit={(e) => void enviar(e)} aria-label="Editar la política">
+      <FormularioCampo etiqueta="Umbral de alerta" ayuda="Desde este puntaje se crea una alerta.">
+        <input type="number" step="1" min="0" value={umbral} onChange={(e) => setUmbral(e.target.value)} />
+      </FormularioCampo>
+      <FormularioCampo etiqueta="Puntaje máximo" ayuda="Tope del puntaje de una alerta.">
+        <input type="number" step="1" min="1" value={maximo} onChange={(e) => setMaximo(e.target.value)} />
+      </FormularioCampo>
+      <fieldset className="cortes-severidad">
         <legend>Cortes de severidad (límites inclusivos)</legend>
         {cortes.map((corte, indice) => (
-          <div key={corte.severidad} className="campo">
-            <span>{etiqueta(corte.severidad)}</span>
-            <label htmlFor={`corte-${corte.severidad}-desde`}>Desde ({etiqueta(corte.severidad)})</label>
-            <input id={`corte-${corte.severidad}-desde`} type="number" step="1" min="0" value={corte.minimo} onChange={(e) => cambiarCorte(indice, "minimo", e.target.value)} />
-            <label htmlFor={`corte-${corte.severidad}-hasta`}>Hasta ({etiqueta(corte.severidad)})</label>
-            <input id={`corte-${corte.severidad}-hasta`} type="number" step="1" min="0" value={corte.maximo} onChange={(e) => cambiarCorte(indice, "maximo", e.target.value)} />
+          <div key={corte.severidad} className="corte-fila">
+            <strong className="corte-nombre">{etiqueta(corte.severidad)}</strong>
+            <FormularioCampo etiqueta={`Desde (${etiqueta(corte.severidad)})`}>
+              <input type="number" step="1" min="0" value={corte.minimo} onChange={(e) => cambiarCorte(indice, "minimo", e.target.value)} />
+            </FormularioCampo>
+            <FormularioCampo etiqueta={`Hasta (${etiqueta(corte.severidad)})`}>
+              <input type="number" step="1" min="0" value={corte.maximo} onChange={(e) => cambiarCorte(indice, "maximo", e.target.value)} />
+            </FormularioCampo>
           </div>
         ))}
       </fieldset>

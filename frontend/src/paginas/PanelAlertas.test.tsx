@@ -54,7 +54,7 @@ function montar(ruta = "/panel?vista=alertas") {
 }
 
 function ids(): string[] {
-  return [...document.querySelectorAll("#cola [role=row]")].map((fila) => fila.id.replace("alerta-", ""));
+  return [...document.querySelectorAll("#cola tr")].map((fila) => fila.id.replace("alerta-", ""));
 }
 
 beforeEach(() => {
@@ -70,7 +70,7 @@ describe("Panel por alerta", () => {
 
     const tabla = await screen.findByRole("table", { name: "Cola de alertas" });
     expect(ids()).toEqual(["ALR-001", "ALR-002"]);
-    const primera = within(tabla).getByRole("link", { name: "ALR-001" }).closest("[role=row]") as HTMLElement;
+    const primera = within(tabla).getByRole("link", { name: "ALR-001" }).closest("tr") as HTMLElement;
     expect(primera).toHaveAttribute("data-monto-crc", "750000");
     expect(within(primera).getByText("₡750.000")).toBeInTheDocument();
     expect(within(primera).getByText("14/10/2026 22:47")).toBeInTheDocument();
@@ -140,6 +140,27 @@ describe("Panel por alerta", () => {
     montar();
     expect(await screen.findByText("No hay alertas en la cola.")).toBeInTheDocument();
     expect((await screen.findByText(/Detección atrasada/)).closest("[role=status]")).toHaveTextContent("unos 2 min");
+  });
+});
+
+describe("Panel por alerta: estados", () => {
+  it("si la cola falla dice por que y deja reintentar", async () => {
+    instalarApiFalsa({
+      "GET /api/v1/alertas": { estado: 500, cuerpo: { error: { codigo: "interno", mensaje: "La base no respondio", detalles: [] } } },
+      "GET /api/v1/deteccion/rezago": { cuerpo: SIN_REZAGO },
+    });
+    montar();
+    expect(await screen.findByRole("alert")).toHaveTextContent("La base no respondio");
+    expect(screen.getByRole("button", { name: "Reintentar" })).toBeInTheDocument();
+  });
+
+  it("la tabla se nombra, sus filas llevan insignias de severidad y estado y los atajos las encuentran", async () => {
+    instalarApiFalsa({ "GET /api/v1/alertas": pagina(...COLA), "GET /api/v1/deteccion/rezago": { cuerpo: SIN_REZAGO } });
+    montar();
+    const tabla = await screen.findByRole("table", { name: "Cola de alertas" });
+    expect(within(tabla).getAllByRole("columnheader").map((c) => c.textContent)).toContain("Severidad");
+    expect(document.querySelectorAll("#cola tr[data-fila-atajo]")).toHaveLength(2);
+    expect(document.querySelector("#alerta-ALR-001 .insignia.es-critica")).toHaveTextContent("Crítica");
   });
 });
 

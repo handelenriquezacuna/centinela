@@ -3,7 +3,14 @@ import { Link, useSearchParams } from "react-router";
 
 import { pedir } from "../api/cliente";
 import type { RespuestaTablero, ResumenTablero } from "../api/tipos";
-import { etiqueta, horaCostaRica } from "../formatos";
+import { Cargando } from "../componentes/Cargando";
+import { EncabezadoPagina } from "../componentes/EncabezadoPagina";
+import { FechaCR } from "../componentes/FechaCR";
+import { MarcoPagina } from "../componentes/MarcoPagina";
+import { TarjetaMetrica } from "../componentes/TarjetaMetrica";
+import { VistaError } from "../componentes/VistaError";
+import { VistaVacia } from "../componentes/VistaVacia";
+import { etiqueta } from "../formatos";
 import { Efectividad } from "../tablero/Efectividad";
 import { BarrasHorizontales, ColumnasPorHora } from "../tablero/Graficos";
 import { Kpis } from "../tablero/Kpis";
@@ -33,20 +40,22 @@ export function Tablero() {
     <>
       {/* Los estilos de los graficos son los mismos de la interfaz HTMX. */}
       <link rel="stylesheet" href="/estaticos/tablero.css" precedence="default" />
-      <div className="titulo-pantalla">
-        <div>
-          <h1>Tablero de indicadores</h1>
-          <p className="subtitulo">Alertas por estado, severidad, agente y hora, contra el periodo anterior.</p>
-        </div>
-      </div>
-      {consulta.isPending ? <p role="status">Cargando el tablero…</p> : null}
-      {consulta.isError ? (
-        <div className="mensaje mensaje-error" role="alert">
-          No se pudo leer el tablero: {consulta.error.message}
-        </div>
-      ) : null}
-      {consulta.data ? <Contenido datos={consulta.data} dias={dias} /> : null}
-      <Efectividad />
+      <MarcoPagina id="tablero" ancho="ancho">
+        <EncabezadoPagina
+          id="tablero"
+          titulo="Tablero de indicadores"
+          descripcion="Alertas por estado, severidad, agente y hora, contra el periodo anterior."
+        />
+        {consulta.isPending ? <Cargando texto="Cargando el tablero…" /> : null}
+        {consulta.isError ? (
+          <VistaError
+            error={{ texto: `No se pudo leer el tablero: ${consulta.error.message}`, detalles: [] }}
+            alReintentar={() => void consulta.refetch()}
+          />
+        ) : null}
+        {consulta.data ? <Contenido datos={consulta.data} dias={dias} /> : null}
+        <Efectividad />
+      </MarcoPagina>
     </>
   );
 }
@@ -59,12 +68,14 @@ export function Contenido({ datos, dias }: { datos: RespuestaTablero; dias: numb
         <h2 id="titulo-vacio" className="seccion-titulo">
           Sin indicadores
         </h2>
-        <p>
-          La colección <code>indicadores_diarios</code> está vacía: el tablero lee el rollup y no lo calcula al vuelo.
-        </p>
-        <p>
-          Para materializarlo: <code>{datos.comando_recalculo}</code>
-        </p>
+        <VistaVacia
+          titulo="Todavía no hay indicadores calculados."
+          texto={
+            <>
+              El tablero lee cifras ya calculadas y no las arma al vuelo. Para calcularlas: <code>{datos.comando_recalculo}</code>
+            </>
+          }
+        />
       </section>
     );
   }
@@ -80,14 +91,19 @@ export function Contenido({ datos, dias }: { datos: RespuestaTablero; dias: numb
       <p className="nota-tecnica" id="marca-calculo">
         {resumen.calculado_en !== null ? (
           <>
-            Último cálculo: <strong>{horaCostaRica(resumen.calculado_en)}</strong> (hora CR).
+            Último cálculo: <strong><FechaCR valor={resumen.calculado_en} /></strong> (hora CR).
           </>
         ) : (
-          "El rollup no registra la marca de tiempo del cálculo."
+          "No hay registro de cuándo se calcularon las cifras."
         )}{" "}
         Periodo: {resumen.periodo_actual.desde} a {resumen.periodo_actual.hasta} ({resumen.actual.dias_con_datos} con datos); anterior:{" "}
         {resumen.periodo_previo.desde} a {resumen.periodo_previo.hasta} ({resumen.previo.dias_con_datos} con datos).
       </p>
+      {!resumen.hay_periodo_previo ? (
+        <p className="nota-tecnica" id="sin-periodo-previo">
+          Todavía no hay un periodo anterior con el que comparar; las variaciones aparecerán cuando lo haya.
+        </p>
+      ) : null}
       <Kpis resumen={resumen} comando={datos.comando_recalculo} />
       <TotalAlertas resumen={resumen} />
       {datos.graficos ? (
@@ -111,7 +127,7 @@ export function Contenido({ datos, dias }: { datos: RespuestaTablero; dias: numb
             {datos.graficos.agente ? (
               <BarrasHorizontales grafico={datos.graficos.agente} titulo="Alertas por agente" />
             ) : (
-              <p className="nota-tecnica">El rollup todavía no trae el desglose por agente.</p>
+              <p className="nota-tecnica">Todavía no hay desglose por agente en las cifras calculadas.</p>
             )}
           </section>
           <section className="tarjeta" id="seccion-hora" aria-labelledby="g-hora">
@@ -121,7 +137,7 @@ export function Contenido({ datos, dias }: { datos: RespuestaTablero; dias: numb
             {datos.graficos.hora ? (
               <ColumnasPorHora grafico={datos.graficos.hora} titulo="Alertas por hora" />
             ) : (
-              <p className="nota-tecnica">El rollup todavía no trae el desglose por hora.</p>
+              <p className="nota-tecnica">Todavía no hay desglose por hora en las cifras calculadas.</p>
             )}
           </section>
         </div>
@@ -138,16 +154,19 @@ function TotalAlertas({ resumen }: { resumen: ResumenTablero }) {
       <h2 id="titulo-total" className="seccion-titulo">
         Total de alertas
       </h2>
-      <div className="cifras">
-        <span className="cifra-grande" id="total-actual">
-          {total.actual}
-        </span>
-        <span>
-          periodo anterior: <strong id="total-previo">{total.previo}</strong>
-        </span>
-        <span id="total-variacion">
-          <Variacion valor={total} hayPrevio={resumen.hay_periodo_previo} />
-        </span>
+      <div className="metricas">
+        <TarjetaMetrica
+          rotulo="Alertas en el periodo"
+          valor={<span id="total-actual">{total.actual}</span>}
+          nota={
+            <>
+              periodo anterior: <strong id="total-previo">{total.previo}</strong>{" "}
+              <span id="total-variacion">
+                <Variacion valor={total} hayPrevio={resumen.hay_periodo_previo} />
+              </span>
+            </>
+          }
+        />
       </div>
     </section>
   );

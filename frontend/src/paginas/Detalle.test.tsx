@@ -49,8 +49,8 @@ describe("Detalle de alerta", () => {
     montar();
 
     await screen.findByRole("heading", { name: "Alerta ALR-001" });
-    expect(screen.getByText("₡280.000", { selector: "dd.monto" })).toBeInTheDocument();
-    expect(screen.getByText("24/09/2026 22:00", { selector: "dd.hora" })).toBeInTheDocument();
+    expect(screen.getByText("₡280.000", { selector: "span.monto" })).toBeInTheDocument();
+    expect(screen.getByText("24/09/2026 22:00", { selector: "time.hora" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "ver red de mulas" })).toHaveAttribute(
       "href",
       "/red-mulas/6033-9001?desde=2026-09-25T04%3A00%3A00Z",
@@ -110,7 +110,7 @@ describe("Detalle de alerta", () => {
       estado_esperado: "en_revision",
     });
     expect(screen.queryByRole("button", { name: "Confirmar fraude" })).toBeNull();
-    expect(screen.getByText(/es un estado terminal y no admite más acciones/)).toBeInTheDocument();
+    expect(screen.getByText(/no admite más acciones/)).toBeInTheDocument();
   });
 
   it("cancelar el dialogo deja la alerta como estaba", async () => {
@@ -165,5 +165,29 @@ describe("Detalle de alerta", () => {
     montar();
 
     expect(await screen.findByRole("alert")).toHaveTextContent("No existe la alerta ALR-001.");
+  });
+
+  it("la barra de decision queda arriba y ofrece la siguiente alerta abierta de la cola, en el orden del servidor", async () => {
+    const cola = (id: string, estado: string) => ({ _id: id, estado, puntaje: 50, severidad: "ALTA" });
+    instalarApiFalsa({
+      ...BASE,
+      "GET /api/v1/alertas/ALR-001/detalle": { cuerpo: detalleDeAlerta() },
+      "GET /api/v1/alertas": { cuerpo: { total: 4, limite: 50, desplazamiento: 0, elementos: [cola("ALR-009", "nueva"), cola("ALR-001", "nueva"), cola("ALR-005", "confirmada"), cola("ALR-003", "en_revision")] } },
+    });
+    montar();
+
+    const barra = await screen.findByRole("region", { name: "Decisión sobre la alerta" });
+    // Primero en el documento: antes de la transaccion, el perfil y las reglas.
+    expect(barra.compareDocumentPosition(screen.getByRole("region", { name: "Datos de la transacción" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const siguiente = await within(barra).findByRole("link", { name: "Siguiente alerta" });
+    expect(siguiente).toHaveAttribute("href", "/detalle/ALR-003");
+  });
+
+  it("un error que no es 404 se dice con palabras y deja reintentar", async () => {
+    instalarApiFalsa({ ...BASE, "GET /api/v1/alertas/ALR-001/detalle": errorApi(500, "interno", "La base no respondio") });
+    montar();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo cargar la alerta: La base no respondio");
+    expect(screen.getByRole("button", { name: "Reintentar" })).toBeInTheDocument();
   });
 });

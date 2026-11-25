@@ -91,3 +91,56 @@ def prueba_si_otro_agente_la_tomo_se_avisa_del_conflicto(page: Page, servidor_e2
     expect(page.locator("#agente-asignado")).to_contain_text(SUPERVISOR)
     estado, agente, _ = con_base(_estado_y_historial)
     assert (estado, agente) == ("en_revision", SUPERVISOR)
+
+
+@pytest.mark.parametrize(("ancho", "alto"), [(1366, 900), (390, 844)])
+def prueba_la_barra_de_decision_se_ve_sin_desplazarse_y_acompana_al_bajar(
+    page: Page, servidor_e2e: str, ancho: int, alto: int
+) -> None:
+    page.set_viewport_size({"width": ancho, "height": alto})
+    entrar_en_spa(page, servidor_e2e, AGENTE, f"/detalle/{ALERTA}")
+    barra = page.get_by_role("region", name="Decisión sobre la alerta")
+    expect(barra).to_be_visible()
+
+    # Sin desplazarse: el estado, la severidad y cada accion caben en la ventana.
+    assert page.evaluate("window.scrollY") == 0
+    elementos = [
+        page.locator("#insignia-estado"),
+        barra.get_by_text(re.compile("^Severidad")),
+        barra.get_by_role("button", name="Tomar"),
+        barra.get_by_label("Nota (se agrega al historial)"),
+        barra.get_by_role("link", name="Siguiente alerta"),
+    ]
+    for elemento in elementos:
+        caja = elemento.bounding_box()
+        assert caja is not None
+        assert 0 <= caja["y"] and caja["y"] + caja["height"] <= alto, f"{caja} fuera de {ancho}x{alto}"
+
+    # Al bajar a la politica y el historial la barra sigue arriba, a la mano.
+    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+    caja = barra.bounding_box()
+    assert caja is not None and 0 <= caja["y"] < 5
+    expect(barra.get_by_role("button", name="Tomar")).to_be_in_viewport()
+
+
+def prueba_resolver_la_alerta_sin_desplazarse_y_pasar_a_la_siguiente(page: Page, servidor_e2e: str) -> None:
+    entrar_en_spa(page, servidor_e2e, AGENTE, f"/detalle/{ALERTA}")
+    barra = page.get_by_role("region", name="Decisión sobre la alerta")
+
+    # Desde la pantalla: Tomar, Descartar y confirmar en el dialogo (3 clics), sin scroll.
+    barra.get_by_role("button", name="Tomar").click()
+    expect(page.locator("#insignia-estado")).to_have_class("insignia insignia-estado es-en_revision")
+    barra.get_by_role("button", name="Descartar").click()
+    page.get_by_role("dialog").get_by_role("button", name="Descartar").click()
+    expect(page.locator("#insignia-estado")).to_have_class("insignia insignia-estado es-descartada")
+    assert page.evaluate("window.scrollY") == 0
+    assert con_base(_estado_y_historial)[0] == "descartada"
+
+    siguiente = barra.get_by_role("link", name="Siguiente alerta")
+    expect(siguiente).to_be_visible()
+    siguiente.click()
+    expect(page).to_have_url(re.compile(r"/detalle/ALR-\d+$"))
+    assert not page.url.endswith(ALERTA)
+    expect(page.get_by_role("heading", level=1)).not_to_contain_text(ALERTA)
+    # La alerta a la que llega esta abierta: ofrece acciones.
+    expect(page.get_by_role("region", name="Decisión sobre la alerta").locator("button[data-destino]").first).to_be_visible()
