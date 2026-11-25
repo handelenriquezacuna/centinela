@@ -58,6 +58,7 @@ const BASES_PRUEBAS = [
   "antifraude_pruebas_indicadores",
   "antifraude_pruebas_migracion",
   "antifraude_pruebas_migracion_002",
+  "antifraude_pruebas_procedimientos",
   "antifraude_pruebas_red_mulas",
   "antifraude_pruebas_rasgos",
   "antifraude_pruebas_listas_riesgo",
