@@ -1,6 +1,6 @@
 """La SPA (T-66, fase 2C): tablero del supervisor y reglas con su politica.
 
-Contra `servidor_spa` (`portal.interfaz: spa`), igual que `prueba_spa_panel.py`: navegador
+Contra `servidor_e2e` (la SPA, interfaz por omision desde T-67), igual que `prueba_spa_panel.py`: navegador
 -> index.html de la SPA -> API JSON -> Mongo. Los selectores son por rol y etiqueta
 accesible. Lo que estas pruebas editan (reglas, politica, rollup) vive en la base e2e y se
 devuelve a como estaba al terminar: nunca se toca la base viva.
@@ -88,23 +88,23 @@ async def _borrar_rollup(base: Any, fecha: str) -> None:
     await base["indicadores_diarios"].delete_one({"_id": fecha})
 
 
-def prueba_el_agente_no_entra_al_tablero_ni_a_reglas_en_la_spa(page: Page, servidor_spa: str) -> None:
-    _entrar(page, servidor_spa, AGENTE)
+def prueba_el_agente_no_entra_al_tablero_ni_a_reglas_en_la_spa(page: Page, servidor_e2e: str) -> None:
+    _entrar(page, servidor_e2e, AGENTE)
 
     expect(page.get_by_role("navigation", name="Navegación principal").get_by_role("link", name="Tablero")).to_have_count(0)
     for ruta in ("/tablero", "/reglas"):
-        respuesta = page.goto(f"{servidor_spa}{ruta}")
+        respuesta = page.goto(f"{servidor_e2e}{ruta}")
         assert respuesta is not None and respuesta.status == 403
         expect(page.get_by_role("heading", name="Acceso denegado")).to_be_visible()
     expect(page.get_by_role("heading", name="Tablero de indicadores")).to_have_count(0)
 
 
 def prueba_el_supervisor_ve_el_tablero_con_kpis_graficos_y_marca_de_calculo(
-    page: Page, servidor_spa: str
+    page: Page, servidor_e2e: str
 ) -> None:
     fecha = con_base(_sembrar_rollup)
     try:
-        _entrar(page, servidor_spa, SUPERVISOR)
+        _entrar(page, servidor_e2e, SUPERVISOR)
         page.get_by_role("navigation", name="Navegación principal").get_by_role("link", name="Tablero").click()
 
         expect(page).to_have_url(re.compile(r"/tablero$"))
@@ -135,10 +135,10 @@ def prueba_el_supervisor_ve_el_tablero_con_kpis_graficos_y_marca_de_calculo(
 
 
 def prueba_editar_el_umbral_de_una_regla_sube_la_version_y_conserva_la_anterior(
-    page: Page, servidor_spa: str, catalogo_intacto: None
+    page: Page, servidor_e2e: str, catalogo_intacto: None
 ) -> None:
-    _entrar(page, servidor_spa, SUPERVISOR)
-    page.goto(f"{servidor_spa}/reglas")
+    _entrar(page, servidor_e2e, SUPERVISOR)
+    page.goto(f"{servidor_e2e}/reglas")
 
     tarjeta = page.locator("#regla-REG-001")
     expect(tarjeta).to_contain_text("versión 1")
@@ -156,16 +156,16 @@ def prueba_editar_el_umbral_de_una_regla_sube_la_version_y_conserva_la_anterior(
 
 
 def prueba_dos_supervisores_con_la_misma_pantalla_el_segundo_recibe_409_claro(
-    page: Page, servidor_spa: str, catalogo_intacto: None
+    page: Page, servidor_e2e: str, catalogo_intacto: None
 ) -> None:
-    _entrar(page, servidor_spa, SUPERVISOR)
-    page.goto(f"{servidor_spa}/reglas")
+    _entrar(page, servidor_e2e, SUPERVISOR)
+    page.goto(f"{servidor_e2e}/reglas")
     tarjeta = page.locator("#regla-REG-001")
     expect(tarjeta).to_contain_text("versión 1")
 
     # Otra persona edita en el medio: la pantalla de esta todavia dice version 1.
     respuesta = page.request.patch(
-        f"{servidor_spa}/api/v1/reglas/REG-001", data={"peso": 33, "version_esperada": 1}
+        f"{servidor_e2e}/api/v1/reglas/REG-001", data={"peso": 33, "version_esperada": 1}
     )
     assert respuesta.status == 200
 
@@ -180,10 +180,10 @@ def prueba_dos_supervisores_con_la_misma_pantalla_el_segundo_recibe_409_claro(
 
 
 def prueba_simular_txn_001_da_75_critica_sin_escribir(
-    page: Page, servidor_spa: str, catalogo_intacto: None
+    page: Page, servidor_e2e: str, catalogo_intacto: None
 ) -> None:
-    _entrar(page, servidor_spa, SUPERVISOR)
-    page.goto(f"{servidor_spa}/reglas")
+    _entrar(page, servidor_e2e, SUPERVISOR)
+    page.goto(f"{servidor_e2e}/reglas")
 
     simulador = page.get_by_role("form", name="Simular una transacción")
     simulador.get_by_role("button", name="Cargar el ejemplo TXN-001").click()
@@ -204,10 +204,10 @@ def prueba_simular_txn_001_da_75_critica_sin_escribir(
 
 
 def prueba_editar_la_politica_la_versiona(
-    page: Page, servidor_spa: str, catalogo_intacto: None
+    page: Page, servidor_e2e: str, catalogo_intacto: None
 ) -> None:
-    _entrar(page, servidor_spa, SUPERVISOR)
-    page.goto(f"{servidor_spa}/reglas")
+    _entrar(page, servidor_e2e, SUPERVISOR)
+    page.goto(f"{servidor_e2e}/reglas")
 
     expect(page.locator("#politica-version")).to_have_text("versión 1")
     formulario = page.get_by_role("form", name="Editar la política")

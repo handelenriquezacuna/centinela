@@ -205,21 +205,19 @@ class AjustesSesion(BaseModel):
 
 
 class AjustesPortal(BaseModel):
-    """Que interfaz sirven las rutas de pagina (T-61, D-60 a D-63). Tecnico.
+    """Que interfaz sirven las rutas de pagina (T-61, T-67, D-60 a D-63). Tecnico.
 
-    - `htmx`: las paginas Jinja + HTMX de siempre.
-    - `spa`: `/`, `/panel`, `/detalle/...` y las demas devuelven el `index.html` de la SPA
-      React construida en `app/estaticos/spa/` (`python tareas.py front`). Las rutas HTMX
-      que no son de pagina (fragmentos, formularios) siguen registradas mientras dure la
-      migracion; la fase 2 las retira.
-
-    Es una bandera de migracion: cuando la fase 2 tenga paridad con las e2e, el valor por
-    omision pasa a `spa` y la rama HTMX se borra. Ver docs/06-plataforma.md.
+    - `spa` (por omision desde T-67): `/`, `/panel`, `/detalle/...` y las demas devuelven
+      el `index.html` de la SPA React construida en `app/estaticos/spa/`
+      (`python tareas.py front`). Las rutas HTMX que no son de pagina (fragmentos,
+      formularios) siguen registradas mientras viva el respaldo.
+    - `htmx`: las paginas Jinja + HTMX. Respaldo hasta T-68 (2 de diciembre), que lo
+      retira. Se vuelve a el con `CENTINELA_PORTAL__INTERFAZ=htmx`. Ver docs/06-plataforma.md.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    interfaz: Literal["htmx", "spa"] = "htmx"
+    interfaz: Literal["htmx", "spa"] = "spa"
 
 
 class AjustesRegistro(BaseModel):

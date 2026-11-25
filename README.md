@@ -24,11 +24,32 @@ Los contratos de datos y las reglas de arquitectura están en
 
 ## Cómo probarlo
 
+Desde cero, en macOS o Windows. Hace falta **uv**, **Docker Desktop** y **Node 26.8.1**
+(la versión de `frontend/.nvmrc`; Node solo construye el portal, no corre en ejecución).
+
 ```
 python tareas.py instalar     # entorno con uv (Python 3.13, versiones del lock)
-python tareas.py arriba       # replica set rsfraude en Docker
+python tareas.py front        # portal: npm ci + build de la SPA en app/estaticos/spa/
+python tareas.py arriba       # replica set rsfraude en Docker (construye la SPA si faltara)
 python tareas.py datos-demo   # siembra y conjunto de demo
-python tareas.py dev          # API en http://127.0.0.1:8000/docs
+python tareas.py usuarios --agente AGT-001 --rol supervisor   # contraseña para entrar
+python tareas.py dev          # uvicorn app.main:app en http://127.0.0.1:8000
+```
+
+Abrir **http://127.0.0.1:8000**: lleva al login y, al entrar, al panel en vivo. El portal
+es la SPA React servida por el mismo proceso (panel, detalle, red de mulas, búsqueda,
+tablero y reglas). `dev` vuelve a construirla si falta y avisa si quedó más vieja que
+`frontend/`.
+
+Todo dentro de Docker (la imagen construye la SPA en su propia etapa de Node):
+`python tareas.py arriba --con-app`, y la misma URL.
+
+**Respaldo HTMX** (hasta el 2 de diciembre, T-68): el portal anterior, Jinja + HTMX,
+sigue disponible en un paso y sin tocar archivos:
+
+```
+CENTINELA_PORTAL__INTERFAZ=htmx python tareas.py dev          # macOS y Linux
+$env:CENTINELA_PORTAL__INTERFAZ="htmx"; python tareas.py dev   # Windows (PowerShell)
 ```
 
 Generador de datos sintéticos, como CLI aparte (con Mongo arriba):
@@ -36,11 +57,6 @@ Generador de datos sintéticos, como CLI aparte (con Mongo arriba):
 ```
 uv run python -m app.generador --clientes 200 --transacciones 5000
 ```
-
-Con la API corriendo, el portal está en:
-
-- http://127.0.0.1:8000/panel (panel en vivo)
-- http://127.0.0.1:8000/reglas (pantalla de reglas)
 
 ## El problema en una frase
 

@@ -3,31 +3,14 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
-from typing import Any
 
 import pytest
 from playwright.sync_api import Page, expect
 
-from app.modelos import ZONA_COSTA_RICA, Transaccion
-from app.repos.carga_demo import a_entero_64
+from pruebas.e2e.apoyo import DESTINO_NUEVO, insertar_transaccion_de_riesgo
 from pruebas.e2e.conftest import AGENTE, con_base, iniciar_sesion
 
 pytestmark = pytest.mark.e2e
-
-DESTINO_NUEVO = "7001-0010"
-
-
-async def _insertar_transaccion_de_riesgo(base: Any) -> None:
-    """Transferencia nocturna grande de Maria a un destino nuevo: R-01 + R-03 + R-05."""
-    transaccion = Transaccion(
-        _id="TXN-9001",
-        cuenta_origen="CTA-001",
-        cuenta_destino=DESTINO_NUEVO,
-        monto_crc=600_000,
-        fecha=datetime(2026, 9, 26, 23, 15, tzinfo=ZONA_COSTA_RICA),
-    )
-    await base["transacciones"].insert_one(a_entero_64(transaccion.a_documento()))
 
 
 def prueba_la_alerta_aparece_sola_en_el_panel_abierto(page: Page) -> None:
@@ -43,7 +26,7 @@ def prueba_la_alerta_aparece_sola_en_el_panel_abierto(page: Page) -> None:
     nueva = filas.filter(has_text=DESTINO_NUEVO)
     expect(nueva).to_have_count(0)
 
-    con_base(_insertar_transaccion_de_riesgo)
+    con_base(insertar_transaccion_de_riesgo)
 
     # D1 detecta, escribe la alerta, el change stream la empuja y HTMX la pinta: sin recargar.
     expect(nueva).to_have_count(1, timeout=20_000)
@@ -62,7 +45,7 @@ def prueba_la_alerta_aparece_sola_en_la_vista_por_cuenta_destino(page: Page) -> 
     cuenta = page.locator(f"#caso-{DESTINO_NUEVO}")
     expect(cuenta).to_have_count(0)
 
-    con_base(_insertar_transaccion_de_riesgo)
+    con_base(insertar_transaccion_de_riesgo)
 
     expect(cuenta).to_have_count(1, timeout=20_000)
     fila = cuenta.locator("[id^='alerta-']")

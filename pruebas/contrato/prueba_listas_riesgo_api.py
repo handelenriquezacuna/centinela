@@ -61,7 +61,7 @@ def tablero() -> RepoTableroFalso:
 
 @pytest_asyncio.fixture
 async def http(listas: RepoListasRiesgoFalso, tablero: RepoTableroFalso) -> AsyncIterator[AsyncClient]:
-    creada = crear_aplicacion()
+    creada = crear_aplicacion("htmx")
     creada.dependency_overrides[dep_repo_listas_riesgo] = lambda: listas
     creada.dependency_overrides[dep_repo_red_mulas_portal] = lambda: RepoRedMulasFalso(
         red_de_cuatro_saltos(), listas

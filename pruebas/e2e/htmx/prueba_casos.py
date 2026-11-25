@@ -3,39 +3,22 @@
 from __future__ import annotations
 
 import re
-from typing import Any
 
 import pytest
 from playwright.sync_api import Page, expect
 
-from app.repos.carga_demo import a_entero_64
-from pruebas.dobles.casos_demo import MULA, alerta_de_caso
+from pruebas.dobles.casos_demo import MULA
+from pruebas.e2e.apoyo import (
+    IDS_CASO,
+    agregar_una_mas,
+    casos_de_las_alertas,
+    en_revision_de,
+    estados_del_caso,
+    sembrar_el_caso,
+)
 from pruebas.e2e.conftest import AGENTE, con_base, iniciar_sesion
 
 pytestmark = pytest.mark.e2e
-
-IDS = ["ALR-101", "ALR-102", "ALR-103"]
-
-
-async def _sembrar_el_caso(base: Any) -> None:
-    """Tres victimas distintas hacia 6033-9001 (ya en listas_riesgo en el demo)."""
-    documentos = [
-        alerta_de_caso(101, minuto=0, monto_crc=280_000),
-        alerta_de_caso(102, minuto=5, puntaje=60, monto_crc=150_000),
-        alerta_de_caso(103, minuto=12, puntaje=60, monto_crc=90_000),
-    ]
-    await base["alertas"].insert_many([a_entero_64(d) for d in documentos])
-
-
-async def _agregar_una_mas(base: Any) -> None:
-    await base["alertas"].insert_one(
-        a_entero_64(alerta_de_caso(104, minuto=14, puntaje=60, monto_crc=50_000))
-    )
-
-
-async def _estados(base: Any) -> dict[str, tuple[str, str | None]]:
-    documentos = await base["alertas"].find({"_id": {"$in": IDS}}).to_list(length=None)
-    return {d["_id"]: (d["estado"], d.get("agente_id")) for d in documentos}
 
 
 def _abrir_vista_por_caso(page: Page) -> None:
@@ -46,7 +29,7 @@ def _abrir_vista_por_caso(page: Page) -> None:
 
 
 def prueba_el_caso_de_la_mula_se_pasa_a_en_revision_en_lote(page: Page) -> None:
-    con_base(_sembrar_el_caso)
+    con_base(sembrar_el_caso)
     _abrir_vista_por_caso(page)
 
     caso = page.locator(f"#caso-{MULA}")
@@ -59,7 +42,7 @@ def prueba_el_caso_de_la_mula_se_pasa_a_en_revision_en_lote(page: Page) -> None:
     expect(caso.locator("[data-sugerencia]")).to_contain_text("candidata a confirmar")
     expect(caso.locator("[id^='alerta-']")).to_have_count(3)
     # Nada se cerro solo: las tres siguen nuevas.
-    assert {e for e, _ in con_base(_estados).values()} == {"nueva"}
+    assert {e for e, _ in con_base(estados_del_caso).values()} == {"nueva"}
 
     caso.get_by_label(re.compile("Seleccionar todas")).check()
     expect(caso.locator("[data-conteo]")).to_have_text("3")
@@ -75,22 +58,22 @@ def prueba_el_caso_de_la_mula_se_pasa_a_en_revision_en_lote(page: Page) -> None:
     expect(resultado).to_contain_text("Pasaron 3 de 3")
     expect(resultado).to_contain_text("En revisión")
     expect(caso.locator("[id^='alerta-'][data-estado='en_revision']")).to_have_count(3)
-    assert con_base(_estados) == {i: ("en_revision", AGENTE) for i in IDS}
+    assert con_base(estados_del_caso) == {i: ("en_revision", AGENTE) for i in IDS_CASO}
 
 
 def prueba_cancelar_el_dialogo_no_cambia_nada(page: Page) -> None:
-    con_base(_sembrar_el_caso)
+    con_base(sembrar_el_caso)
     _abrir_vista_por_caso(page)
     caso = page.locator(f"#caso-{MULA}")
     caso.get_by_label("Seleccionar ALR-101").check()
     caso.get_by_role("button", name="Tomar").click()
     page.get_by_role("dialog").get_by_role("button", name="Cancelar").click()
     expect(page.get_by_role("dialog")).to_have_count(0)
-    assert {e for e, _ in con_base(_estados).values()} == {"nueva"}
+    assert {e for e, _ in con_base(estados_del_caso).values()} == {"nueva"}
 
 
 def prueba_los_atajos_de_teclado_mueven_marcan_y_abren(page: Page) -> None:
-    con_base(_sembrar_el_caso)
+    con_base(sembrar_el_caso)
     _abrir_vista_por_caso(page)
     caso = page.locator(f"#caso-{MULA}")
 
@@ -119,7 +102,7 @@ def prueba_los_atajos_de_teclado_mueven_marcan_y_abren(page: Page) -> None:
 
 
 def prueba_los_atajos_no_se_disparan_al_escribir(page: Page) -> None:
-    con_base(_sembrar_el_caso)
+    con_base(sembrar_el_caso)
     _abrir_vista_por_caso(page)
     caso = page.locator(f"#caso-{MULA}")
     caso.get_by_label("Seleccionar ALR-101").check()
@@ -132,13 +115,13 @@ def prueba_los_atajos_no_se_disparan_al_escribir(page: Page) -> None:
 
 
 def prueba_una_alerta_nueva_se_suma_a_su_caso_sin_recargar(page: Page) -> None:
-    con_base(_sembrar_el_caso)
+    con_base(sembrar_el_caso)
     _abrir_vista_por_caso(page)
     caso = page.locator(f"#caso-{MULA}")
     expect(caso.locator("[id^='alerta-']")).to_have_count(3)
     caso.get_by_label("Seleccionar ALR-102").check()
 
-    con_base(_agregar_una_mas)
+    con_base(agregar_una_mas)
 
     expect(caso.locator("[id^='alerta-']")).to_have_count(4, timeout=15_000)
     expect(caso.locator(".caso-alertas")).to_have_text("4")
@@ -148,7 +131,7 @@ def prueba_una_alerta_nueva_se_suma_a_su_caso_sin_recargar(page: Page) -> None:
 
 
 def prueba_la_vista_por_alerta_esta_a_un_clic_y_se_recuerda(page: Page) -> None:
-    con_base(_sembrar_el_caso)
+    con_base(sembrar_el_caso)
     iniciar_sesion(page, AGENTE)
     expect(page.locator("#casos")).to_be_attached()  # por omision: por cuenta destino
     page.get_by_role("link", name="Por alerta").click()
@@ -158,19 +141,9 @@ def prueba_la_vista_por_alerta_esta_a_un_clic_y_se_recuerda(page: Page) -> None:
     expect(page.locator("#cola")).to_be_attached()
 
 
-async def _en_revision_del_agente(base: Any) -> None:
-    await base["alertas"].update_many(
-        {"_id": {"$in": IDS}}, {"$set": {"estado": "en_revision", "agente_id": AGENTE}}
-    )
-
-
-async def _casos_de_las_alertas(base: Any) -> list[dict[str, Any]]:
-    return await base["casos"].find({"alertas": {"$in": IDS}}).to_list(length=None)
-
-
 def prueba_escalar_el_lote_abre_un_solo_caso_de_investigacion(page: Page) -> None:
-    con_base(_sembrar_el_caso)
-    con_base(_en_revision_del_agente)
+    con_base(sembrar_el_caso)
+    con_base(en_revision_de(AGENTE))
     _abrir_vista_por_caso(page)
     caso = page.locator(f"#caso-{MULA}")
     caso.get_by_label(re.compile("Seleccionar todas")).check()
@@ -181,6 +154,6 @@ def prueba_escalar_el_lote_abre_un_solo_caso_de_investigacion(page: Page) -> Non
     expect(resultado).to_contain_text("Pasaron 3 de 3")
     expect(resultado).to_contain_text("Caso de investigación abierto: CAS-101")
     expect(resultado.get_by_text("CAS-", exact=False)).to_have_count(1)
-    (abierto,) = con_base(_casos_de_las_alertas)
-    assert sorted(abierto["alertas"]) == IDS
+    (abierto,) = con_base(casos_de_las_alertas)
+    assert sorted(abierto["alertas"]) == IDS_CASO
     assert (abierto["cuenta_destino"], abierto["agente_id"]) == (MULA, AGENTE)

@@ -14,9 +14,11 @@ __pycache__/
 docs/
 pruebas/
 scripts/
-# La SPA (T-61): la imagen no la construye todavia; si se corrio `tareas.py front` en el
-# host, el build entra con app/. Las dependencias de Node nunca van al contexto.
+# La SPA (T-61, T-67): la construye la etapa de Node del Dockerfile. Ni las dependencias
+# de Node ni un build hecho en el host entran al contexto: la imagen lleva siempre el build
+# de las fuentes y el lock versionados.
 frontend/node_modules/
+app/estaticos/spa/
 .claude/
 CLAUDE.md
 

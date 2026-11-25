@@ -92,7 +92,7 @@ async def http(base_listas: Any) -> AsyncIterator[AsyncClient]:
     os.environ["CENTINELA_MONGO__BASE"] = BASE_LISTAS
     obtener_ajustes.cache_clear()
     try:
-        aplicacion = crear_aplicacion()
+        aplicacion = crear_aplicacion("htmx")
         async with LifespanManager(aplicacion) as gestionada, AsyncClient(
             headers=encabezados_de("supervisor", "AGT-002"),
             transport=ASGITransport(app=gestionada.app),

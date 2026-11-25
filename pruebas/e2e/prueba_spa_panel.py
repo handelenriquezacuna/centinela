@@ -1,6 +1,6 @@
 """Recorrido de referencia de la SPA (T-61): entrar y ver llegar una alerta sola al panel.
 
-Contra `servidor_spa` (`portal.interfaz: spa`): navegador -> index.html de la SPA -> API
+Contra `servidor_e2e` (la SPA, interfaz por omision desde T-67): navegador -> index.html de la SPA -> API
 JSON -> Mongo, y el canal SSE JSON empujando la alerta que escribe D1. Es la pantalla
 modelo para la fase 2: los selectores son por rol, etiqueta accesible o `data-*`, igual
 que en las e2e HTMX, para que la misma prueba sirva cuando la SPA pase a ser la unica.
@@ -13,20 +13,17 @@ import re
 import pytest
 from playwright.sync_api import Page, expect
 
+from pruebas.e2e.apoyo import DESTINO_NUEVO, insertar_transaccion_de_riesgo
 from pruebas.e2e.conftest import AGENTE, CONTRASENA, con_base
-from pruebas.e2e.prueba_tiempo_real import (
-    DESTINO_NUEVO,
-    _insertar_transaccion_de_riesgo,
-)
 
 pytestmark = pytest.mark.e2e
 
 
 def prueba_la_spa_entra_con_cookie_y_la_alerta_llega_sola_por_el_canal_json(
-    page: Page, servidor_spa: str
+    page: Page, servidor_e2e: str
 ) -> None:
     # Sin sesion, el servidor manda al login conservando el destino.
-    page.goto(f"{servidor_spa}/panel")
+    page.goto(f"{servidor_e2e}/panel")
     expect(page).to_have_url(re.compile(r"/login\?siguiente=/panel$"))
     expect(page.get_by_role("heading", name="Iniciar sesión")).to_be_visible()
 
@@ -51,7 +48,7 @@ def prueba_la_spa_entra_con_cookie_y_la_alerta_llega_sola_por_el_canal_json(
     expect(cuenta).to_have_count(0)
     page.evaluate("window.__sinRecargar = true")
 
-    con_base(_insertar_transaccion_de_riesgo)
+    con_base(insertar_transaccion_de_riesgo)
 
     # D1 detecta y escribe, el change stream la empuja como JSON y la SPA pide su caso.
     expect(cuenta).to_have_count(1, timeout=20_000)

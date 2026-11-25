@@ -428,6 +428,17 @@ python tareas.py datos-demo
 Para la demo y la defensa. El navegador entra por el puerto publicado, igual que en la
 modalidad A, y **la URI del YAML no cambia ni una letra** entre las dos.
 
+La imagen (`infra/Dockerfile`, T-67) se construye en dos etapas. La primera es
+`node:26.8.1-slim` (la versión de `frontend/.nvmrc`; con `engine-strict` otra haría fallar
+`npm ci`): instala el lock con `npm ci` y corre `npm run build`. La segunda es la de
+siempre, `python:3.13-slim` con uv, y solo copia de la primera `app/estaticos/spa/`: la
+imagen que corre no lleva Node ni npm y no usa la red. `.dockerignore` deja afuera
+`frontend/node_modules/` y cualquier build del host, así que la imagen lleva siempre el
+build de las fuentes versionadas. Corre como el usuario `centinela` (uid 10001, sin
+privilegios) y declara `HEALTHCHECK` sobre `/salud` con Python de la propia imagen (no
+trae curl), así que `docker compose up --wait` espera a que la API conteste. Si cambia el
+`.nvmrc`, cambia la línea `FROM node:` del Dockerfile.
+
 Eso último no sale gratis, y conviene entender por qué funciona. El servicio `app` entra
 al espacio de red de `mongo1` con `network_mode: service:mongo1`, exactamente como ya
 hacen `mongo2` y `mongo3`. Por eso **el puerto 8000 se publica en la lista `ports` de
@@ -450,11 +461,11 @@ levantando solo el replica set. Nadie se encuentra un contenedor nuevo sin pedir
 | Comando | Qué hace |
 |---|---|
 | `python tareas.py instalar` | `uv sync` con las versiones exactas del lock |
-| `python tareas.py arriba` | Levanta el replica set, lo inicializa y espera al primario |
+| `python tareas.py arriba` | Levanta el replica set, lo inicializa y espera al primario. Con la SPA por omisión, si falta su build lo construye (T-67) |
 | `python tareas.py arriba --con-app` | Lo mismo, más la API dentro de Compose (modalidad B) |
 | `python tareas.py abajo [--borrar-datos]` | Lo apaga. Con la bandera, borra también los volúmenes |
 | `python tareas.py estado` | Estado de los tres nodos |
-| `python tareas.py dev` | La API en el host, con recarga |
+| `python tareas.py dev` | La API en el host, con recarga. Si falta el build de la SPA lo construye antes (`npm ci` + build); si es más viejo que `frontend/`, avisa (T-67) |
 | `python tareas.py dev --front` | Lo mismo, más Vite en `http://127.0.0.1:8173` con recarga de la SPA y proxy a la API (T-61) |
 | `python tareas.py front` | `npm ci` y `npm run build` de `frontend/`: deja la SPA en `app/estaticos/spa/` (T-61) |
 | `python tareas.py datos-demo` | Siembra y carga el conjunto de demo |
@@ -812,6 +823,9 @@ segundo.
 
 ## Portal conectado (H-17 y T-16)
 
+> Desde T-67 esto es el **respaldo**: el portal por omisión es la SPA (sección siguiente).
+> Estas páginas se sirven con `CENTINELA_PORTAL__INTERFAZ=htmx` hasta que T-68 las retire.
+
 Paginas HTML en `app/api/rutas/paginas.py`, fuera de `/api/v1`, con Jinja y HTMX
 vendorizados (`app/estaticos/PROCEDENCIA.md`). Arrancar con `uvicorn app.main:app` y abrir
 `http://localhost:8000/panel`.
@@ -841,21 +855,37 @@ se versiona):
 Un solo proceso, como siempre: `uvicorn app.main:app`. Node solo se usa para construir;
 en ejecución FastAPI sirve el `index.html` y los archivos del build.
 
-### Las dos interfaces mientras dure la migración: `portal.interfaz`
+### Las dos interfaces hasta T-68: `portal.interfaz`
 
 | Valor | Rutas de página (`/`, `/login`, `/panel`, `/detalle`, `/detalle/{alerta_id}`, `/busqueda`, `/red-mulas`, `/red-mulas/{cuenta}`, `/tablero`, `/reglas`) |
 |---|---|
-| `htmx` (por omisión en esta fase) | Las páginas Jinja de siempre |
-| `spa` | El `index.html` de `app/estaticos/spa/`; React Router dibuja la pantalla. Sin build, 503 con la instrucción `python tareas.py front` |
+| `spa` (por omisión desde T-67) | El `index.html` de `app/estaticos/spa/`; React Router dibuja la pantalla. Sin build, 503 con la instrucción `python tareas.py front` (un 403 sigue siendo 403) |
+| `htmx` (respaldo hasta T-68, 2 de diciembre) | Las páginas Jinja de siempre |
 
 Con `spa` el router de la SPA (`app/api/rutas/spa.py`) se registra antes que las páginas
 HTMX y gana en las mismas rutas; los fragmentos y formularios HTMX (`/panel/cola`,
 `/panel/lote`, `POST /login`, ...) siguen vivos. Las rutas de página tienen el mismo
 permiso con las dos interfaces: el guardia corre antes, así que sin sesión redirige a
 `/login?siguiente=...` y con un rol sin permiso devuelve el `index.html` con 403 (la SPA
-muestra "Acceso denegado"). Se cambia con `CENTINELA_PORTAL__INTERFAZ=spa` o en
-`config/centinela.local.yml`. Cuando la fase 2 tenga paridad con las e2e, el valor por
-omisión pasa a `spa` y la rama HTMX se borra.
+muestra "Acceso denegado").
+
+**Volver a HTMX en un paso (plan B de la defensa).** Sin tocar ningún archivo:
+
+```
+CENTINELA_PORTAL__INTERFAZ=htmx python tareas.py dev          # macOS y Linux
+$env:CENTINELA_PORTAL__INTERFAZ="htmx"; python tareas.py dev   # Windows (PowerShell)
+```
+
+Con la API en Compose (modalidad B), la misma variable en el servicio `app`. Para que
+quede fijo en una máquina, `portal: {interfaz: htmx}` en `config/centinela.local.yml`.
+Las mismas URLs, la misma sesión (la cookie es la misma) y los mismos datos: solo cambia
+quién dibuja. Para volver a la SPA, quitar la variable.
+
+**La vista recordada del panel** ("Por cuenta destino" o "Por alerta") vive en un lugar
+distinto en cada interfaz, con el mismo nombre: `localStorage["centinela_vista"]` en la
+SPA y la cookie `centinela_vista` en HTMX. Por eso, al cambiar de interfaz, el panel abre
+con la vista por omisión (por cuenta destino, D-56) hasta que se vuelva a elegir. Es
+esperado, no un error.
 
 ### Correr, construir y probar
 
@@ -863,9 +893,10 @@ omisión pasa a `spa` y la rama HTMX se borra.
 |---|---|
 | Instalar y construir (lo que corre el CI) | `python tareas.py front` (equivale a `npm --prefix frontend ci && npm --prefix frontend run build`) |
 | Desarrollar con recarga | `python tareas.py dev --front` y abrir `http://127.0.0.1:8173/panel`. Vite manda `/api`, `/estado`, `/salud` y `/estaticos` a la API (`CENTINELA_API`, por omisión `http://127.0.0.1:8000`) |
-| Servir el build desde FastAPI | `CENTINELA_PORTAL__INTERFAZ=spa python tareas.py dev` y abrir `http://127.0.0.1:8000/panel` |
+| Servir el build desde FastAPI | `python tareas.py dev` y abrir `http://127.0.0.1:8000/panel` (construye la SPA si falta) |
+| Servir el respaldo HTMX | `CENTINELA_PORTAL__INTERFAZ=htmx python tareas.py dev` |
 | Compuertas del frontend | En `frontend/`: `npm run lint`, `npm run typecheck`, `npm test` (Vitest), `npm audit --audit-level=high`, `npm run build` |
-| La e2e de la SPA | `python tareas.py e2e` (incluye `pruebas/e2e/prueba_spa_panel.py`; necesita el build) |
+| Las e2e | `python tareas.py e2e`: las de la SPA (`pruebas/e2e/prueba_spa_*.py`) y las del respaldo (`pruebas/e2e/htmx/`); necesita el build |
 
 - Node **26.8.1**, fijado en `frontend/.nvmrc` y en `engines` (con `engine-strict`), la
   misma versión en local y en el CI (`actions/setup-node` lee el `.nvmrc`). Versiones
@@ -875,9 +906,13 @@ omisión pasa a `spa` y la rama HTMX se borra.
   ESLint mínimo: lo recomendado de JS y TS y las reglas de hooks de React.
 - El build (`app/estaticos/spa/`) no se versiona. La regla de "nada desde un CDN" se aplica
   a su fuente (`frontend/src`, `frontend/index.html`); la de emojis también.
-- La e2e de la SPA corre contra un segundo `uvicorn` (`servidor_spa`) sobre la misma base
-  `antifraude_pruebas_e2e` con `portal.interfaz: spa`. Los dos procesos corren D1; el
-  índice único de `alertas.transaccion_id` mantiene una alerta por transacción.
+- Las e2e de la SPA corren contra el `uvicorn` principal (`servidor_e2e`, `base_url`),
+  que sirve la interfaz por omisión. Las del respaldo HTMX viven en `pruebas/e2e/htmx/` y
+  corren contra un segundo `uvicorn` (`servidor_htmx`) sobre la misma base
+  `antifraude_pruebas_e2e` con `portal.interfaz: htmx`; su `conftest.py` cambia la URL de
+  los contextos del navegador. Los dos procesos corren D1; el índice único de
+  `alertas.transaccion_id` mantiene una alerta por transacción. Cada nivel tiene una
+  prueba que verifica a qué interfaz le está hablando. T-68 borra `htmx/` entero.
 
 ### Árbol de `frontend/src`
 
@@ -890,7 +925,7 @@ tiempo-real/           EventSource sobre el canal JSON
 formatos.ts            colones y hora de Costa Rica (casos compartidos con Python)
 destino.ts             regla anti redireccion abierta (casos compartidos con Python)
 casos.ts               orden y reemplazo de cuentas destino en la lista
-componentes/, paginas/ marco, guardia de sesion, login, panel y las pendientes de fase 2
+componentes/, paginas/ marco, guardia de sesion y las siete pantallas (login, panel, detalle, red, busqueda, tablero, reglas)
 tablero/               KPIs, graficos SVG propios (la geometria la da el servidor) y efectividad (T-66)
 reglas/                tarjeta de regla con 409, politica, alta de regla y simulador (T-66)
 ```
@@ -996,20 +1031,28 @@ componentes `Sankey` (solo dibuja la disposición que calcula el servidor), `Rec
 de `GET /api/v1/sesion`), `GrafoRed` y `DialogoConfirmacion` (`<dialog>` modal nativo: foco,
 Esc y retorno del foco). No agregaron endpoints.
 
-La fase 1 deja migradas el login y el panel por cuenta destino (con su prueba Vitest y la
-e2e `prueba_spa_panel.py`). Las demás rutas de la SPA muestran "Pantalla todavía no
-migrada" con el endpoint que van a leer:
+Las siete pantallas están migradas (fases 1, 2A, 2B y 2C). Desde T-67 cada recorrido de
+la defensa tiene su e2e contra la SPA en el servidor principal; las del respaldo HTMX siguen
+en `pruebas/e2e/htmx/` hasta T-68. La explicación de cada regla del detalle (incluida una
+regla nueva como R-11) la escribe el servidor: la SPA muestra `explicacion` y `evidencia`
+tal cual, sin código por regla.
 
-| Pantalla | Endpoint | E2E HTMX que la cubre hoy |
-|---|---|---|
-| Panel por alerta y atajos `j`/`k`/`x`/`Enter`/`?` (hecho, T-65; la vista elegida se recuerda en `localStorage`, clave `centinela_vista`) | `GET /api/v1/alertas` + canal JSON | `prueba_spa_cola_busqueda.py` (y `prueba_tiempo_real.py` en HTMX) |
-| Detalle de alerta y resolución (migrado, T-64) | `GET /api/v1/alertas/{id}/detalle`, `POST /api/v1/alertas/{id}/transiciones` | `prueba_detalle.py`; en la SPA, `prueba_spa_detalle.py` |
-| Sankey del detalle y marcar mula (migrado, T-64) | `GET /api/v1/red-mulas/{cuenta}/sankey`, `POST /api/v1/listas-riesgo` | `prueba_sankey.py`; en la SPA, `prueba_spa_sankey.py` |
-| Red de mulas (migrado, T-64) | `GET /api/v1/red-mulas/{cuenta}/grafo`, propuestas y baja | `prueba_red_mulas.py`; en la SPA, `prueba_spa_red_mulas.py` |
-| Búsqueda forense y CSV (hecha, T-65) | `GET /api/v1/transacciones`, `GET /api/v1/transacciones/exportar.csv` | `prueba_spa_cola_busqueda.py` |
-| Tablero | `GET /api/v1/tablero`, `GET /api/v1/efectividad` | (contrato) |
-| Reglas y política | `/api/v1/reglas`, `/api/v1/reglas/tipos`, `/api/v1/politica` | (contrato) |
-| Lote en la vista por cuenta destino (ya en la SPA; falta su e2e) | `POST /api/v1/alertas/transiciones` | `prueba_casos.py` |
+| Recorrido de la defensa | Endpoint de la SPA | E2E de la SPA (`pruebas/e2e/`) | E2E del respaldo (`pruebas/e2e/htmx/`) |
+|---|---|---|---|
+| Login: credencial buena, mala, anti redirección abierta, cookie HttpOnly | `POST/GET/DELETE /api/v1/sesion` | `prueba_spa_login_permisos.py` (4), `prueba_spa_panel.py` | `prueba_login.py` (4) |
+| Tiempo real, vista por cuenta destino | `GET /api/v1/casos-destino` + canal JSON | `prueba_spa_panel.py` | `prueba_tiempo_real.py` |
+| Tiempo real, vista por alerta, y la vista recordada | `GET /api/v1/alertas` + canal JSON | `prueba_spa_cola_busqueda.py` | `prueba_tiempo_real.py`, `prueba_casos.py` |
+| Atajos `j`/`k`/`x`/`Enter`/`?` y que no se disparen al escribir | (ninguno) | `prueba_spa_cola_busqueda.py` (2), `prueba_spa_casos.py` (2) | `prueba_casos.py` (2) |
+| Detalle, tomar y confirmar, cancelar, conflicto 409 | `GET /api/v1/alertas/{id}/detalle`, `POST .../transiciones` | `prueba_spa_detalle.py` (3) | `prueba_detalle.py` (1) |
+| Sankey y marcar mula; el agente no ve el botón | `GET /api/v1/red-mulas/{cuenta}/sankey`, `POST /api/v1/listas-riesgo` | `prueba_spa_sankey.py` (2) | `prueba_sankey.py` (2) |
+| Red de mulas, formulario, aprobar propuesta y dar de baja | `GET /api/v1/red-mulas/{cuenta}/grafo`, propuestas y baja | `prueba_spa_red_mulas.py` (3) | `prueba_red_mulas.py` (1) |
+| Búsqueda forense y CSV, monto con decimales | `GET /api/v1/transacciones`, `.../exportar.csv` | `prueba_spa_cola_busqueda.py` (2) | (contrato) |
+| Tablero del supervisor | `GET /api/v1/tablero`, `GET /api/v1/efectividad` | `prueba_spa_tablero_reglas.py`, `prueba_spa_login_permisos.py` | `prueba_permisos.py` |
+| Reglas y política: editar, 409, simular, versionar la política | `/api/v1/reglas`, `/api/v1/reglas/tipos`, `/api/v1/politica` | `prueba_spa_tablero_reglas.py` (4) | (contrato) |
+| Permisos: el agente no entra a tablero ni a reglas; salir y navegación por rol | `GET /api/v1/sesion` (`paginas`) | `prueba_spa_tablero_reglas.py`, `prueba_spa_cola_busqueda.py` | `prueba_permisos.py` |
+| Lote por cuenta destino: tomar, cancelar, escalar abre un caso, alerta nueva conserva la selección | `POST /api/v1/alertas/transiciones` | `prueba_spa_casos.py` (4) | `prueba_casos.py` (4) |
+| Página 404 propia | (ninguno) | `prueba_spa_cola_busqueda.py` | (no aplica) |
+| A qué interfaz le habla cada nivel | (ninguno) | `prueba_spa_login_permisos.py` | `prueba_login.py` |
 
 
 ## Politica por API y validadores sin re-sembrar (T-20, T-24, T-28)
@@ -1245,7 +1288,9 @@ uv run playwright install chromium      # una vez por maquina (en Linux, con --w
 python tareas.py e2e                    # o: pytest -m e2e -rs
 ```
 
-Necesitan el replica set arriba y `mongosh` en el PATH. Corren solo con `-m e2e`: el
+Necesitan el replica set arriba, `mongosh` en el PATH y el build de la SPA (`python
+tareas.py front`): el servidor principal sirve la SPA (T-67) y el respaldo HTMX corre en un
+segundo servidor para `pruebas/e2e/htmx/`. Corren solo con `-m e2e`: el
 resto de las compuertas las deseleccionan (igual que `resiliencia`), asi que nunca
 aparecen como saltadas. Con `CENTINELA_EXIGIR_MONGO=1` (lo pone `tareas.py e2e` y el CI) la
 falta de Mongo es una falla, no un salto. Siembra, servidor y base se crean y se borran

@@ -5,6 +5,28 @@
 # `pyproject.toml` y `uv.lock` viven ahi, y este Dockerfile los necesita a todos.
 # Por eso `infra/docker-compose.yml` declara `context: ..` y
 # `dockerfile: infra/Dockerfile` para el servicio `app`.
+#
+# Dos etapas (T-67). La primera construye la SPA con Node; la segunda es la imagen que
+# corre y no lleva Node: solo copia el resultado del build (`app/estaticos/spa/`), que
+# FastAPI sirve como cualquier otro estatico. En ejecucion no hay npm ni red.
+
+# --- Etapa 1: el build de la SPA ------------------------------------------------------
+# La version es la de frontend/.nvmrc (26.8.1), la misma del equipo y del CI; con
+# `engine-strict` (frontend/.npmrc) otra version haria fallar `npm ci`. Si cambia el
+# .nvmrc, cambia esta linea.
+FROM node:26.8.1-slim AS spa
+
+WORKDIR /src/frontend
+
+# El lock primero: mientras no cambie, Docker reusa la capa de `npm ci`.
+COPY frontend/package.json frontend/package-lock.json frontend/.npmrc frontend/.nvmrc ./
+RUN npm ci --no-audit
+
+# El build escribe en ../app/estaticos/spa (vite.config.ts), es decir /src/app/estaticos/spa.
+COPY frontend/ ./
+RUN npm run build
+
+# --- Etapa 2: la imagen que corre ------------------------------------------------------
 FROM python:3.13-slim
 
 # El binario de uv se copia de su propia imagen oficial: es mas rapido y mas
@@ -24,10 +46,25 @@ RUN uv sync --locked --no-install-project --no-dev
 
 COPY app ./app
 COPY config ./config
+# La SPA construida en la etapa 1. `.dockerignore` deja afuera cualquier build del host,
+# asi que la imagen siempre lleva el que sale de las fuentes y el lock versionados.
+COPY --from=spa /src/app/estaticos/spa ./app/estaticos/spa
 
 RUN uv sync --locked --no-dev
 
+# Usuario sin privilegios (T-10). Los archivos quedan de root y solo lectura para el
+# proceso: la app no escribe en su propia carpeta. La cache de uv va a /tmp porque el
+# usuario no tiene HOME escribible.
+RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin centinela
+ENV UV_CACHE_DIR=/tmp/uv-cache
+USER centinela
+
 EXPOSE 8000
+
+# `/salud` responde 200 mientras el proceso vive (el estado de Mongo va en el cuerpo).
+# Sin curl en la imagen slim: Python de la propia imagen, solo biblioteca estandar.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/salud', timeout=4)"]
 
 # Un solo worker, sin recarga: la deteccion tiene que estar activa exactamente una
 # vez (dos workers escuchando el mismo change stream duplicarian la alerta), y la

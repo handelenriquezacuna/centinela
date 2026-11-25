@@ -48,7 +48,7 @@ async def http(ajustes: Ajustes, agentes_reales: Any) -> AsyncIterator[AsyncClie
     os.environ["CENTINELA_MONGO__BASE"] = ajustes.mongo.base
     obtener_ajustes.cache_clear()
     try:
-        async with LifespanManager(crear_aplicacion()) as gestionada, AsyncClient(
+        async with LifespanManager(crear_aplicacion("htmx")) as gestionada, AsyncClient(
             transport=ASGITransport(app=gestionada.app), base_url="http://pruebas"
         ) as cliente:
             yield cliente
