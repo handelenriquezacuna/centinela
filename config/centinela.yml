@@ -84,6 +84,15 @@ indicadores:
   # cada recalculo es un latido de D3 en /estado.
   intervalo_segundos: 10
 
+# Rasgos de grafo por cuenta (T-63): los materializa D3 junto con los indicadores y los lee
+# R-11. Tecnico: no dice que es sospechoso (eso es la regla, en Mongo).
+rasgos_grafo:
+  # Cuanta historia mira cada recalculo, hacia atras desde ese momento.
+  horizonte_horas: 24
+  # Pasado este tiempo desde su corte, un rasgo no vale y R-11 queda como no evaluada.
+  # Mayor que indicadores.intervalo_segundos.
+  vigencia_segundos: 60
+
 # Sesion del portal y la API (H-25). La clave de firma NO va aqui: entra por la variable
 # de entorno CENTINELA_SESION__CLAVE (minimo 32 caracteres). Sin ella, en entorno dev se
 # genera una al arrancar y /estado lo advierte; en otro entorno no arranca.

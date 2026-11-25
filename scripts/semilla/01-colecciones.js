@@ -1153,7 +1153,7 @@ asegurarValidador("politica_deteccion", {
 // 13. DETECCION_ESTADO (coleccion de OPERACION, la segunda de las 2; con
 // esta quedan las 13 de CLAUDE.md). La escribe el disparador D1 (H-09,
 // app/repos/deteccion.py); nadie la escribe a mano.
-// Dos clases de documento, distinguidas por `clase`:
+// Cuatro clases de documento, distinguidas por `clase`:
 //   - "reanudacion": un documento por disparador, _id = nombre del
 //     disparador ("d1_deteccion"). Guarda el resumeToken del change stream
 //     de transacciones. D1 lo escribe DESPUES de terminar las escrituras del
@@ -1164,6 +1164,14 @@ asegurarValidador("politica_deteccion", {
 //     "<disparador>:<transaccion_id>". Es la lista de lo que hay que
 //     reprocesar a mano; vive aqui y no en una coleccion 14 porque es estado
 //     del detector, igual que el token.
+//   - "rasgo_grafo": un documento por cuenta SINPE destino con movimiento reciente,
+//     _id = "d3_rasgos_grafo:<cuenta>" (T-63). Lo materializa D3 con un pipeline que
+//     termina en $merge (app/repos/rasgos_grafo.py) y lo lee R-11. Es estado derivado
+//     del detector, como el token: por eso vive aqui y no en una coleccion 14, ni en
+//     perfiles_comportamiento (cuyo _id es el cliente: una mula destino es una cuenta
+//     que casi nunca es cliente).
+//   - "rasgo_grafo_corrida": un solo documento, _id = "d3_rasgos_grafo" (T-63). Dice
+//     de que rango son los rasgos y hasta cuando valen; sin el, R-11 no tiene rasgos.
 // _id natural (nombre del disparador / transaccion) y no ObjectId, igual
 // que perfiles_comportamiento._id = cliente_id: reescribir el mismo
 // documento es idempotente.
@@ -1251,6 +1259,120 @@ asegurarValidador("deteccion_estado", {
           bsonType: "date",
           description: "ISODate UTC del descarte"
         },
+        esquema_version: {
+          bsonType: "int",
+          minimum: 1,
+          description: "Version del esquema del documento"
+        }
+      }
+    },
+    {
+      required: [
+        "_id", "clase", "disparador", "cuenta", "ventana_minutos", "desde", "corte",
+        "vigencia_segundos", "fan_in", "fan_out", "monto_recibido_crc",
+        "monto_reenviado_crc", "proporcion_pb", "minutos_reenvio", "saltos",
+        "calculado_en", "esquema_version"
+      ],
+      additionalProperties: false,
+      properties: {
+        _id: {
+          bsonType: "string",
+          pattern: "^d[0-9]_[a-z_]+:[0-9]{4}-[0-9]{4}$",
+          description: "Disparador y cuenta SINPE, ej. d3_rasgos_grafo:6033-9001"
+        },
+        clase: {
+          enum: ["rasgo_grafo"],
+          description: "Rasgos de grafo de una cuenta destino (T-63)"
+        },
+        disparador: {
+          bsonType: "string",
+          pattern: "^d[0-9]_[a-z_]+$",
+          description: "Disparador que lo materializo"
+        },
+        cuenta: {
+          bsonType: "string",
+          pattern: "^[0-9]{4}-[0-9]{4}$",
+          description: "Numero SINPE de la cuenta; es el mismo espacio de transacciones.cuenta_destino"
+        },
+        ventana_minutos: {
+          bsonType: "int",
+          minimum: 1,
+          description: "Ventana en la que se conto el reenvio (parametro de la regla red_mulas)"
+        },
+        desde: { bsonType: "date", description: "ISODate UTC, inicio inclusivo del rango mirado" },
+        corte: { bsonType: "date", description: "ISODate UTC, fin exclusivo del rango mirado" },
+        vigencia_segundos: {
+          bsonType: "int",
+          minimum: 1,
+          description: "Segundos despues del corte durante los que el rasgo se da por bueno"
+        },
+        fan_in: { bsonType: "int", minimum: 0, description: "Origenes distintos que le enviaron" },
+        fan_out: { bsonType: "int", minimum: 0, description: "Destinos distintos a los que envio" },
+        monto_recibido_crc: {
+          bsonType: "long",
+          minimum: 0,
+          description: "Colones recibidos en el rango. Entero de 64 bits, NUNCA double"
+        },
+        monto_reenviado_crc: {
+          bsonType: "long",
+          minimum: 0,
+          description: "Colones reenviados dentro de la ventana tras recibir, topados en lo recibido"
+        },
+        proporcion_pb: {
+          bsonType: "int",
+          minimum: 0,
+          maximum: 10000,
+          description: "Reenviado sobre recibido en puntos basicos enteros (10000 = 100 %)"
+        },
+        minutos_reenvio: {
+          bsonType: "int",
+          minimum: 0,
+          description: "Mayor demora, en minutos, entre una entrada y la salida que la reenvia"
+        },
+        saltos: {
+          bsonType: "int",
+          minimum: 0,
+          description: "Largo de la cadena de reenvios que parte de la cuenta"
+        },
+        calculado_en: { bsonType: "date", description: "ISODate UTC del recalculo" },
+        esquema_version: {
+          bsonType: "int",
+          minimum: 1,
+          description: "Version del esquema del documento"
+        }
+      }
+    },
+    {
+      required: [
+        "_id", "clase", "disparador", "ventana_minutos", "desde", "corte",
+        "vigencia_segundos", "cuentas", "actualizado_en", "esquema_version"
+      ],
+      additionalProperties: false,
+      properties: {
+        _id: {
+          bsonType: "string",
+          pattern: "^d[0-9]_[a-z_]+$",
+          description: "Nombre del disparador, d3_rasgos_grafo"
+        },
+        clase: {
+          enum: ["rasgo_grafo_corrida"],
+          description: "Marca de la ultima corrida de los rasgos de grafo (T-63)"
+        },
+        disparador: {
+          bsonType: "string",
+          pattern: "^d[0-9]_[a-z_]+$",
+          description: "Igual a _id"
+        },
+        ventana_minutos: { bsonType: "int", minimum: 1, description: "Ventana de la corrida" },
+        desde: { bsonType: "date", description: "ISODate UTC, inicio inclusivo del rango" },
+        corte: { bsonType: "date", description: "ISODate UTC, fin exclusivo del rango" },
+        vigencia_segundos: {
+          bsonType: "int",
+          minimum: 1,
+          description: "Segundos despues del corte durante los que los rasgos se dan por buenos"
+        },
+        cuentas: { bsonType: "int", minimum: 0, description: "Cuentas con documento en esta corrida" },
+        actualizado_en: { bsonType: "date", description: "ISODate UTC de la escritura" },
         esquema_version: {
           bsonType: "int",
           minimum: 1,
