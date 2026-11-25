@@ -43,6 +43,7 @@ class Permiso(StrEnum):
     GESTIONAR_LISTAS = "gestionar_listas"  # aprobar propuestas, marcar mulas y dar de baja
     ADMINISTRACION = "administracion"  # area de Administracion: solo el administrador
     RESPALDOS = "respaldos"  # crear y verificar respaldos de la base (D-74): solo administrador
+    VER_NOTIFICACIONES = "ver_notificaciones"  # los correos de alertas criticas (D2, H-11)
 
 
 _PERMISOS_AGENTE = frozenset(
@@ -59,7 +60,13 @@ _PERMISOS_AGENTE = frozenset(
 PERMISOS_POR_ROL: dict[RolAgente, frozenset[Permiso]] = {
     RolAgente.AGENTE: _PERMISOS_AGENTE,
     RolAgente.SUPERVISOR: _PERMISOS_AGENTE
-    | {Permiso.TABLERO, Permiso.VER_REGLAS, Permiso.EDITAR_REGLAS, Permiso.GESTIONAR_LISTAS},
+    | {
+        Permiso.TABLERO,
+        Permiso.VER_REGLAS,
+        Permiso.EDITAR_REGLAS,
+        Permiso.GESTIONAR_LISTAS,
+        Permiso.VER_NOTIFICACIONES,
+    },
     RolAgente.ADMINISTRADOR: frozenset(Permiso),
 }
 
@@ -143,6 +150,9 @@ ACCESOS: tuple[Acceso, ...] = (
     _a("GET", "/tablero", Permiso.TABLERO),
     _a("GET", "/api/v1/efectividad", Permiso.TABLERO),
     _a("GET", "/api/v1/tablero", Permiso.TABLERO),
+    # Notificaciones de D2: solo supervisor y administrador
+    _a("GET", "/notificaciones", Permiso.VER_NOTIFICACIONES),
+    _a("GET", "/api/v1/notificaciones", Permiso.VER_NOTIFICACIONES),
     # Reglas y politica
     _a("GET", "/reglas", Permiso.VER_REGLAS),
     _a("GET", "/api/v1/reglas", Permiso.VER_REGLAS),

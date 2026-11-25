@@ -186,10 +186,19 @@ db.casos.createIndex(
 // ------------------------------------------------------------
 // notificaciones
 // Consulta: historial de notificaciones de una alerta (UC-08).
+// UNICO por (alerta_id, canal): es la clave de idempotencia de D2 (H-11). Una alerta
+// CRITICA produce una sola notificacion por canal; reprocesar el evento tras una
+// caida choca aca y no manda un segundo registro. El prefijo alerta_id sirve la
+// consulta por alerta, asi que no hace falta un indice simple aparte.
 // ------------------------------------------------------------
 db.notificaciones.createIndex(
-  { alerta_id: 1 },
-  { name: "idx_notificaciones_alerta" }
+  { alerta_id: 1, canal: 1 },
+  { name: "idx_notificaciones_alerta_canal", unique: true }
+);
+// Consulta de la lista del supervisor: las mas recientes primero.
+db.notificaciones.createIndex(
+  { fecha: -1 },
+  { name: "idx_notificaciones_fecha" }
 );
 
 // indicadores_diarios: sin indice adicional, ver nota de cabecera

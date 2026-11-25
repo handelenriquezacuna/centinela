@@ -81,13 +81,14 @@ def prueba_el_supervisor_entra_al_tablero_en_la_spa(page: Page) -> None:
 
 ENLACES = {
     "agente": ["Panel", "Búsqueda", "Red de mulas"],
-    "supervisor": ["Panel", "Búsqueda", "Red de mulas", "Tablero", "Reglas y política"],
+    "supervisor": ["Panel", "Búsqueda", "Red de mulas", "Tablero", "Reglas y política", "Notificaciones"],
     "administrador": [
         "Panel",
         "Búsqueda",
         "Red de mulas",
         "Tablero",
         "Reglas y política",
+        "Notificaciones",
         "Salud del sistema",
         "Respaldos",
         "Usuarios del portal",

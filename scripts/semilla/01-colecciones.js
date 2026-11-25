@@ -902,6 +902,20 @@ recrearColeccion("notificaciones", {
       bsonType: "string",
       description: "Motivo del fallo cuando estado_envio es 'fallido' (H-11: un fallo de SMTP no debe tumbar el proceso). Opcional: no aplica a un envio exitoso"
     },
+    intentos: {
+      bsonType: "int",
+      minimum: 0,
+      description: "Intentos de envio hechos (D2, T-77). Opcional: el registro de Practica 1 no lo traia"
+    },
+    asunto: {
+      bsonType: "string",
+      description: "Asunto del correo enviado (D2, T-77). Opcional"
+    },
+    destinatarios: {
+      bsonType: "array",
+      items: { bsonType: "string" },
+      description: "Direcciones a las que se envio (D2, T-77). Opcional"
+    },
     esquema_version: {
       bsonType: "int",
       minimum: 1,

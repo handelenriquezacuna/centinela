@@ -43,6 +43,11 @@ class Notificacion(DocumentoBase):
     estado_envio: EstadoEnvio = EstadoEnvio.PENDIENTE
     fecha: MarcaTiempoUTC
     detalle_error: str | None = None
+    # D2 (T-77): lo que el disparador agrega al registro. Opcionales: la notificacion de
+    # Practica 1 no los traia y los validadores declaran additionalProperties: false.
+    intentos: int | None = Field(default=None, ge=0)
+    asunto: str | None = None
+    destinatarios: list[str] | None = None
 
 
 class IndicadorDiario(DocumentoBase):

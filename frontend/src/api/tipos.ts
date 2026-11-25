@@ -511,3 +511,20 @@ export interface ListaRespaldos {
   total: number;
   en_curso: boolean;
 }
+
+/** Una notificacion de D2 (GET /api/v1/notificaciones): el correo de una alerta critica. */
+export interface ElementoNotificacion {
+  notificacion_id: string;
+  alerta_id: string;
+  canal: string;
+  estado_envio: "pendiente" | "enviado" | "fallido";
+  fecha: string;
+  intentos: number | null;
+  asunto: string | null;
+  destinatarios: string[] | null;
+  detalle_error: string | null;
+  severidad: string | null;
+  puntaje: number | null;
+  monto_crc: number | null;
+  cliente_nombre: string | null;
+}

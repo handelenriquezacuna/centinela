@@ -180,6 +180,54 @@ class AjustesDeteccion(BaseModel):
         return self
 
 
+class AjustesNotificaciones(BaseModel):
+    """Disparador D2 (H-11): el correo de las alertas CRITICAS. Todo tecnico, sin secretos.
+
+    - `activa`: apagarlo deja las alertas como estan; D2 no se lanza y `/estado` lo
+      reporta como no construido.
+    - `smtp_host` / `smtp_puerto`: el servidor de correo de pruebas (Mailpit). En la
+      modalidad A (Python en el host) es `localhost:1025`. En Docker el servicio se llama
+      `mailpit`: `CENTINELA_NOTIFICACIONES__SMTP_HOST=mailpit`. Sin TLS ni credenciales a
+      proposito: es un servidor de pruebas y el YAML no lleva secretos.
+    - `remitente` / `destinatarios`: de quien sale y a quien llega. El destinatario es el
+      canal de guardia.
+    - `portal_url`: base del enlace al detalle de la alerta (`{portal_url}/detalle/ALR-...`).
+    - `reintentos_envio`: intentos de ENVIO por alerta antes de dejarla `fallido`. Es el
+      tope: un correo que no sale nunca se reintenta sin fin.
+    - `espera_inicial_segundos` / `espera_maxima_segundos`: espera progresiva entre
+      intentos de envio y entre reaperturas del change stream (se duplica hasta el tope).
+    - `espera_smtp_segundos`: cuanto espera una conexion SMTP antes de contarla fallida.
+    - `espera_cursor_ms`: como en D1, cada vuelta del cursor es un latido de D2.
+    - `refresco_reanudacion_segundos`: con el change stream filtrado a CRITICA, un token solo
+      avanza con un evento CRITICO. Cada tanto se guarda tambien el de una vuelta vacia
+      para que el token no envejezca mas alla del oplog (`ChangeStreamHistoryLost`).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    activa: bool = True
+    smtp_host: str = Field(default="localhost", min_length=1)
+    smtp_puerto: int = Field(default=1025, ge=1, le=65535)
+    remitente: str = Field(default="centinela@centinela.local", min_length=3)
+    destinatarios: list[str] = Field(default_factory=lambda: ["guardia@centinela.local"], min_length=1)
+    portal_url: str = Field(default="http://127.0.0.1:8000", min_length=1)
+    reintentos_envio: int = Field(default=3, ge=1, le=20)
+    espera_inicial_segundos: float = Field(default=0.5, gt=0)
+    espera_maxima_segundos: float = Field(default=10.0, gt=0)
+    espera_smtp_segundos: float = Field(default=5.0, gt=0)
+    espera_cursor_ms: int = Field(default=1000, ge=10)
+    refresco_reanudacion_segundos: float = Field(default=30.0, gt=0)
+
+    @model_validator(mode="after")
+    def el_tope_supera_la_espera_inicial(self) -> AjustesNotificaciones:
+        if self.espera_maxima_segundos < self.espera_inicial_segundos:
+            raise ValueError(
+                "notificaciones.espera_maxima_segundos no puede ser menor que "
+                "notificaciones.espera_inicial_segundos"
+            )
+        return self
+
+
 class AjustesIndicadores(BaseModel):
     """Disparador D3 (H-22): cada cuanto se recalcula el indicador del dia actual.
 
@@ -401,6 +449,7 @@ class Ajustes(BaseSettings):
     supervision: AjustesSupervision = AjustesSupervision()
     canal: AjustesCanal = AjustesCanal()
     deteccion: AjustesDeteccion = AjustesDeteccion()
+    notificaciones: AjustesNotificaciones = AjustesNotificaciones()
     indicadores: AjustesIndicadores = AjustesIndicadores()
     rasgos_grafo: AjustesRasgosGrafo = AjustesRasgosGrafo()
     perfiles: AjustesPerfiles = AjustesPerfiles()
@@ -429,6 +478,16 @@ class Ajustes(BaseSettings):
         if espera >= self.supervision.tolerancia_retraso_segundos:
             raise ValueError(
                 "deteccion.espera_cursor_ms tiene que ser menor que "
+                "supervision.tolerancia_retraso_segundos"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def d2_late_antes_de_la_tolerancia(self) -> Ajustes:
+        """D2 late una vez por vuelta del cursor (mismo razonamiento que D1)."""
+        if self.notificaciones.espera_cursor_ms / 1000 >= self.supervision.tolerancia_retraso_segundos:
+            raise ValueError(
+                "notificaciones.espera_cursor_ms tiene que ser menor que "
                 "supervision.tolerancia_retraso_segundos"
             )
         return self

@@ -23,6 +23,10 @@ from app.repos.busqueda import ProtocoloRepoBusqueda, RepoBusqueda
 from app.repos.casos_destino import ProtocoloRepoCasosDestino, RepoCasosDestino
 from app.repos.detalle import ProtocoloRepoDetalle, RepoDetalle
 from app.repos.flujo_alertas import ProtocoloFlujoAlertas, RepoFlujoAlertas
+from app.repos.notificaciones import (
+    ProtocoloRepoLecturaNotificaciones,
+    RepoLecturaNotificaciones,
+)
 from app.repos.red_mulas import RepoRedMulas
 from app.repos.reglas import ProtocoloRepoReglas, RepoReglas
 from app.repos.tablero import ProtocoloRepoTablero, RepoTablero
@@ -103,6 +107,12 @@ def dep_repo_red_mulas_portal(
     return RepoRedMulas(base)
 
 
+def dep_repo_notificaciones(
+    base: Annotated[AsyncDatabase, Depends(dep_base)],
+) -> ProtocoloRepoLecturaNotificaciones:
+    return RepoLecturaNotificaciones(base)
+
+
 def dep_flujo_alertas(
     base: Annotated[AsyncDatabase, Depends(dep_base)],
 ) -> ProtocoloFlujoAlertas:
@@ -146,5 +156,8 @@ RepoDetalleDep = Annotated[ProtocoloRepoDetalle, Depends(dep_repo_detalle)]
 FlujoAlertasDep = Annotated[ProtocoloFlujoAlertas, Depends(dep_flujo_alertas)]
 SupervisorDep = Annotated[Supervisor, Depends(dep_supervisor)]
 RepoTableroDep = Annotated[ProtocoloRepoTablero, Depends(dep_repo_tablero)]
+RepoNotificacionesDep = Annotated[
+    ProtocoloRepoLecturaNotificaciones, Depends(dep_repo_notificaciones)
+]
 RepoRedMulasPortalDep = Annotated[RepoRedMulas, Depends(dep_repo_red_mulas_portal)]
 ServicioRespaldosDep = Annotated[ServicioRespaldos, Depends(dep_servicio_respaldos)]

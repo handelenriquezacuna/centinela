@@ -86,6 +86,29 @@ deteccion:
   # estos segundos detras de la ingesta (ahora menos la insercion del ultimo evento).
   rezago_aviso_atraso_segundos: 15
 
+# Disparador D2 (H-11): correo por SMTP de pruebas cuando entra una alerta CRITICA. Tecnico y
+# sin secretos: servidor de pruebas sin autenticacion (Mailpit). Los correos se ven en
+# http://127.0.0.1:8025 con `docker compose -f infra/docker-compose.yml up -d mailpit`.
+notificaciones:
+  activa: true
+  # Modalidad A (Python en el host): localhost:1025. Python dentro de Docker, en la red de
+  # Compose: CENTINELA_NOTIFICACIONES__SMTP_HOST=mailpit (el servicio se llama asi).
+  smtp_host: localhost
+  smtp_puerto: 1025
+  remitente: centinela@centinela.local
+  destinatarios:
+    - guardia@centinela.local
+  # Base del enlace al detalle de la alerta que lleva el correo.
+  portal_url: http://127.0.0.1:8000
+  # Intentos de envio por alerta; agotados queda `fallido` y D2 sigue. Espera progresiva.
+  reintentos_envio: 3
+  espera_inicial_segundos: 0.5
+  espera_maxima_segundos: 10
+  espera_smtp_segundos: 5
+  espera_cursor_ms: 1000
+  # Cada cuanto se guarda el punto de reanudacion de una vuelta vacia (solo se ven CRITICAS).
+  refresco_reanudacion_segundos: 30
+
 # Disparador D3 (H-22): recalcula los indicadores del dia actual en indicadores_diarios.
 indicadores:
   # Cada cuantos segundos. Menor que supervision.tolerancia_retraso_segundos, porque
