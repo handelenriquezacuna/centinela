@@ -6,9 +6,13 @@ Script de MEDICION, no de produccion. No cambia el comportamiento del motor: cor
 metodo. Un `CommandListener` de pymongo cuenta cada comando que viaja al servidor, por
 tipo y coleccion. `app/deteccion/` no tiene una sola linea de perfilado.
 
-Tres modos:
+Cuatro modos:
 
-    rafaga   10.000 transacciones de golpe con D1 corriendo: tiempo y comandos por paso.
+    rafaga   10.000 transacciones de golpe con D1 corriendo: tiempo y comandos por paso
+             (con `lote_maximo=1`, el camino por evento que se perfila paso a paso).
+    lotes    la misma rafaga con D1 por lotes (T-62), una corrida por tamano de lote
+             (`--lotes 1,50,200,500`): transacciones por segundo, ms y comandos por
+             transaccion, sin instrumentar los pasos.
     explain  explain de la ventana de R-09 con 1, 10 y 100 transacciones del mismo origen.
     lote     costo medido de leer lo mismo por lote (50, 200, 500) y estimacion de D-64.
 
@@ -50,6 +54,7 @@ from app.supervision import Supervisor
 
 TRANSACCIONES = 10_000
 AJUSTES_D1 = AjustesDeteccion(
+    lote_maximo=1,  # el perfil por paso es del camino por evento; `lotes` mide el resto
     espera_cursor_ms=100,
     reintentos=1,
     espera_inicial_segundos=0.05,
@@ -486,6 +491,103 @@ async def modo_rafaga(uri: str, base_nombre: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Modo lotes (T-62)
+# ---------------------------------------------------------------------------
+
+
+class ContadorTotal(monitoring.CommandListener):
+    """Cuenta todos los comandos de una corrida, por tipo, sin atribuirlos a un paso."""
+
+    def __init__(self) -> None:
+        self._en_vuelo: dict[int, str] = {}
+        self.por_comando: dict[str, int] = defaultdict(int)
+
+    def started(self, evento: monitoring.CommandStartedEvent) -> None:
+        if evento.command_name not in IGNORADOS:
+            self._en_vuelo[evento.request_id] = evento.command_name
+
+    def succeeded(self, evento: monitoring.CommandSucceededEvent) -> None:
+        nombre = self._en_vuelo.pop(evento.request_id, None)
+        if nombre is not None:
+            self.por_comando[nombre] += 1
+
+    def failed(self, evento: monitoring.CommandFailedEvent) -> None:
+        self._en_vuelo.pop(evento.request_id, None)
+
+
+async def modo_lotes(base_nombre: str, lotes: list[int]) -> dict[str, Any]:
+    """La rafaga de 10.000 con D1 por lotes de cada tamano pedido, sobre la misma base."""
+    ajustes = obtener_ajustes()
+    corridas = []
+    for lote in lotes:
+        contador = ContadorTotal()
+        cliente_d1 = crear_cliente(ajustes, escuchas=[contador])
+        cliente_gen = crear_cliente(ajustes)
+        base_d1 = cliente_d1[base_nombre]
+        base_gen = cliente_gen[base_nombre]
+        if await base_gen["reglas_deteccion"].count_documents({}) == 0:
+            raise SystemExit(f"{base_nombre} no esta sembrada (falta reglas_deteccion)")
+        for coleccion in (
+            "transacciones",
+            "alertas",
+            "clientes",
+            "cuentas",
+            "perfiles_comportamiento",
+            "listas_riesgo",
+            "deteccion_estado",
+        ):
+            await base_gen[coleccion].delete_many({})
+
+        supervisor = Supervisor(tolerancia_segundos=30)
+        repo = RepoDeteccion(base_d1)
+        ajustes_d1 = AJUSTES_D1.model_copy(update={"lote_maximo": lote})
+        supervisor.lanzar(NOMBRE_D1, d1(repo, supervisor, ajustes=ajustes_d1))
+        try:
+            limite = time.monotonic() + 20
+            while supervisor.informe().tarea(NOMBRE_D1).eventos_procesados < 1:
+                if time.monotonic() > limite:
+                    raise SystemExit("D1 no abrio el change stream")
+                await asyncio.sleep(0.05)
+            contador.por_comando.clear()
+
+            inicio = time.monotonic()
+            await ejecutar(
+                RepoGenerador(base_gen),
+                AjustesGenerador(clientes=500, transacciones=TRANSACCIONES),
+                limpiar=False,
+            )
+            ultima = f"TXN-{TRANSACCIONES:06d}"
+            while True:
+                estado = await base_gen["deteccion_estado"].find_one({"_id": NOMBRE_D1})
+                if estado is not None and estado.get("ultima_transaccion_id") == ultima:
+                    break
+                if time.monotonic() - inicio > 600:
+                    raise SystemExit("D1 no termino en 600 s")
+                await asyncio.sleep(0.05)
+            total = time.monotonic() - inicio
+            comandos = dict(contador.por_comando)
+        finally:
+            await supervisor.detener()
+        alertas = await base_gen["alertas"].count_documents({})
+        sin_getmore = sum(v for k, v in comandos.items() if k != "getMore")
+        corridas.append(
+            {
+                "lote_maximo": lote,
+                "segundos": round(total, 2),
+                "transacciones_por_segundo": round(TRANSACCIONES / total, 0),
+                "ms_por_transaccion": round(total * 1000 / TRANSACCIONES, 3),
+                "comandos_por_transaccion": round(sum(comandos.values()) / TRANSACCIONES, 3),
+                "comandos_sin_getmore_por_transaccion": round(sin_getmore / TRANSACCIONES, 3),
+                "comandos_por_tipo": comandos,
+                "alertas": alertas,
+            }
+        )
+        await cliente_d1.close()
+        await cliente_gen.close()
+    return {"lotes_medidos": corridas}
+
+
+# ---------------------------------------------------------------------------
 # Modo explain (R-09)
 # ---------------------------------------------------------------------------
 
@@ -843,12 +945,15 @@ async def modo_lote(base_nombre: str, perfil: dict[str, Any]) -> dict[str, Any]:
 
 async def principal() -> None:
     analizador = argparse.ArgumentParser(description=__doc__)
-    analizador.add_argument("modo", choices=("rafaga", "explain", "lote", "todo"))
+    analizador.add_argument("modo", choices=("rafaga", "lotes", "explain", "lote", "todo"))
     analizador.add_argument(
         "--base", required=True, help="base de medicion, NUNCA antifraude"
     )
     analizador.add_argument(
         "--salida", default="", help="archivo JSON donde guardar el informe"
+    )
+    analizador.add_argument(
+        "--lotes", default="1,50,200,500", help="tamanos de lote del modo `lotes`"
     )
     argumentos = analizador.parse_args()
     if argumentos.base == "antifraude":
@@ -857,6 +962,9 @@ async def principal() -> None:
     informe: dict[str, Any] = {"uri": uri, "base": argumentos.base}
     if argumentos.modo in ("rafaga", "todo"):
         informe["rafaga"] = await modo_rafaga(uri, argumentos.base)
+    if argumentos.modo == "lotes":
+        tamanos = [int(n) for n in argumentos.lotes.split(",")]
+        informe.update(await modo_lotes(argumentos.base, tamanos))
     if argumentos.modo in ("explain", "todo"):
         informe.update(await modo_explain(argumentos.base))
     if argumentos.modo in ("lote", "todo"):

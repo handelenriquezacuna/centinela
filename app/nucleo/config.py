@@ -148,6 +148,8 @@ class AjustesDeteccion(BaseModel):
     - `espera_inicial_segundos` / `espera_maxima_segundos`: la espera progresiva entre
       reintentos, y entre reaperturas del change stream si se cae. Se duplica en cada
       intento hasta el tope.
+    - `lote_maximo` (T-62): hasta cuantos eventos del change stream procesa D1 por lote.
+      Toma lo que haya, sin esperar a llenarlo. 1 es el camino por evento de siempre.
     - `rezago_intervalo_segundos`: cada cuanto D1 mide cuantas transacciones tiene sin
       evaluar (T-57). Es una consulta barata por indice, pero no se hace por evento.
     - `rezago_aviso_desde`: desde cuantas transacciones sin evaluar el panel muestra el
@@ -163,6 +165,7 @@ class AjustesDeteccion(BaseModel):
     reintentos: int = Field(default=3, ge=0)
     espera_inicial_segundos: float = Field(default=0.5, gt=0)
     espera_maxima_segundos: float = Field(default=10.0, gt=0)
+    lote_maximo: int = Field(default=200, ge=1, le=5000)
     rezago_intervalo_segundos: float = Field(default=2.0, gt=0)
     rezago_aviso_desde: int = Field(default=500, ge=1)
     rezago_aviso_atraso_segundos: float = Field(default=15.0, gt=0)

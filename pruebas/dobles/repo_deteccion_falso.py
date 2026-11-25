@@ -108,14 +108,31 @@ class RepoDeteccionFalso:
         self._existentes = set(alertas_existentes)
         self._fallos_al_insertar = fallos_al_insertar
         self.bitacora: list[str] = []
+        # Lecturas por lote, aparte de `bitacora` (que es el orden de las escrituras).
+        self.bitacora_lecturas: list[str] = []
+        # cuenta_origen -> el error que `leer_origenes` devuelve para ella.
+        self.origenes_rotos: dict[str, Exception] = {}
         self.aperturas: list[Mapping[str, Any] | None] = []
         self.descartes: list[dict[str, Any]] = []
         self.agotado = asyncio.Event()
+        # Vueltas entregadas en total. D1 lee el cursor por adelantado (T-62), asi que
+        # `agotado` ya no quiere decir "D1 termino": ver `esperar_procesado`.
+        self.entregadas = 0
         # T-57: lo que responde la medicion de rezago. No entra en `bitacora`, que es el
         # orden de las escrituras.
         self.rezago = RezagoMedido(pendientes=0, mas_vieja=None)
         self.fallar_rezago = False
         self.mediciones_rezago = 0
+
+    async def esperar_procesado(self, supervisor: Any, *, nombre: str = "d1_deteccion") -> None:
+        """Espera a que D1 haya terminado (y latido) cada vuelta que este doble entrego."""
+        await asyncio.wait_for(self.agotado.wait(), timeout=5)
+
+        async def terminado() -> None:
+            while supervisor.informe().tarea(nombre).eventos_procesados < self.entregadas:
+                await asyncio.sleep(0.001)
+
+        await asyncio.wait_for(terminado(), timeout=5)
 
     # -- Change stream ----------------------------------------------------
 
@@ -135,6 +152,7 @@ class RepoDeteccionFalso:
                     pendientes = self._vueltas[indice + 1 :]
                     break
         for vuelta in pendientes:
+            self.entregadas += 1
             yield vuelta
         self.agotado.set()
         await asyncio.Event().wait()
@@ -148,6 +166,9 @@ class RepoDeteccionFalso:
         return POLITICA_DEL_CASO
 
     async def leer_origen(self, transaccion: Transaccion) -> DatosOrigen:
+        roto = self.origenes_rotos.get(transaccion.cuenta_origen)
+        if roto is not None:
+            raise roto
         return ORIGEN_DEL_CASO
 
     async def armar_contexto(
@@ -163,7 +184,37 @@ class RepoDeteccionFalso:
             ),
         )
 
+    # -- Por lote (T-62) ----------------------------------------------------
+
+    async def leer_origenes(
+        self, transacciones: Sequence[Transaccion]
+    ) -> dict[str, DatosOrigen | Exception]:
+        self.bitacora_lecturas.append(f"origenes:{len(transacciones)}")
+        return {
+            t.cuenta_origen: self.origenes_rotos.get(t.cuenta_origen, ORIGEN_DEL_CASO)
+            for t in transacciones
+        }
+
+    async def armar_contextos(
+        self,
+        transacciones: Sequence[Transaccion],
+        origenes: Mapping[str, DatosOrigen],
+        reglas: Sequence[Regla],
+    ) -> dict[str, ContextoEvaluacion | Exception]:
+        self.bitacora_lecturas.append(f"contextos:{len(transacciones)}")
+        return {
+            t.transaccion_id: await self.armar_contexto(t, origenes[t.cuenta_origen], reglas)
+            for t in transacciones
+        }
+
     # -- Escrituras -------------------------------------------------------
+
+    async def insertar_alertas(self, alertas: Sequence[Alerta]) -> dict[str, bool | Exception]:
+        if self._fallos_al_insertar > 0:
+            self._fallos_al_insertar -= 1
+            self.bitacora.append("fallo_insertar_lote")
+            raise ConnectionError("la base no contesta")
+        return {alerta.transaccion_id: await self.insertar_alerta(alerta) for alerta in alertas}
 
     async def insertar_alerta(self, alerta: Alerta) -> bool:
         if self._fallos_al_insertar > 0:

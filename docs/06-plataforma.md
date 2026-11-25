@@ -1816,3 +1816,104 @@ Tiene costos que el perfil si hace visibles:
 6. Reusar `scripts/medicion/perfil_d1.py` (`rafaga`) antes y despues: el criterio de exito es
    una cifra, no una impresion. Con las cifras de arriba, 10.000 transacciones en menos de 5 s
    (hoy 50 s) deja margen amplio frente al doble de costo esperado en la implementacion.
+
+## D1 por lotes (T-62)
+
+Implementa D-64 con la recomendacion del perfil (T-59): D1 procesa el change stream por lotes
+y ya no por evento. Resultado: de unas 195 a unas 6.300 transacciones por segundo con el lote
+por omision (200), con las mismas alertas.
+
+### Que hace
+
+`deteccion.lote_maximo` (YAML, por omision 200, entre 1 y 5.000) es el tope de eventos por
+lote. D1 toma **lo que haya, sin esperar a llenarlo**: una tarea lee el cursor y deja las
+vueltas en una cola acotada; el bucle toma la primera (esperando si no hay) y, de ahi, solo lo
+que ya esta en la cola. Con poco trafico un evento sale solo y de inmediato; con una rafaga el
+lote sale lleno. Por lote:
+
+| Paso | Antes (por evento) | Ahora (por lote) |
+|---|---|---|
+| Reglas y politica | 2 lecturas por evento | 2 lecturas por lote |
+| Origen (cuenta y cliente) | 2 | 2 (`$in`) |
+| Perfiles, listas de riesgo, rasgos de R-11 | 1 por evento cada uno | 1 por lote cada uno (`$in`) |
+| Destinos conocidos (R-03) y ventana (R-09) | 3 | 3 (cuentas de los clientes, historial de R-03 e historial de R-09) |
+| Alertas | `insert_one` por alerta | un `insert_many(ordered=False)` |
+| Token | un `replace_one` por evento | uno por lote, despues de las alertas |
+
+Un lote de **un** evento es el camino por evento de siempre, sin cambios (mismo codigo, mismos
+reintentos): `lote_maximo=1` es D1 como era antes de T-62. Las partes puras estan en
+`app/deteccion/contexto_lote.py`; las lecturas agrupadas, en `app/repos/deteccion.py`
+(`leer_origenes`, `armar_contextos`, `insertar_alertas`) y `RepoRasgosGrafo.leer_rasgos`.
+
+### El orden dentro del lote no cambia nada
+
+R-03 y R-09 siguen contando con la fecha de cada transaccion, no la del lote. Se lee **una**
+vez el historial que cubre a todo el lote (una clausula `$or` por cliente para R-03, una por
+origen para R-09, con el rango de fechas de sus transacciones) y se cuenta en memoria con los
+mismos limites que las consultas de antes: R-03 en `[fecha - dias, fecha)` sin la propia;
+R-09 en `[fecha - minutos, fecha]` sin la propia, mas la propia aparte. Las transacciones del
+propio lote se agregan al historial aunque la lectura no las devuelva, de modo que:
+
+- una transferencia anterior del mismo lote al mismo destino hace que el destino deje de ser
+  nuevo para las siguientes, y las anteriores del mismo origen cuentan en la ventana;
+- una transaccion del lote con fecha **anterior** a otra cuenta para esa otra aunque llegue
+  despues en el stream, igual que hoy cuando la consulta la encuentra ya insertada.
+
+Sin R-03 o R-09 activas no se lee su historial: el evaluador no mira ese campo sin la regla.
+
+### Evento envenenado, caida a mitad de lote, reprocesos
+
+- **Aislamiento.** Si una transaccion del lote falla (no valida, su cuenta de origen no existe,
+  un perfil o una lista no validan, su alerta choca por `_id` con otra transaccion), solo ella
+  se procesa aparte con el camino por evento: reintentos con espera progresiva y, agotados, el
+  descarte de siempre. El resto del lote se procesa. Si lo que falla es todo el lote (la politica
+  no esta, la base no contesta, un error de escritura que no es un duplicado), cada evento se
+  procesa solo, con los mismos reintentos.
+- **Caida entre las alertas y el token.** El token se guarda una vez por lote y despues de las
+  alertas. Si el proceso muere en medio, al reanudar se reprocesa el lote entero (hasta
+  `lote_maximo` eventos) y el indice unico de `alertas.transaccion_id` rechaza los duplicados:
+  `insert_many(ordered=False)` los salta sin abortar y se cuentan como "ya procesadas". Es el
+  contrato de siempre (al menos una vez) con una ventana de reproceso de hasta `lote_maximo`
+  eventos.
+- **Cambios de regla o politica** rigen desde el lote siguiente y no desde la transaccion
+  siguiente: con lotes de 200, unos 30 ms de ventana, menos que el atraso de una rafaga.
+- Latido, `eventos_procesados` y `evaluadas` siguen contando por evento; la latencia se mide
+  por alerta nueva desde `wallTime` hasta la escritura del lote; `atraso_segundos` usa la
+  insercion del ultimo evento del lote (vuelta vacia: 0).
+
+### Medicion antes y despues
+
+`python -m scripts.medicion.perfil_d1 lotes --base <base propia> --lotes 1,50,200,500`
+(10.000 transacciones de golpe con D1 corriendo, mismas 140 alertas en las cuatro corridas).
+Maquina: Apple M4 Max (14 nucleos, 36 GB), macOS 27.0.1, Docker 28.0.4, Mongo 8 de un nodo
+en contenedor con cache de WiredTiger 0,25 GB, cliente con `w=majority` y `readConcern=majority`,
+todo en `localhost` (una red real suma latencia por ida y vuelta, y eso favorece mas al lote).
+
+| `lote_maximo` | Segundos | tx/s | ms por tx | Comandos por tx | Comandos por tx sin `getMore` | Ganancia |
+|---|---|---|---|---|---|---|
+| 1 (antes de T-62) | 51,3 | 195 | 5,131 | 11,02 | 11,02 | 1x |
+| 50 | 3,6 | 2.777 | 0,360 | 0,242 | 0,226 | 14x |
+| 200 | 1,6 | 6.301 | 0,159 | 0,089 | 0,059 | 32x |
+| 500 | 1,1 | 9.034 | 0,111 | 0,036 | 0,024 | 46x |
+
+Lectura: T-59 estimo unas 7.100 tx/s a 200 y 9.900 a 500 (un techo, con la cautela de que la
+implementacion real agrega costo de armar el lote); lo medido es 6.301 y 9.034, el 89 % y el 91
+% del techo. De 200 a 500 la
+ganancia es de 0,5 s en 10.000 transacciones: se deja 200 por omision. La prueba de volumen
+(`prueba_rezago_volumen`, 10.000 transacciones de golpe) pasa de 137 a unas 5.500 tx/s, y la
+latencia de la alerta (p50/p95) de 34,9 s / 69,8 s a 0,7 s / 1,3 s: era espera en cola.
+
+### Pruebas
+
+- `pruebas/integracion/prueba_d1_lotes_mongo.py`: equivalencia (700 transacciones con semilla
+  fija, 540 alertas, las seis reglas disparan; rafagas del mismo origen, destinos repetidos,
+  cuentas hermanas, empates de fecha, insercion fuera de orden de fecha, historial previo,
+  listas con fecha y rasgos de R-11): evento por evento contra lotes de 7, 200 y 1.000, mismas
+  alertas campo por campo; aislamiento de un evento envenenado dentro de un lote; caida con las
+  alertas escritas y sin token. Se verifico que la prueba muerde: cambiar un limite de R-03 o de
+  R-09 por uno incorrecto la hace fallar.
+- `pruebas/unitarias/prueba_d1_lotes.py` (con el doble del repositorio) y
+  `prueba_contexto_lote.py` (limites de R-03 y R-09 en memoria).
+- Las pruebas por evento (`prueba_d1.py`) usan `lote_maximo=1`: sostienen el contrato de una
+  alerta y un token por evento. Como D1 lee el cursor por adelantado, el doble ya no puede
+  usar "se agoto el flujo" como "D1 termino": `esperar_procesado` espera los latidos.

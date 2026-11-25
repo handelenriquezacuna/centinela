@@ -38,6 +38,16 @@ El contrato, y por que cada pieza:
   evalua de a una, se esta quedando atras ante una carga por lotes. Junto al conteo se
   publica `atraso_segundos` (ahora menos la insercion del ultimo evento procesado; 0 si la
   vuelta del cursor llega vacia): una red de seguridad que no depende del orden de ids.
+- **Por lotes** (T-62). D1 toma del change stream lo que haya, hasta
+  `deteccion.lote_maximo` eventos y SIN esperar a llenar el lote: con poco trafico un evento
+  sale solo. Por lote lee reglas y politica una vez, el contexto de todas las transacciones
+  con lecturas agrupadas, evalua una por una en el orden del stream (con la fecha de cada
+  una, ver `app/deteccion/contexto_lote.py`), escribe las alertas con un
+  `insert_many(ordered=False)` y guarda el token UNA vez, despues de las alertas. Tras una
+  caida a mitad de lote se reprocesa el lote entero: el indice unico rechaza los duplicados
+  y no se pierde nada. Un evento que falla no arrastra al lote: se aisla y se procesa solo,
+  con los reintentos y el descarte de siempre. Un lote de un evento es el camino por evento
+  de antes, sin cambios.
 - **Latido por vuelta**, con o sin evento. `/estado` mide el retraso desde el ultimo
   latido: un D1 sano sin trafico late cada `espera_cursor_ms`; uno atascado deja de
   latir y pasa a `retrasada`.
@@ -55,8 +65,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Callable, Mapping
-from contextlib import aclosing
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from contextlib import aclosing, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -75,7 +85,7 @@ from app.modelos import (
     Transaccion,
 )
 from app.nucleo.config import AjustesDeteccion
-from app.repos.deteccion import DatosOrigen, ProtocoloRepoDeteccion
+from app.repos.deteccion import DatosOrigen, EventoTransaccion, ProtocoloRepoDeteccion
 from app.repos.flujo_alertas import TokenDeReanudacionInvalido
 from app.supervision import Supervisor
 
@@ -278,6 +288,107 @@ async def procesar_transaccion(
     return Resultado.YA_PROCESADA
 
 
+async def procesar_lote(
+    repo: ProtocoloRepoDeteccion,
+    documentos: Sequence[Mapping[str, Any]],
+    *,
+    ahora: datetime,
+    al_leer_reglas: Callable[[int], None] | None = None,
+) -> list[Resultado | Exception]:
+    """Contexto -> evaluar -> alertas de todo un lote. No toca el token.
+
+    Devuelve un elemento por documento, en el mismo orden: el `Resultado`, o la excepcion
+    de esa transaccion (no valida, sin cuenta de origen, un documento de contexto roto, un
+    `_id` de alerta tomado). Quien llama aisla cada excepcion procesando ese evento solo.
+    Un fallo que afecta a todo el lote (la politica no esta, la base no contesta) sube.
+
+    El resultado de cada transaccion es el de `procesar_transaccion`: lo unico que cambia
+    es cuantas veces se pregunta a Mongo. Las transacciones se evaluan en el orden del
+    lote.
+    """
+    resultados: list[Resultado | Exception | None] = [None] * len(documentos)
+    validas: list[tuple[int, Transaccion]] = []
+    for indice, documento in enumerate(documentos):
+        try:
+            validas.append((indice, Transaccion.model_validate(documento)))
+        except ValidationError as fallo:
+            resultados[indice] = fallo
+
+    reglas = await repo.leer_reglas_activas()
+    if al_leer_reglas is not None:
+        al_leer_reglas(len(reglas))
+    if not reglas:
+        registro_log.warning(
+            "lote de %d transacciones evaluado sin reglas activas: no puede generar alerta",
+            len(documentos),
+        )
+    politica = await repo.leer_politica_vigente()
+
+    origenes = await repo.leer_origenes([transaccion for _, transaccion in validas])
+    con_origen: list[tuple[int, Transaccion]] = []
+    datos_origen: dict[str, DatosOrigen] = {}
+    for indice, transaccion in validas:
+        origen = origenes[transaccion.cuenta_origen]
+        if isinstance(origen, Exception):
+            resultados[indice] = origen
+        else:
+            datos_origen[transaccion.cuenta_origen] = origen
+            con_origen.append((indice, transaccion))
+
+    contextos = await repo.armar_contextos(
+        [transaccion for _, transaccion in con_origen], datos_origen, reglas
+    )
+    alertas: list[tuple[int, Alerta]] = []
+    for indice, transaccion in con_origen:
+        contexto = contextos[transaccion.transaccion_id]
+        if isinstance(contexto, Exception):
+            resultados[indice] = contexto
+            continue
+        try:
+            evaluacion = evaluar(transaccion, contexto, reglas, politica)
+            for no_evaluada in evaluacion.reglas_no_evaluadas:
+                registro_log.debug(
+                    "%s: %s no evaluada (%s)",
+                    transaccion.transaccion_id,
+                    no_evaluada.codigo,
+                    no_evaluada.motivo,
+                )
+            alerta = construir_alerta(
+                transaccion, evaluacion, datos_origen[transaccion.cuenta_origen], ahora
+            )
+        except Exception as fallo:  # noqa: BLE001 - se aisla: ese evento se procesa solo
+            resultados[indice] = fallo
+            continue
+        if alerta is None:
+            resultados[indice] = Resultado.SIN_ALERTA
+        else:
+            alertas.append((indice, alerta))
+
+    escritas = await repo.insertar_alertas([alerta for _, alerta in alertas])
+    for indice, alerta in alertas:
+        escrita = escritas[alerta.transaccion_id]
+        if isinstance(escrita, Exception):
+            resultados[indice] = escrita
+        elif escrita:
+            registro_log.info(
+                "alerta %s para %s: puntaje %d %s",
+                alerta.alerta_id,
+                alerta.transaccion_id,
+                alerta.puntaje,
+                alerta.severidad,
+            )
+            resultados[indice] = Resultado.ALERTA_CREADA
+        else:
+            registro_log.info(
+                "%s ya tenia alerta: evento reprocesado, el indice unico rechazo el duplicado",
+                alerta.transaccion_id,
+            )
+            resultados[indice] = Resultado.YA_PROCESADA
+    completos = [resultado for resultado in resultados if resultado is not None]
+    assert len(completos) == len(documentos), "cada documento tiene un resultado"
+    return completos
+
+
 def latencia_ms(insertada_en: datetime | None, escrita_en: datetime) -> float | None:
     """Milisegundos entre la insercion y la escritura de la alerta, o `None` sin hora."""
     if insertada_en is None:
@@ -349,6 +460,125 @@ async def _procesar_con_reintentos(
 # ---------------------------------------------------------------------------
 
 
+_FIN = object()
+
+
+async def _lotes(
+    flujo: AsyncIterator[EventoTransaccion], maximo: int
+) -> AsyncIterator[list[EventoTransaccion]]:
+    """Agrupa las vueltas del change stream: lo que haya, hasta `maximo`, sin esperar.
+
+    Una tarea lee el cursor y deja las vueltas en una cola acotada; aqui se toma la
+    primera (esperando si no hay) y, de ahi, solo lo que ya esta en la cola. Con poco
+    trafico un evento sale solo, de inmediato; con una rafaga, el lote sale lleno. La
+    lectura por adelantado no adelanta el token: ese lo guarda D1 al terminar cada lote.
+
+    Una vuelta vacia (el cursor espero y no habia nada) es un grupo aparte, de un
+    elemento sin documento. Un error del cursor se entrega DESPUES de los eventos que
+    llegaron antes, como pasaba cuando el cursor se leia en el mismo bucle.
+    """
+    cola: asyncio.Queue[Any] = asyncio.Queue(maxsize=maximo)
+
+    async def leer() -> None:
+        try:
+            async for vuelta in flujo:
+                await cola.put(vuelta)
+            await cola.put(_FIN)
+        except asyncio.CancelledError:
+            raise
+        except Exception as fallo:  # noqa: BLE001 - se entrega a quien consume
+            await cola.put(fallo)
+
+    tarea = asyncio.create_task(leer())
+    try:
+        pendiente: Any = None
+        while True:
+            elemento = pendiente if pendiente is not None else await cola.get()
+            pendiente = None
+            if elemento is _FIN:
+                return
+            if isinstance(elemento, Exception):
+                raise elemento
+            if elemento.documento is None:
+                yield [elemento]
+                continue
+            lote = [elemento]
+            while len(lote) < maximo:
+                try:
+                    siguiente = cola.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                if (
+                    siguiente is _FIN
+                    or isinstance(siguiente, Exception)
+                    or siguiente.documento is None
+                ):
+                    pendiente = siguiente
+                    break
+                lote.append(siguiente)
+            yield lote
+    finally:
+        # Primero se detiene la lectura: cerrar el generador del cursor con una lectura en
+        # curso falla ("already running").
+        tarea.cancel()
+        with suppress(asyncio.CancelledError):
+            await tarea
+
+
+async def _procesar_grupo(
+    repo: ProtocoloRepoDeteccion,
+    supervisor: Supervisor,
+    documentos: Sequence[Mapping[str, Any]],
+    *,
+    ajustes: AjustesDeteccion,
+    nombre: str,
+    reloj: Reloj,
+) -> list[Resultado | None]:
+    """Procesa los eventos de un lote y devuelve el resultado de cada uno (`None` = descarte).
+
+    Un evento solo va por el camino de siempre. Dos o mas van por `procesar_lote`; lo que
+    ese camino no resuelve (un evento con error propio, o un fallo de todo el lote) se
+    procesa evento por evento con `_procesar_con_reintentos`: reintentos con espera
+    progresiva y, agotados, descarte. Un evento envenenado no detiene ni descarta a los
+    otros. Las alertas que el lote ya escribio no se repiten: el indice unico las cuenta
+    como ya procesadas.
+    """
+    def al_leer_reglas(activas: int) -> None:
+        vigilar_catalogo(supervisor, nombre, activas)
+
+    if len(documentos) == 1:
+        return [
+            await _procesar_con_reintentos(
+                repo, supervisor, documentos[0], ajustes=ajustes, nombre=nombre, reloj=reloj
+            )
+        ]
+    resultados: list[Resultado | Exception | None]
+    try:
+        resultados = list(
+            await procesar_lote(
+                repo, documentos, ahora=reloj(), al_leer_reglas=al_leer_reglas
+            )
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as fallo:  # noqa: BLE001 - se aisla: cada evento se procesa solo
+        registro_log.warning(
+            "%s: el lote de %d eventos fallo (%s); se procesa evento por evento",
+            nombre,
+            len(documentos),
+            fallo,
+        )
+        resultados = [fallo] * len(documentos)
+    finales: list[Resultado | None] = []
+    for documento, resultado in zip(documentos, resultados, strict=True):
+        if isinstance(resultado, Exception):
+            resultado = await _procesar_con_reintentos(
+                repo, supervisor, documento, ajustes=ajustes, nombre=nombre, reloj=reloj
+            )
+        finales.append(resultado)
+    return finales
+
+
 @dataclass
 class _Vigilancia:
     """Fallos seguidos de apertura: la base de la espera progresiva al reabrir."""
@@ -418,42 +648,52 @@ async def _consumir(
     flujo = repo.observar_transacciones(
         desde_token=desde_token, espera_ms=ajustes.espera_cursor_ms
     )
-    async with aclosing(flujo) as vueltas:
-        async for vuelta in vueltas:
-            if vuelta.documento is not None:
-                resultado = await _procesar_con_reintentos(
+    async with aclosing(flujo) as vueltas, aclosing(_lotes(vueltas, ajustes.lote_maximo)) as lotes:
+        async for lote in lotes:
+            if lote[0].documento is not None:
+                resultados = await _procesar_grupo(
                     repo,
                     supervisor,
-                    vuelta.documento,
+                    [vuelta.documento for vuelta in lote if vuelta.documento is not None],
                     ajustes=ajustes,
                     nombre=nombre,
                     reloj=reloj,
                 )
-                # El orden del contrato: la alerta (o el descarte) ya esta escrita.
-                # Recien ahora avanza el token.
-                transaccion_id = str(vuelta.documento.get("_id"))
-                if resultado is Resultado.ALERTA_CREADA:
-                    medida = latencia_ms(vuelta.insertada_en, reloj())
-                    if medida is not None:
-                        supervisor.registrar_latencia(nombre, medida)
-                await repo.guardar_token(nombre, vuelta.token, transaccion_id=transaccion_id)
+                # El orden del contrato: las alertas (o el descarte) del lote ya estan
+                # escritas. Recien ahora avanza el token, una vez, al del ultimo evento.
+                escrita_en = reloj()
+                for vuelta, resultado in zip(lote, resultados, strict=True):
+                    if resultado is Resultado.ALERTA_CREADA:
+                        medida = latencia_ms(vuelta.insertada_en, escrita_en)
+                        if medida is not None:
+                            supervisor.registrar_latencia(nombre, medida)
+                ultima = lote[-1]
+                assert ultima.documento is not None
+                transaccion_id = str(ultima.documento.get("_id"))
+                await repo.guardar_token(nombre, ultima.token, transaccion_id=transaccion_id)
                 hay_token_guardado = True
-                supervisor.contar_evaluada(nombre)
-                if vuelta.insertada_en is not None:
-                    vigilancia.atraso_segundos = atraso_segundos(vuelta.insertada_en, reloj())
-                registro_log.debug("%s: %s", transaccion_id, resultado or "descartada")
-            elif not hay_token_guardado and vuelta.token is not None:
-                # Arranque sin token: se guarda el de la primera vuelta vacia, para que
-                # una caida antes de la primera transaccion no reinicie "desde ahora" y
-                # pierda lo que entre mientras D1 esta abajo. Es seguro: una vuelta
-                # vacia no tiene escrituras pendientes.
-                await repo.guardar_token(nombre, vuelta.token, transaccion_id=None)
-                hay_token_guardado = True
-            if vuelta.documento is None:
+                for vuelta, resultado in zip(lote, resultados, strict=True):
+                    supervisor.contar_evaluada(nombre)
+                    supervisor.latir(nombre)
+                    registro_log.debug(
+                        "%s: %s", vuelta.documento.get("_id") if vuelta.documento else "?",
+                        resultado or "descartada",
+                    )
+                if ultima.insertada_en is not None:
+                    vigilancia.atraso_segundos = atraso_segundos(ultima.insertada_en, reloj())
+            else:
+                vuelta = lote[0]
+                if not hay_token_guardado and vuelta.token is not None:
+                    # Arranque sin token: se guarda el de la primera vuelta vacia, para
+                    # que una caida antes de la primera transaccion no reinicie "desde
+                    # ahora" y pierda lo que entre mientras D1 esta abajo. Es seguro: una
+                    # vuelta vacia no tiene escrituras pendientes.
+                    await repo.guardar_token(nombre, vuelta.token, transaccion_id=None)
+                    hay_token_guardado = True
                 # La vuelta llego vacia: el cursor espero y no habia nada. D1 esta al dia.
                 vigilancia.atraso_segundos = 0.0
+                supervisor.latir(nombre)
             vigilancia.fallos_seguidos = 0
-            supervisor.latir(nombre)
             await _medir_rezago(
                 repo,
                 supervisor,
