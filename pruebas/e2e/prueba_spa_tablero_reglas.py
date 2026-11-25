@@ -109,6 +109,13 @@ def prueba_el_supervisor_ve_el_tablero_con_kpis_graficos_y_marca_de_calculo(
 
         expect(page).to_have_url(re.compile(r"/tablero$"))
         expect(page.get_by_role("heading", name="Tablero de indicadores")).to_be_visible()
+        # El periodo por omision (7 dias) sumaria el dia de hoy, que D3 recalcula cada pocos
+        # segundos y otras e2e pueden mover. El periodo de 1 dia se ancla en el ultimo rollup
+        # (el sembrado, un dia despues de hoy), asi que solo mira la fecha sembrada.
+        with page.expect_response(re.compile(r"/api/v1/tablero\?dias=1\b")):
+            page.get_by_role("navigation", name="Periodo").get_by_role("link", name="1 día").click()
+        expect(page).to_have_url(re.compile(r"/tablero\?dias=1$"))
+        expect(page.locator("#marca-calculo")).to_contain_text(f"Periodo: {fecha} a {fecha} (1 con datos)")
         expect(page.locator("#marca-calculo")).to_contain_text("Último cálculo:")
         expect(page.locator("#marca-calculo")).to_contain_text("(hora CR)")
         # Los numeros son los del rollup: la SPA no recalcula.
