@@ -43,6 +43,7 @@ PAGINAS_SPA: tuple[str, ...] = (
     "/administracion/salud",
     "/administracion/respaldos",
     "/administracion/usuarios",
+    "/notificaciones",
 )
 
 # El menu de la SPA: (ruta, rotulo, area). El orden es el de trabajo. Cada rol ve solo
@@ -53,6 +54,7 @@ NAVEGACION_SPA: tuple[tuple[str, str, str], ...] = (
     ("/red-mulas", "Red de mulas", "Alertas"),
     ("/tablero", "Tablero", "Supervisión"),
     ("/reglas", "Reglas y política", "Supervisión"),
+    ("/notificaciones", "Notificaciones", "Supervisión"),
     ("/administracion/salud", "Salud del sistema", "Administración"),
     ("/administracion/respaldos", "Respaldos", "Administración"),
     ("/administracion/usuarios", "Usuarios del portal", "Administración"),

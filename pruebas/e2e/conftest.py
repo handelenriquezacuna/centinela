@@ -48,6 +48,7 @@ import pytest
 from playwright.sync_api import BrowserContext, Page
 
 from app.deteccion.d1 import NOMBRE_D1
+from app.deteccion.d2 import NOMBRE_D2
 from app.modelos import Agente, RolAgente
 from app.nucleo.config import Ajustes
 from app.nucleo.db import ciclo_cliente
@@ -56,6 +57,7 @@ from app.repos.carga_demo import cargar_demo
 from app.seguridad.usuarios import asignar_credencial
 from pruebas.conftest import RUTA_RAIZ, saltar_o_fallar
 from pruebas.dobles.datos_demo import ALERTAS, DATOS_DEMO
+from pruebas.dobles.servidor_smtp import ServidorSmtp
 from pruebas.sesiones import CLAVE_DE_PRUEBAS
 
 BASE_E2E = "antifraude_pruebas_e2e"
@@ -156,21 +158,24 @@ def _esperar_servidor(url: str, proceso: subprocess.Popen[bytes], segundos: int 
     raise RuntimeError(f"uvicorn no respondio en {segundos} s")
 
 
-async def _d1_abierto(base: Any) -> bool:
-    return await base["deteccion_estado"].find_one({"_id": NOMBRE_D1}) is not None
+async def _disparadores_abiertos(base: Any) -> bool:
+    """D1 y D2 ya guardaron su primer token: ambos tienen el change stream abierto."""
+    return await base["deteccion_estado"].count_documents(
+        {"_id": {"$in": [NOMBRE_D1, NOMBRE_D2]}}
+    ) == 2
 
 
-def _esperar_d1(segundos: int = 30) -> None:
+def _esperar_disparadores(segundos: int = 30) -> None:
     limite = time.monotonic() + segundos
     while time.monotonic() < limite:
-        if con_base(_d1_abierto):
+        if con_base(_disparadores_abiertos):
             return
         time.sleep(0.3)
-    raise RuntimeError("D1 no abrio su change stream a tiempo")
+    raise RuntimeError("D1 y D2 no abrieron su change stream a tiempo")
 
 
 @contextmanager
-def _uvicorn(uri: str, *, interfaz: str) -> Iterator[str]:
+def _uvicorn(uri: str, *, interfaz: str, smtp_puerto: int) -> Iterator[str]:
     """Un `uvicorn` real en un puerto libre, con la base de la prueba y la interfaz pedida."""
     puerto = _puerto_libre()
     # Los respaldos (D-74) de la e2e caen en un directorio temporal, no en el repo.
@@ -182,6 +187,9 @@ def _uvicorn(uri: str, *, interfaz: str) -> Iterator[str]:
         "CENTINELA_MONGO__BASE": BASE_E2E,
         "CENTINELA_SESION__CLAVE": CLAVE_DE_PRUEBAS,
         "CENTINELA_PORTAL__INTERFAZ": interfaz,
+        # D2 (H-11) manda su correo al SMTP en proceso de la prueba, no al 1025 de nadie.
+        "CENTINELA_NOTIFICACIONES__SMTP_HOST": "127.0.0.1",
+        "CENTINELA_NOTIFICACIONES__SMTP_PUERTO": str(smtp_puerto),
     }
     with tempfile.TemporaryFile() as registro:
         proceso = subprocess.Popen(
@@ -197,7 +205,7 @@ def _uvicorn(uri: str, *, interfaz: str) -> Iterator[str]:
         url = f"http://127.0.0.1:{puerto}"
         try:
             _esperar_servidor(url, proceso)
-            _esperar_d1()
+            _esperar_disparadores()
             yield url
         except Exception:
             registro.seek(0)
@@ -216,7 +224,14 @@ INDICE_SPA = RUTA_RAIZ / "app" / "estaticos" / "spa" / "index.html"
 
 
 @pytest.fixture(scope="session")
-def servidor_e2e() -> Iterator[str]:
+def servidor_smtp() -> Iterator[ServidorSmtp]:
+    """El SMTP de pruebas, en proceso: recibe lo que D2 envia desde el `uvicorn` de la prueba."""
+    with ServidorSmtp() as servidor:
+        yield servidor
+
+
+@pytest.fixture(scope="session")
+def servidor_e2e(servidor_smtp: ServidorSmtp) -> Iterator[str]:
     """URL base del `uvicorn` de la prueba: la SPA, con la base sembrada y D1 escuchando.
 
     Sin el build la SPA responde 503, asi que falta de build es un salto en local y una
@@ -228,14 +243,14 @@ def servidor_e2e() -> Iterator[str]:
     _sembrar(uri)
     con_base(_cargar_agentes_y_demo, uri)
     try:
-        with _uvicorn(uri, interfaz="spa") as url:
+        with _uvicorn(uri, interfaz="spa", smtp_puerto=servidor_smtp.puerto) as url:
             yield url
     finally:
         con_base(_borrar_base, uri)
 
 
 @pytest.fixture(scope="session")
-def servidor_htmx(servidor_e2e: str) -> Iterator[str]:
+def servidor_htmx(servidor_e2e: str, servidor_smtp: ServidorSmtp) -> Iterator[str]:
     """Otro `uvicorn` sobre la MISMA base, con `portal.interfaz: htmx` (respaldo, T-67).
 
     Existe mientras viva el respaldo HTMX (T-68 lo retira): las e2e de `htmx/` van contra
@@ -244,7 +259,7 @@ def servidor_htmx(servidor_e2e: str) -> Iterator[str]:
     prueba la resiliencia de T-52). El canal SSE de este servidor ve las alertas que
     escriba cualquiera de los dos: lee el change stream, no un bus en memoria.
     """
-    with _uvicorn(_uri(), interfaz="htmx") as url:
+    with _uvicorn(_uri(), interfaz="htmx", smtp_puerto=servidor_smtp.puerto) as url:
         yield url
 
 
@@ -271,6 +286,9 @@ async def _restaurar(base: Any) -> None:
         await base["listas_riesgo"].replace_one(
             {"_id": entrada.riesgo_id}, a_entero_64(entrada.a_documento()), upsert=True
         )
+    # Las notificaciones que D2 escribio por alertas criticas de las pruebas (T-77).
+    notificaciones_demo = [n.notificacion_id for n in DATOS_DEMO["notificaciones"]]
+    await base["notificaciones"].delete_many({"_id": {"$nin": notificaciones_demo}})
     # Los casos que abrio una escalacion en lote (T-56); los del demo se quedan.
     casos_demo = [c.caso_id for c in DATOS_DEMO["casos"]]
     await base["casos"].delete_many({"_id": {"$nin": casos_demo}})

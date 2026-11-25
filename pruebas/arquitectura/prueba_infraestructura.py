@@ -241,3 +241,14 @@ def prueba_cada_base_de_pruebas_esta_en_la_lista_del_usuario_de_pruebas() -> Non
         usadas |= set(BASES_FUERA_DE_ANTIFRAUDE.findall(ruta.read_text(encoding="utf-8")))
     faltan = {base for base in usadas if f'"{base}"' not in script}
     assert not faltan, f"agregar a 04-usuarios.js: {sorted(faltan)}"
+
+
+def prueba_mailpit_es_el_smtp_de_pruebas_de_d2(compose: dict) -> None:
+    """D2 (H-11) manda el correo a Mailpit. Tag exacto, solo en la interfaz local y vigilado."""
+    mailpit = compose["services"]["mailpit"]
+
+    assert mailpit["image"].startswith("axllent/mailpit:v"), "tag fijo, nunca latest"
+    assert mailpit.get("restart") == "unless-stopped"
+    assert sorted(mailpit["ports"]) == ["127.0.0.1:1025:1025", "127.0.0.1:8025:8025"]
+    assert mailpit["healthcheck"]["test"][-1] == "readyz"
+    assert "network_mode" not in mailpit, "no entra al espacio de red de mongo1"

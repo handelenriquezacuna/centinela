@@ -1,0 +1,33 @@
+{% extends "paginas/base.html" %}
+{% block titulo %}Notificaciones{% endblock %}
+{% block contenido %}
+<div class="titulo-pantalla">
+  <div>
+    <h1>Notificaciones</h1>
+    <p class="subtitulo">Correos de alertas críticas que envió el sistema, los más recientes primero.
+      El envío es al menos una vez: un correo puede llegar repetido si el servicio se reinició.</p>
+  </div>
+</div>
+<section class="tarjeta" aria-label="Notificaciones">
+{% if elementos %}
+  <p class="nota-tecnica">{{ total }} en total.</p>
+  <table class="tabla-simple" id="tabla-notificaciones">
+    <thead><tr><th>Fecha (hora CR)</th><th>Alerta</th><th>Cliente</th><th>Monto</th><th>Estado del envío</th><th>Intentos</th></tr></thead>
+    <tbody>
+{% for n in elementos %}
+      <tr>
+        <td>{{ n.fecha | hora_costa_rica }}</td>
+        <td><a href="/detalle/{{ n.alerta_id }}">{{ n.alerta_id }}</a></td>
+        <td>{{ n.cliente_nombre or '' }}</td>
+        <td>{{ n.monto_crc | colones }}</td>
+        <td>{{ n.estado_envio | etiqueta }}{% if n.detalle_error %} <span class="nota-tecnica">({{ n.detalle_error }})</span>{% endif %}</td>
+        <td>{{ n.intentos if n.intentos is not none else '' }}</td>
+      </tr>
+{% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p class="subtitulo">Todavía no se envió ninguna notificación.</p>
+{% endif %}
+</section>
+{% endblock %}

@@ -2125,3 +2125,124 @@ volumen: `docker compose -f infra/docker-compose.yml cp api:/respaldos/<id>.gz r
 verificado por sha256 (en `infra/Dockerfile` y en el CI, los mismos valores). Agregan unos
 **44 MB** a la imagen `api` (los dos binarios, 40,7 MB, y `libgssapi-krb5-2`, 2,9 MB, que
 piden y la imagen slim no trae). La imagen `web` pesa unos 82 MB (nginx alpine más la SPA).
+
+## D2 notificaciones (T-77, H-11)
+
+D2 es el segundo disparador: cuando D1 escribe una alerta de severidad `CRITICA`, D2 deja una
+`notificacion` y manda un correo a la guardia. Vive en `app/deteccion/d2.py` y se lanza en el
+lifespan como `d2_notificacion` (el nombre que `/estado` ya reportaba como `no_construida`;
+ahora aparece `corriendo` y late en cada vuelta del cursor). No importa `app/api/`.
+
+### Como funciona
+
+```
+change stream de alertas (insert, severidad CRITICA)  ->  notificacion `pendiente`
+        ->  envio SMTP (hilo, hasta `reintentos_envio` intentos)  ->  resultado en la notificacion  ->  token
+```
+
+- **El stream.** `app/repos/notificaciones.py`: un change stream sobre `alertas` filtrado en el
+  servidor a los inserts con `fullDocument.severidad: "CRITICA"`, mas `invalidate` (si alguien
+  borra `alertas` al re-sembrar, D2 lo ve y resincroniza en vez de girar sobre un cursor
+  muerto). No escucha updates: la severidad se fija al crear la alerta y ningun camino del
+  sistema la reescribe (las transiciones solo mueven `estado`), asi que ningun update "sube a
+  CRITICA". Si algun dia existe ese camino, se agrega `updateLookup` y un filtro sobre el estado
+  nuevo, en el mismo pipeline de las dos aperturas.
+- **Idempotencia.** Una alerta produce UNA notificacion por canal. La impone la base: el `_id`
+  se deriva de la alerta (`ALR-000123` -> `NOT-000123`) y el indice unico
+  `idx_notificaciones_alerta_canal` `(alerta_id, canal)` de `02-indices.js` rechaza el segundo
+  documento aunque el `_id` fuera otro (hay una prueba para eso). Es la misma garantia de
+  `alertas.transaccion_id` en D1.
+- **Orden de escrituras.** Primero la notificacion, despues el token (en `deteccion_estado`,
+  `_id: d2_notificacion`, el mismo documento y codigo que D1; `RepoNotificaciones` delega en
+  `RepoDeteccion`). El token se guarda solo cuando la notificacion llego a su estado final. Si el
+  proceso muere entre ambas, al reanudar se reprocesa el evento (`resumeAfter` con el mismo
+  pipeline y opciones) y el indice unico lo rechaza: una `enviado` o `fallido` no se vuelve a
+  enviar; una `pendiente` retoma los intentos que le faltaban.
+- **Token inservible** (`ChangeStreamHistoryLost`, un token corrupto o un `invalidate`): se
+  registra como `resincronizar`, D2 arranca desde ahora y lo que entro entre el token y ahora NO
+  se notifica; queda como ultimo error en `/estado`. Con el stream filtrado, el token solo avanza
+  con una CRITICA; cada `refresco_reanudacion_segundos` se guarda tambien el de una vuelta vacia,
+  para que no envejezca mas alla del oplog.
+- **Un correo que falla no detiene a D2 ni se reintenta sin fin.** Cada alerta tiene
+  `notificaciones.reintentos_envio` intentos con espera progresiva (`espera_inicial_segundos`, se
+  duplica hasta `espera_maxima_segundos`). Agotados, la notificacion queda `fallido` con
+  `detalle_error` e `intentos`, el fallo se anota en `/estado` y D2 sigue con la siguiente. Lo que
+  no es un fallo de correo (la base no contesta, una alerta que no cumple el modelo) se reintenta
+  igual y, agotado, va al descarte (`deteccion_estado`, clase `descarte`, `d2_notificacion:TXN-...`).
+- **Entrega al menos una vez, y el correo lo dice.** Si D2 muere despues de que el servidor SMTP
+  acepto el correo y antes de anotar `enviado`, al reanudar lo envia de nuevo. No se promete
+  exactamente una vez. El `Message-ID` es fijo por alerta (`<NOT-000123@centinela.local>`) para
+  reconocer un repetido.
+- **No bloquea el bucle.** `smtplib` es sincrono: se corre con `asyncio.to_thread`. Sin
+  dependencias nuevas. Peor caso por alerta con el SMTP caido: `reintentos_envio` x
+  `espera_smtp_segundos` mas las esperas; con los valores por omision (3 x 5 s + 1,5 s) cabe
+  holgado en la tolerancia de `/estado` (30 s). Si se suben, subir tambien la tolerancia.
+
+### Lo que lleva la notificacion y el correo
+
+`notificaciones` (validador de `01-colecciones.js`): al registro de Practica 1 se agregaron tres
+campos OPCIONALES, `intentos` (int), `asunto` y `destinatarios`; `fecha` es la del ultimo intento.
+`estado_envio` pasa por `pendiente` -> `enviado` | `fallido`.
+
+El correo (`app/deteccion/correo.py`, `armar_correo` es una funcion pura): asunto
+`[Centinela] Alerta crítica ALR-000123: ₡280.000 de <cliente>`; cuerpo en espanol con alerta,
+cliente, monto (`₡` con punto de miles, enteros), cuentas, severidad y puntaje, fecha en hora de
+Costa Rica, las reglas disparadas con su version y explicacion, y el enlace
+`{portal_url}/detalle/ALR-000123`.
+
+### Configuracion
+
+Bloque `notificaciones` de `config/centinela.yml` (sin secretos ni reglas de negocio):
+
+| Clave | Por omision | Para que |
+|---|---|---|
+| `activa` | `true` | `false`: D2 no se lanza y `/estado` lo reporta `no_construida` |
+| `smtp_host`, `smtp_puerto` | `localhost`, `1025` | Modalidad A (Python en el host) |
+| `remitente`, `destinatarios` | `centinela@centinela.local`, `[guardia@centinela.local]` | De y a quien |
+| `portal_url` | `http://127.0.0.1:8000` | Base del enlace al detalle |
+| `reintentos_envio` | `3` | Tope de intentos de envio por alerta |
+| `espera_inicial_segundos`, `espera_maxima_segundos` | `0.5`, `10` | Espera progresiva |
+| `espera_smtp_segundos` | `5` | Tiempo maximo de una conexion SMTP |
+| `espera_cursor_ms`, `refresco_reanudacion_segundos` | `1000`, `30` | Vuelta del cursor y refresco del token |
+
+En Docker el servidor de correo se llama `mailpit`: `CENTINELA_NOTIFICACIONES__SMTP_HOST=mailpit`.
+Ojo: el servicio `app` comparte el espacio de red de `mongo1` (`network_mode: service:mongo1`) y
+desde ahi `mailpit` no resuelve; mientras sea asi, usar `host.docker.internal` (Mailpit publica el
+1025 en el host).
+
+### Ver los correos: Mailpit
+
+`python tareas.py arriba` levanta tambien el servicio `mailpit` de `infra/docker-compose.yml`
+(`axllent/mailpit`, tag fijo). La interfaz web esta en **http://127.0.0.1:8025** y su API en
+`http://127.0.0.1:8025/api/v1/messages`; el SMTP escucha en `127.0.0.1:1025`. Para ver un correo:
+con la API y D1 arriba, correr la demo que produce una alerta CRITICA (la transaccion TXN-001 del
+caso, 75 puntos) y abrir esa direccion. Los correos viven en la memoria del contenedor: se pierden
+al recrearlo, a proposito.
+
+### Portal
+
+`GET /api/v1/notificaciones` (permiso `ver_notificaciones`: supervisor y administrador; agente 403):
+pagina con `total`, `limite`, `desplazamiento` y `elementos`, las mas recientes primero, filtro
+`estado_envio`, cada elemento con los datos de la alerta (`cliente_nombre`, `monto_crc`,
+`severidad`, `puntaje`; nulos si la alerta ya no existe). En la SPA, pantalla `/notificaciones`
+(entrada "Notificaciones" del menu, solo supervisor y administrador); el respaldo HTMX tiene la
+misma pagina mientras exista.
+
+### Pruebas
+
+- Unitarias: `prueba_correo.py` (armado, colones, filtro de severidad, SMTP real contra
+  `pruebas/dobles/servidor_smtp.py`, un servidor SMTP en proceso) y `prueba_d2.py` (orden de
+  escrituras, reprocesos, reintentos, descarte, resincronizacion, con `RepoNotificacionesFalso`).
+- Contrato: `prueba_notificaciones_api.py` (forma, paginacion, filtro, permisos, pagina HTMX).
+- Integracion con Mongo real (`-m mongo`): `prueba_d2_mongo.py` (una CRITICA produce notificacion
+  y una ALTA no, ráfaga de 10, reanudar sin duplicar ni perder, pendiente retomada, token
+  inservible, `invalidate`, puerto cerrado, servidor que rechaza, indice unico, validador, lifespan
+  con `/estado`) y `prueba_d2_mailpit.py` (el correo llega a un Mailpit de verdad y se lee por
+  `/api/v1/messages`).
+- e2e (`-m e2e`): `prueba_spa_notificaciones.py`, el supervisor ve la notificacion de una alerta
+  CRITICA; el agente no ve el menu.
+- **Mailpit en las pruebas.** Las de `prueba_d2_mailpit.py` esperan un Mailpit en los puertos
+  1125 (SMTP) y 8125 (HTTP): `docker run -d --rm --name t77-mailpit -p 127.0.0.1:1125:1025 -p
+  127.0.0.1:8125:8025 axllent/mailpit:v1.29.1`. El CI lo levanta como paso (`docker run` con tag
+  y digest, igual que Mongo) y, con `CENTINELA_EXIGIR_MONGO=1`, su ausencia es una falla. El resto
+  de las pruebas de D2 y la e2e no necesitan Docker de correo: usan el SMTP en proceso.

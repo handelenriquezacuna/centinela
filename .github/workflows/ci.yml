@@ -179,6 +179,25 @@ jobs:
             done
           '
 
+      # Mailpit: el servidor SMTP de pruebas de D2 (H-11, T-77). Las pruebas de
+      # pruebas/integracion/prueba_d2_mailpit.py mandan un correo de verdad y lo leen por la
+      # API HTTP de Mailpit. Va en los puertos 1125 (SMTP) y 8125 (HTTP), los que esas pruebas
+      # esperan por omision, para no chocar con el 1025/8025 de un Mailpit de trabajo. La
+      # imagen va por tag exacto Y digest: lo que corre aca no cambia si mueven la etiqueta.
+      # Si no levanta, el paso falla: con CENTINELA_EXIGIR_MONGO=1 un Mailpit ausente es una
+      # falla de las pruebas, no un salto.
+      - name: Levantar Mailpit (SMTP de pruebas de D2)
+        run: |
+          set -euo pipefail
+          docker run -d --name centinela-mailpit \
+            -p 127.0.0.1:1125:1025 -p 127.0.0.1:8125:8025 \
+            axllent/mailpit:v1.29.1@sha256:7c38788069433ba9d2d9131abac8d17da0fb18f09b689207ec7a773dcb8d6eee
+          timeout 60 bash -c '
+            until docker exec centinela-mailpit /mailpit readyz > /dev/null 2>&1; do
+              sleep 2
+            done
+          '
+
       - name: Sembrar la base antifraude (01 -> 02 -> 03 -> 05, el orden de datos-demo)
         run: |
           set -euo pipefail
@@ -264,6 +283,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Apagar Mongo
+      - name: Apagar Mongo y Mailpit
         if: always()
-        run: docker rm -f centinela-mongo || true
+        run: docker rm -f centinela-mongo centinela-mailpit || true

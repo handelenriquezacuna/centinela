@@ -76,6 +76,7 @@ NAVEGACION = [
     ("/reglas", "Reglas", "reglas"),
     ("/busqueda", "Búsqueda", "busqueda"),
     ("/tablero", "Tablero", "tablero"),
+    ("/notificaciones", "Notificaciones", "notificaciones"),
 ]
 
 ENTORNO = Environment(

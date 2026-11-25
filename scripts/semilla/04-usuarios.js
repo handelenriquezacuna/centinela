@@ -61,6 +61,7 @@ const BASES_PRUEBAS = [
   "antifraude_pruebas_carga",
   "antifraude_pruebas_casos",
   "antifraude_pruebas_d1",
+  "antifraude_pruebas_d2",
   "antifraude_pruebas_detalle",
   "antifraude_pruebas_e2e",
   "antifraude_pruebas_e2e_verificacion", // la verificacion de respaldos de la e2e (D-74)

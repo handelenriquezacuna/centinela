@@ -273,3 +273,31 @@ async def prueba_el_validador_rechaza_v1_con_politica(base_mongo: Any) -> None:
 
     with pytest.raises(WriteError):
         await destino.insert_one({**_alerta_v1(), "politica": POLITICA_V2})
+
+
+@pytest.mark.asyncio
+async def prueba_el_validador_de_notificaciones_acepta_los_campos_que_agrega_d2(
+    base_mongo: Any,
+) -> None:
+    """T-77: `intentos`, `asunto` y `destinatarios` son opcionales y el modelo los escribe."""
+    from app.modelos.cierre import Notificacion
+
+    destino = await _preparar(base_mongo, "notificaciones")
+    nota = Notificacion(
+        _id="NOT-000001",
+        alerta_id="ALR-000001",
+        estado_envio="fallido",
+        fecha=datetime(2026, 9, 25, 4, 47, tzinfo=UTC),
+        detalle_error="ConnectionRefusedError: [Errno 61] Connection refused",
+        intentos=3,
+        asunto="[Centinela] Alerta crítica ALR-000001: ₡280.000 de Maria Rodriguez Vargas",
+        destinatarios=["guardia@centinela.local"],
+    )
+
+    await destino.insert_one(a_entero_64(nota.a_documento()))
+
+    with pytest.raises(WriteError):
+        await destino.insert_one(
+            a_entero_64(nota.model_copy(update={"notificacion_id": "NOT-000002", "alerta_id": "ALR-000002"}).a_documento())
+            | {"intentos": -1}
+        )

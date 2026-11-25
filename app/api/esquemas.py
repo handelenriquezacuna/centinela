@@ -49,6 +49,33 @@ class PaginaAlertas(Pagina):
     elementos: list[Alerta]
 
 
+class ElementoNotificacion(BaseModel):
+    """Una notificacion de D2 (H-11) con los datos de la alerta que la origino.
+
+    `severidad`, `puntaje`, `monto_crc` y `cliente_nombre` salen de la alerta y son
+    nulos si esa alerta ya no existe (la base se re-sembro). `intentos` y `asunto` son
+    nulos en las notificaciones de antes de D2.
+    """
+
+    notificacion_id: str = Field(description="NOT-001")
+    alerta_id: str = Field(description="ALR-001")
+    canal: str
+    estado_envio: str = Field(description="pendiente, enviado o fallido")
+    fecha: MarcaTiempoUTC = Field(description="Del ultimo intento de envio")
+    intentos: int | None = None
+    asunto: str | None = None
+    destinatarios: list[str] | None = None
+    detalle_error: str | None = None
+    severidad: str | None = None
+    puntaje: int | None = None
+    monto_crc: int | None = Field(default=None, ge=0, description="Colones enteros")
+    cliente_nombre: str | None = None
+
+
+class PaginaNotificaciones(Pagina):
+    elementos: list[ElementoNotificacion]
+
+
 class ElementoTransaccion(BaseModel):
     """Una transaccion del historico con su alerta asociada (H-15).
 

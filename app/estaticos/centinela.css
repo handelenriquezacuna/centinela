@@ -1357,6 +1357,22 @@ code {
   color: #ffffff;
 }
 
+/* Estado del envio de una notificacion (D2, T-77): la misma paleta que las tareas. */
+.insignia-estado.es-envio-enviado {
+  background: var(--color-confirmada);
+  color: #ffffff;
+}
+
+.insignia-estado.es-envio-pendiente {
+  background: var(--color-alta);
+  color: #ffffff;
+}
+
+.insignia-estado.es-envio-fallido {
+  background: var(--color-critica);
+  color: #ffffff;
+}
+
 .comando {
   background: var(--color-primario);
   color: #f8fafc;

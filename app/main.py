@@ -9,9 +9,8 @@ El lifespan hace tres cosas y en este orden:
 1. Crea el unico cliente de Mongo del proceso. NO hace ping: `AsyncMongoClient`
    conecta de forma perezosa, asi que la API arranca aunque el replica set todavia
    este eligiendo primario, y es `/salud` quien informa si la base responde.
-2. Crea el supervisor y lanza las tareas de fondo: el latido y D1 (H-09). D2 (H-11)
-   y D3 (H-22) se lanzan aqui mismo con una linea cada uno y `/estado` los vigila
-   sin cambios.
+2. Crea el supervisor y lanza las tareas de fondo: el latido, D1 (H-09), D2 (H-11)
+   y D3 (H-22), una linea cada uno; `/estado` los vigila.
 3. Al salir, detiene las tareas ANTES de cerrar el cliente. El orden importa: si el
    cliente se cerrara primero, las tareas que estan en medio de una consulta
    reventarian al apagar y el registro se llenaria de errores que no significan nada.
@@ -36,16 +35,19 @@ from app.api.rutas import estado as rutas_estado
 from app.api.rutas import paginas as rutas_paginas
 from app.api.rutas import paginas_busqueda as rutas_paginas_busqueda
 from app.api.rutas import paginas_casos as rutas_paginas_casos
+from app.api.rutas import paginas_notificaciones as rutas_paginas_notificaciones
 from app.api.rutas import paginas_tablero as rutas_paginas_tablero
 from app.api.rutas import salud as rutas_salud
 from app.api.rutas import spa as rutas_spa
 from app.api.sesion import guardia, registrar_manejadores_sesion
 from app.deteccion.d1 import NOMBRE_D1, d1
+from app.deteccion.d2 import NOMBRE_D2, d2
 from app.deteccion.d3 import NOMBRE_D3, d3
 from app.nucleo.config import Ajustes, obtener_ajustes
 from app.nucleo.db import crear_cliente, obtener_base
 from app.repos.deteccion import RepoDeteccion
 from app.repos.indicadores import RepoIndicadores
+from app.repos.notificaciones import RepoNotificaciones
 from app.repos.perfiles import RepoPerfiles
 from app.repos.rasgos_grafo import RepoRasgosGrafo
 from app.repos.respaldos import RepoRespaldos
@@ -118,9 +120,7 @@ async def ciclo_vida(aplicacion: FastAPI) -> AsyncIterator[None]:
 
     # El latido es la tarea de fondo de H-00B, y es real: comprueba que la base
     # responde sin que nadie pregunte. Aca se lanzan tambien los disparadores, con una
-    # linea cada uno:
-    #
-    #   supervisor.lanzar("d2_notificacion", d2(base, supervisor))  # H-11
+    # linea cada uno.
     #
     # `partial` y no una lambda: la comprobacion se pasa como funcion sin argumentos
     # para que `app/supervision/` no tenga que importar el driver.
@@ -135,6 +135,15 @@ async def ciclo_vida(aplicacion: FastAPI) -> AsyncIterator[None]:
     )
     # H-09: transaccion -> alerta. Recibe el repositorio, no la base (ver app/deteccion/d1.py).
     supervisor.lanzar(NOMBRE_D1, d1(RepoDeteccion(base), supervisor, ajustes=ajustes.deteccion))
+    # H-11: alerta CRITICA -> notificacion -> correo SMTP. Con `notificaciones.activa: false`
+    # no se lanza y `/estado` lo reporta como no construido.
+    if ajustes.notificaciones.activa:
+        supervisor.lanzar(
+            NOMBRE_D2,
+            d2(RepoNotificaciones(base), supervisor, ajustes=ajustes.notificaciones),
+        )
+    else:
+        registro.warning("notificaciones.activa es false: D2 no se lanza")
     # H-22: recalcula indicadores_diarios del dia actual cada N segundos.
     # T-63: la misma vuelta de D3 recalcula los rasgos de grafo de R-11 (solo con la regla activa).
     supervisor.lanzar(
@@ -208,6 +217,7 @@ def crear_aplicacion(interfaz: str | None = None) -> FastAPI:
     aplicacion.include_router(rutas_paginas_tablero.enrutador)
     aplicacion.include_router(rutas_paginas_busqueda.enrutador)
     aplicacion.include_router(rutas_paginas_casos.enrutador)
+    aplicacion.include_router(rutas_paginas_notificaciones.enrutador)
     aplicacion.include_router(rutas_paginas.enrutador)
 
     # Los estaticos se sirven desde el propio proceso: es un monolito y no hay un

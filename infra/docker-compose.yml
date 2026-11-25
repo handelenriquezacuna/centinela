@@ -140,6 +140,8 @@ services:
       # ni en config/centinela.yml. La de respaldo es la del usuario centinela_respaldo.
       CENTINELA_MONGO__URI: ${CENTINELA_MONGO__URI:-}
       CENTINELA_RESPALDOS__URI: ${CENTINELA_RESPALDOS__URI:-}
+      # D2 (T-77): mailpit resuelve desde la red de mongo1, que comparte la red default.
+      CENTINELA_NOTIFICACIONES__SMTP_HOST: mailpit
     volumes:
       # Los respaldos (D-74) sobreviven a la recreacion del contenedor. El directorio
       # (/respaldos) lo fija el Dockerfile con CENTINELA_RESPALDOS__DIRECTORIO.
@@ -171,6 +173,25 @@ services:
     depends_on:
       api:
         condition: service_healthy
+
+  # D2 (H-11, T-77): el servidor SMTP de pruebas. Recibe los correos de alertas criticas y
+  # los muestra en http://127.0.0.1:8025. Imagen con tag EXACTO (nunca `latest`: un
+  # cambio de version del servidor de pruebas no debe llegar solo). Sin dependencias: no
+  # comparte red con mongo1, asi que no toca el espacio de red de los nodos. Desde el host
+  # (modalidad A) la API lo ve en localhost:1025; los correos se pierden al recrear el
+  # contenedor, a proposito (es de pruebas y no hay volumen que administrar).
+  mailpit:
+    image: axllent/mailpit:v1.29.1
+    container_name: fraude-mailpit
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1025:1025"   # SMTP
+      - "127.0.0.1:8025:8025"   # interfaz web y API HTTP
+    healthcheck:
+      test: ["CMD","/mailpit","readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
 # Volumenes normales, sin `external` y sin `name`: Compose los crea y los administra.
 #

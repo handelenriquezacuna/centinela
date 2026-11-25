@@ -220,7 +220,7 @@ async def prueba_credenciales_malas_no_dejan_cookie_y_dan_401_en_la_forma_del_er
         ("agente", ["/panel", "/busqueda", "/red-mulas"], {"panel", "resolver"}),
         (
             "supervisor",
-            ["/panel", "/busqueda", "/red-mulas", "/tablero", "/reglas"],
+            ["/panel", "/busqueda", "/red-mulas", "/tablero", "/reglas", "/notificaciones"],
             {"tablero", "gestionar_listas"},
         ),
         (
@@ -231,6 +231,7 @@ async def prueba_credenciales_malas_no_dejan_cookie_y_dan_401_en_la_forma_del_er
                 "/red-mulas",
                 "/tablero",
                 "/reglas",
+                "/notificaciones",
                 "/administracion/salud",
                 "/administracion/respaldos",
                 "/administracion/usuarios",

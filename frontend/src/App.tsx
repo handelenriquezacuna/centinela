@@ -9,6 +9,7 @@ import { RequiereSesion } from "./componentes/RequiereSesion";
 import { Busqueda } from "./paginas/Busqueda";
 import { Login } from "./paginas/Login";
 import { NoEncontrada } from "./paginas/NoEncontrada";
+import { Notificaciones } from "./paginas/Notificaciones";
 import { Detalle } from "./paginas/Detalle";
 import { Inicio } from "./paginas/Inicio";
 import { Panel } from "./paginas/Panel";
@@ -72,6 +73,10 @@ export const RUTAS: RouteObject[] = [
       {
         path: "/administracion/usuarios",
         element: protegida("/administracion/usuarios", <Usuarios />),
+      },
+      {
+        path: "/notificaciones",
+        element: protegida("/notificaciones", <Notificaciones />),
       },
       { path: "*", element: <NoEncontrada /> },
     ],
