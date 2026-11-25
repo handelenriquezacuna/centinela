@@ -9,11 +9,13 @@ import { destinoSeguro } from "../destino";
 /**
  * Iniciar sesion. Mismos rotulos que la pantalla HTMX ("Identificador", "Contraseña",
  * "Entrar"): las pruebas e2e los buscan por etiqueta accesible. Al entrar se vuelve a
- * `?siguiente=` si es una ruta interna (`destinoSeguro`); si no, al panel.
+ * `?siguiente=` si es una ruta interna (`destinoSeguro`); sin el, a la pagina de inicio del rol.
  */
 export function Login() {
   const [parametros] = useSearchParams();
-  const destino = destinoSeguro(parametros.get("siguiente"));
+  const pedido = parametros.get("siguiente");
+  // Con `?siguiente=` se vuelve ahi; sin el, `/` manda a cada rol a su pantalla de inicio.
+  const destino = pedido ? destinoSeguro(pedido) : "/";
   const navegar = useNavigate();
   const clienteConsultas = useQueryClient();
   const { data: sesion } = useSesion();

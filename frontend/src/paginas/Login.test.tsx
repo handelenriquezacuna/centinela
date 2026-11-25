@@ -59,7 +59,7 @@ describe("Login y sesion", () => {
     });
     expect(guardar).not.toHaveBeenCalled();
     expect(JSON.stringify({ ...localStorage, ...sessionStorage })).not.toContain("secreto");
-    expect(screen.getByText("AGT-901")).toBeInTheDocument();
+    expect(screen.getByText("Agente E2E")).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Navegación principal" })).toHaveTextContent("Búsqueda");
   });
 

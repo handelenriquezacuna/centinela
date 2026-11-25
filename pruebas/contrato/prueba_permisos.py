@@ -131,7 +131,12 @@ def prueba_sin_sesion_solo_es_publico_login_salud_y_lo_necesario_para_entrar() -
 # Negado: respuesta HTTP real
 # ---------------------------------------------------------------------------
 
-PROTEGIDAS = [a for a in ACCESOS if a.permiso is not None]
+# El area de Administracion existe solo con la interfaz SPA (no hubo version HTMX de ella):
+# `aplicacion` es la app HTMX, asi que su 401/403 se prueba en `prueba_portal_spa.py`.
+SOLO_SPA = "/administracion"
+PROTEGIDAS = [
+    a for a in ACCESOS if a.permiso is not None and not a.ruta.startswith(SOLO_SPA)
+]
 
 
 def _id(acceso: Acceso) -> str:

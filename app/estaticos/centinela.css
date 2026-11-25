@@ -1142,3 +1142,313 @@ summary:focus-visible {
   outline: 3px solid var(--color-acento);
   outline-offset: -3px;
 }
+
+/* ======================================================================
+   Modulos comunes de la SPA (T-74): menu por rol, vista vacia, metricas, filtros y tablas.
+   ====================================================================== */
+
+.saltar {
+  position: absolute;
+  left: var(--espacio-2);
+  top: -3rem;
+  background: #ffffff;
+  color: var(--color-primario);
+  padding: var(--espacio-2) var(--espacio-3);
+  border-radius: var(--radio-chico);
+  z-index: 10;
+}
+
+.saltar:focus {
+  top: var(--espacio-2);
+}
+
+/* Menu principal: grupos por area en una fila; el boton "Menu" solo existe en telefono. */
+.menu-boton {
+  display: none;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  min-height: 44px;
+  padding: var(--espacio-2) var(--espacio-3);
+  border: 1px solid #475569;
+  border-radius: var(--radio-chico);
+  background: transparent;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.menu-portal {
+  align-items: center;
+}
+
+.menu-grupo {
+  display: flex;
+  align-items: center;
+  gap: var(--espacio-1);
+  flex-wrap: wrap;
+}
+
+.menu-grupo + .menu-grupo {
+  border-left: 1px solid #334155;
+  padding-left: var(--espacio-2);
+  margin-left: var(--espacio-1);
+}
+
+.menu-area {
+  display: none;
+}
+
+.marco-pagina {
+  min-width: 0;
+}
+
+.campo {
+  min-width: 0;
+}
+
+.campo input,
+.campo select,
+.campo textarea {
+  max-width: 100%;
+}
+
+code {
+  overflow-wrap: anywhere;
+}
+
+/* Sin datos todavia: se dice que falta y que hacer, no se deja un hueco. */
+.vista-vacia {
+  padding: var(--espacio-4);
+  text-align: center;
+  color: var(--color-texto-tenue);
+}
+
+.vista-vacia-titulo {
+  font-weight: 600;
+  color: var(--color-texto);
+  margin-bottom: var(--espacio-1);
+}
+
+.vista-vacia-accion {
+  margin-top: var(--espacio-3);
+}
+
+.mensaje p {
+  margin: 0 0 var(--espacio-2);
+}
+
+.mensaje p:last-child {
+  margin-bottom: 0;
+}
+
+/* Metricas: una cifra con rotulo; sin datos un guion, no una frase en 40 px. */
+.metricas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: var(--espacio-3);
+}
+
+.metrica {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espacio-1);
+  padding: var(--espacio-3);
+  border: 1px solid var(--color-borde);
+  border-radius: var(--radio);
+  background: #ffffff;
+}
+
+.metrica-valor {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.metrica-rotulo {
+  font-size: 0.85rem;
+  color: var(--color-texto-tenue);
+}
+
+.metrica-nota {
+  font-size: 0.8rem;
+  color: var(--color-texto-tenue);
+}
+
+.metrica-sin_datos .metrica-valor {
+  color: var(--color-texto-tenue);
+}
+
+.metrica-alerta {
+  border-color: var(--color-critica);
+  background: #fef2f2;
+}
+
+.metrica-alerta .metrica-valor {
+  color: var(--color-critica);
+}
+
+/* Campos de formulario con ayuda y error enlazados. */
+.campo-ayuda {
+  color: var(--color-texto-tenue);
+  font-size: 0.8rem;
+}
+
+.campo-error {
+  color: var(--color-critica);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.campo input[aria-invalid="true"],
+.campo select[aria-invalid="true"] {
+  border-color: var(--color-critica);
+}
+
+.filtro-barra {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espacio-3);
+  align-items: flex-end;
+}
+
+.filtro-campos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espacio-3);
+  flex: 1 1 auto;
+}
+
+.filtro-acciones {
+  display: flex;
+  gap: var(--espacio-2);
+}
+
+/* Tablas: la envoltura desplaza en horizontal solo la tabla, no la pagina. */
+.tabla-envoltura {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.orden-columna {
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.insignia-estado.es-tarea-corriendo {
+  background: var(--color-confirmada);
+  color: #ffffff;
+}
+
+.insignia-estado.es-tarea-degradada,
+.insignia-estado.es-tarea-retrasada {
+  background: var(--color-alta);
+  color: #ffffff;
+}
+
+.insignia-estado.es-tarea-detenida,
+.insignia-estado.es-tarea-fallida {
+  background: var(--color-critica);
+  color: #ffffff;
+}
+
+.comando {
+  background: var(--color-primario);
+  color: #f8fafc;
+  padding: var(--espacio-3);
+  border-radius: var(--radio-chico);
+  overflow-x: auto;
+}
+
+/* Telefono: una sola fila de cabecera (marca, nombre, Menu) y el menu desplegable. */
+@media (max-width: 720px) {
+  .encabezado {
+    flex-wrap: wrap;
+    gap: var(--espacio-2);
+  }
+
+  .marca {
+    order: 0;
+  }
+
+  .marca-sufijo {
+    display: none;
+  }
+
+  .sesion-agente {
+    order: 1;
+    margin-left: auto;
+    min-width: 0;
+  }
+
+  #sesion-quien {
+    max-width: 8.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .menu-boton {
+    display: inline-block;
+    order: 2;
+  }
+
+  .menu-portal {
+    order: 3;
+    flex: 1 0 100%;
+    margin-left: 0;
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--espacio-2);
+  }
+
+  .menu-portal.menu-abierto {
+    display: flex;
+  }
+
+  .menu-grupo,
+  .menu-grupo + .menu-grupo {
+    flex-direction: column;
+    align-items: stretch;
+    border-left: 0;
+    padding-left: 0;
+    margin-left: 0;
+  }
+
+  .menu-area {
+    display: block;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #94a3b8;
+    padding: var(--espacio-1) var(--espacio-3);
+  }
+
+  .nav-portal a {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+
+  .boton {
+    min-height: 44px;
+  }
+
+  /* La cola por alerta es una rejilla de 8 columnas: en telefono se desplaza dentro de su envoltura. */
+  .cola-encabezado,
+  .fila-alerta {
+    min-width: 60rem;
+  }
+
+  /* Tablas sin version de tarjeta: se desplazan dentro de si mismas, no la pagina. */
+  .tabla-simple {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}

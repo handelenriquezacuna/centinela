@@ -162,4 +162,4 @@ def prueba_una_ruta_que_no_existe_muestra_la_pagina_404_propia(page: Page, servi
     page.get_by_role("link", name="Búsqueda").click()
     page.evaluate("history.pushState({}, '', '/no-existe'); dispatchEvent(new PopStateEvent('popstate'))")
     expect(page.get_by_role("heading", name="Página no encontrada")).to_be_visible()
-    expect(page.get_by_role("link", name="Volver al panel")).to_be_visible()
+    expect(page.get_by_role("link", name="Volver al inicio")).to_be_visible()

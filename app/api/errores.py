@@ -28,7 +28,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -196,7 +196,13 @@ async def manejar_fallo_de_mongo(
 
 async def manejar_http(
     peticion: Request, fallo: StarletteHTTPException
-) -> JSONResponse:
+) -> Response:
+    if fallo.status_code == status.HTTP_404_NOT_FOUND:
+        from app.api.sesion import respuesta_pagina_desconocida
+
+        pagina = respuesta_pagina_desconocida(peticion)
+        if pagina is not None:
+            return pagina
     codigo = CODIGO_POR_ESTADO.get(fallo.status_code, CodigoError.ERROR_INTERNO)
     return _respuesta(fallo.status_code, codigo, str(fallo.detail))
 

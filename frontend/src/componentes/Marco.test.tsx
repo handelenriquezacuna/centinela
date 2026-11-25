@@ -54,11 +54,18 @@ describe("Navegacion y sesion", () => {
     expect(enrutador.state.location.search).toContain("siguiente=");
   });
 
+  it("muestra el nombre de la persona y su rol", async () => {
+    instalarApiFalsa({ "GET /api/v1/sesion": { cuerpo: SESION_AGENTE }, "GET /api/v1/casos-destino": { cuerpo: { total: 0, limite: 50, desplazamiento: 0, elementos: [] } }, "GET /api/v1/deteccion/rezago": { cuerpo: SIN_REZAGO } });
+    montar("/panel");
+    expect(await screen.findByText("Agente E2E")).toBeInTheDocument();
+    expect(document.getElementById("sesion-quien")).toHaveTextContent("Agente E2E (agente)");
+  });
+
   it("una ruta que no existe muestra la pagina 404 propia", async () => {
     instalarApiFalsa({ "GET /api/v1/sesion": { cuerpo: SESION_AGENTE } });
     montar("/no-existe");
     expect(await screen.findByRole("heading", { name: "Página no encontrada" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Volver al panel" })).toHaveAttribute("href", "/panel");
+    await waitFor(() => expect(screen.getByRole("link", { name: "Volver al inicio" })).toHaveAttribute("href", "/panel"));
   });
 
   it("Salir llama DELETE /api/v1/sesion y vuelve al login", async () => {

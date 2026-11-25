@@ -23,6 +23,8 @@ from pathlib import Path
 from fastapi import APIRouter, status
 from fastapi.responses import FileResponse, HTMLResponse, Response
 
+from app.modelos.alertas import RolAgente
+
 RUTA_SPA = Path(__file__).resolve().parents[2] / "estaticos" / "spa"
 
 # Las paginas de la SPA. Las mismas plantillas que declara la tabla de permisos.
@@ -37,7 +39,32 @@ PAGINAS_SPA: tuple[str, ...] = (
     "/red-mulas/{cuenta}",
     "/tablero",
     "/reglas",
+    "/administracion",
+    "/administracion/salud",
+    "/administracion/respaldos",
+    "/administracion/usuarios",
 )
+
+# El menu de la SPA: (ruta, rotulo, area). El orden es el de trabajo. Cada rol ve solo
+# lo que su permiso abre (`GET /api/v1/sesion` filtra con la tabla de permisos).
+NAVEGACION_SPA: tuple[tuple[str, str, str], ...] = (
+    ("/panel", "Panel", "Alertas"),
+    ("/busqueda", "Búsqueda", "Alertas"),
+    ("/red-mulas", "Red de mulas", "Alertas"),
+    ("/tablero", "Tablero", "Supervisión"),
+    ("/reglas", "Reglas y política", "Supervisión"),
+    ("/administracion/salud", "Salud del sistema", "Administración"),
+    ("/administracion/respaldos", "Respaldos", "Administración"),
+    ("/administracion/usuarios", "Usuarios del portal", "Administración"),
+)
+
+# Donde aterriza cada rol al entrar: la agente en su cola, el supervisor en lo pendiente,
+# el administrador en la salud del sistema.
+INICIO_POR_ROL: dict[RolAgente, str] = {
+    RolAgente.AGENTE: "/panel",
+    RolAgente.SUPERVISOR: "/tablero",
+    RolAgente.ADMINISTRADOR: "/administracion/salud",
+}
 
 SIN_BUILD = (
     "<!doctype html><html lang=\"es\"><meta charset=\"utf-8\"><title>Centinela</title>"

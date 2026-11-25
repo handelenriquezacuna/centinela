@@ -2,12 +2,15 @@ import type { AlertaDeCaso, CasoDestino, SesionActual } from "../api/tipos";
 
 export const SESION_AGENTE: SesionActual = {
   agente_id: "AGT-901",
+  nombre: "Agente E2E",
   rol: "agente",
+  inicio: "/panel",
   expira: "2026-11-23T20:00:00Z",
   permisos: ["buscar", "detalle", "panel", "red_mulas", "resolver", "sesion"],
   navegacion: [
-    { ruta: "/panel", rotulo: "Panel" },
-    { ruta: "/busqueda", rotulo: "Búsqueda" },
+    { ruta: "/panel", rotulo: "Panel", area: "Alertas" },
+    { ruta: "/busqueda", rotulo: "Búsqueda", area: "Alertas" },
+    { ruta: "/red-mulas", rotulo: "Red de mulas", area: "Alertas" },
   ],
   paginas: ["/", "/login", "/panel", "/detalle", "/detalle/{alerta_id}", "/busqueda", "/red-mulas", "/red-mulas/{cuenta}"],
 };
@@ -51,8 +54,36 @@ export function casoDestino(cuenta: string, alertas: AlertaDeCaso[], campos: Par
 export const SESION_SUPERVISOR: SesionActual = {
   ...SESION_AGENTE,
   agente_id: "AGT-902",
+  nombre: "Supervisor E2E",
   rol: "supervisor",
+  inicio: "/tablero",
   permisos: [...SESION_AGENTE.permisos, "tablero", "ver_reglas", "editar_reglas"],
-  navegacion: [...SESION_AGENTE.navegacion, { ruta: "/tablero", rotulo: "Tablero" }, { ruta: "/reglas", rotulo: "Reglas" }],
+  navegacion: [
+    ...SESION_AGENTE.navegacion,
+    { ruta: "/tablero", rotulo: "Tablero", area: "Supervisión" },
+    { ruta: "/reglas", rotulo: "Reglas y política", area: "Supervisión" },
+  ],
   paginas: [...SESION_AGENTE.paginas, "/tablero", "/reglas"],
+};
+
+export const SESION_ADMINISTRADOR: SesionActual = {
+  ...SESION_SUPERVISOR,
+  agente_id: "AGT-900",
+  nombre: "Administrador E2E",
+  rol: "administrador",
+  inicio: "/administracion/salud",
+  permisos: [...SESION_SUPERVISOR.permisos, "administracion", "gestionar_listas"],
+  navegacion: [
+    ...SESION_SUPERVISOR.navegacion,
+    { ruta: "/administracion/salud", rotulo: "Salud del sistema", area: "Administración" },
+    { ruta: "/administracion/respaldos", rotulo: "Respaldos", area: "Administración" },
+    { ruta: "/administracion/usuarios", rotulo: "Usuarios del portal", area: "Administración" },
+  ],
+  paginas: [
+    ...SESION_SUPERVISOR.paginas,
+    "/administracion",
+    "/administracion/salud",
+    "/administracion/respaldos",
+    "/administracion/usuarios",
+  ],
 };

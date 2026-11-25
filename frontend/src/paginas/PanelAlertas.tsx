@@ -68,6 +68,7 @@ export function PanelAlertas({ alAbrirAyuda }: Propiedades) {
           </div>
         ) : null}
         {consulta.data ? (
+          <div className="tabla-envoltura">
           <div role="table" aria-label="Cola de alertas">
             <div role="rowgroup">
               <div className="cola-encabezado" role="row">
@@ -121,6 +122,7 @@ export function PanelAlertas({ alAbrirAyuda }: Propiedades) {
                 </div>
               ))}
             </div>
+          </div>
           </div>
         ) : null}
         {consulta.data && alertas.length === 0 ? (

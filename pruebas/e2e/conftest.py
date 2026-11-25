@@ -66,6 +66,7 @@ TRAZAS = Path(__file__).resolve().parent / "trazas"
 CONTRASENA = "clave-e2e-0123456789"
 AGENTE = "AGT-901"
 SUPERVISOR = "AGT-902"
+ADMINISTRADOR = "AGT-903"
 
 _JS_SEMILLA = """
 const destino = db.getMongo().getDB("%(base)s");
@@ -133,11 +134,12 @@ async def _cargar_agentes_y_demo(base: Any) -> None:
             "agentes": [
                 Agente(_id=AGENTE, nombre="Agente E2E", rol=RolAgente.AGENTE),
                 Agente(_id=SUPERVISOR, nombre="Supervisor E2E", rol=RolAgente.SUPERVISOR),
+                Agente(_id=ADMINISTRADOR, nombre="Administrador E2E", rol=RolAgente.ADMINISTRADOR),
             ]
         },
     )
     repo = RepoAgentes(base)
-    for agente_id in (AGENTE, SUPERVISOR):
+    for agente_id in (AGENTE, SUPERVISOR, ADMINISTRADOR):
         await asignar_credencial(repo, agente_id, CONTRASENA)
 
 

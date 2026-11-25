@@ -28,8 +28,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.api.dependencias import BaseDep
 from app.api.errores import CodigoError, ErrorCentinela, respuestas_documentadas
 from app.api.esquemas_portal import PaginaPermitida, SesionActual
-from app.api.rutas.paginas import ENTORNO, NAVEGACION
-from app.api.rutas.spa import PAGINAS_SPA
+from app.api.rutas.paginas import ENTORNO
+from app.api.rutas.spa import INICIO_POR_ROL, NAVEGACION_SPA, PAGINAS_SPA
 from app.api.sesion import ServicioSesionDep, SesionDep
 from app.modelos.alertas import RolAgente
 from app.modelos.base import AgenteId
@@ -197,21 +197,33 @@ async def iniciar_sesion_api(
     return RespuestaSesion(token=token, agente_id=agente["_id"], rol=rol, expira=expira)
 
 
+async def _nombre_de(agentes: ProtocoloRepoAgentes, agente_id: str) -> str | None:
+    """El nombre para mostrar. Es cosmetico: si no se puede leer, la sesion sigue valiendo."""
+    try:
+        agente = await agentes.obtener(agente_id)
+    except Exception:  # noqa: BLE001 - un nombre no vale una sesion caida
+        return None
+    nombre = agente.get("nombre") if agente else None
+    return nombre if isinstance(nombre, str) else None
+
+
 @enrutador_api.get(
     "/sesion",
     response_model=SesionActual,
     summary="La sesion vigente: agente, rol, permisos y pantallas que puede abrir",
 )
-async def sesion_vigente(sesion: SesionDep) -> SesionActual:
+async def sesion_vigente(sesion: SesionDep, agentes: RepoAgentesDep) -> SesionActual:
     """Sin sesion valida, el guardia ya respondio 401 en la forma unica del error."""
     return SesionActual(
         agente_id=sesion.agente_id,
+        nombre=await _nombre_de(agentes, sesion.agente_id),
         rol=sesion.rol,
+        inicio=INICIO_POR_ROL[sesion.rol],
         expira=sesion.expira,
         permisos=sorted(p.value for p in PERMISOS_POR_ROL[sesion.rol]),
         navegacion=[
-            PaginaPermitida(ruta=ruta, rotulo=rotulo)
-            for ruta, rotulo, _clave in NAVEGACION
+            PaginaPermitida(ruta=ruta, rotulo=rotulo, area=area)
+            for ruta, rotulo, area in NAVEGACION_SPA
             if permite(sesion.rol, "GET", ruta)
         ],
         paginas=[ruta for ruta in PAGINAS_SPA if permite(sesion.rol, "GET", ruta)],

@@ -1,13 +1,15 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
+import { Link, Outlet, useLocation, useNavigate } from "react-router";
 
-import { cerrarSesion, puedeAbrir, useSesion } from "../api/sesion";
+import { cerrarSesion, useSesion } from "../api/sesion";
+import { MenuPrincipal } from "./MenuPrincipal";
 
 /**
  * Encabezado y navegacion del portal, con las mismas clases que la plantilla HTMX
  * (`encabezado`, `nav-portal`, `sesion-agente`), asi que `centinela.css` los viste igual.
- * La navegacion sale de la sesion (GET /api/v1/sesion), no de una lista propia.
+ * La navegacion sale de la sesion (GET /api/v1/sesion), no de una lista propia; el logotipo
+ * lleva a la pagina de inicio del rol (`sesion.inicio`).
  *
  * Accesibilidad: al cambiar de pantalla el foco pasa al contenido principal, para que un
  * lector de pantalla no quede en el enlace que se pulso.
@@ -39,23 +41,19 @@ export function Marco() {
 
   return (
     <>
+      <a className="saltar" href="#contenido">
+        Saltar al contenido
+      </a>
       <header className="encabezado">
-        <Link className="marca" to="/panel">
+        <Link className="marca" to={sesion?.inicio ?? "/login"}>
           Centinela <span className="marca-sufijo">portal de fraude</span>
         </Link>
         {sesion ? (
           <>
-            <nav className="nav-portal" aria-label="Navegación principal">
-              {sesion.navegacion.map((pagina) => (
-                <NavLink key={pagina.ruta} to={pagina.ruta}>
-                  {pagina.rotulo}
-                </NavLink>
-              ))}
-              {puedeAbrir(sesion, "/red-mulas") ? <NavLink to="/red-mulas">Red de mulas</NavLink> : null}
-            </nav>
+            <MenuPrincipal sesion={sesion} />
             <div className="sesion-agente">
               <span id="sesion-quien">
-                <strong>{sesion.agente_id}</strong> ({sesion.rol})
+                <strong title={sesion.agente_id}>{sesion.nombre ?? sesion.agente_id}</strong> ({sesion.rol})
               </span>
               <button type="button" className="boton boton-secundario" onClick={() => void salir()}>
                 Salir

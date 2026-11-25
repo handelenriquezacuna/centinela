@@ -217,8 +217,26 @@ async def prueba_credenciales_malas_no_dejan_cookie_y_dan_401_en_la_forma_del_er
 @pytest.mark.parametrize(
     ("rol", "navegacion", "permisos_clave"),
     [
-        ("agente", ["/panel", "/busqueda"], {"panel", "resolver"}),
-        ("supervisor", ["/panel", "/reglas", "/busqueda", "/tablero"], {"tablero", "gestionar_listas"}),
+        ("agente", ["/panel", "/busqueda", "/red-mulas"], {"panel", "resolver"}),
+        (
+            "supervisor",
+            ["/panel", "/busqueda", "/red-mulas", "/tablero", "/reglas"],
+            {"tablero", "gestionar_listas"},
+        ),
+        (
+            "administrador",
+            [
+                "/panel",
+                "/busqueda",
+                "/red-mulas",
+                "/tablero",
+                "/reglas",
+                "/administracion/salud",
+                "/administracion/respaldos",
+                "/administracion/usuarios",
+            ],
+            {"administracion", "tablero"},
+        ),
     ],
 )
 async def prueba_la_sesion_dice_rol_permisos_y_pantallas(
@@ -232,7 +250,8 @@ async def prueba_la_sesion_dice_rol_permisos_y_pantallas(
     assert [p["ruta"] for p in cuerpo["navegacion"]] == navegacion
     assert permisos_clave <= set(cuerpo["permisos"])
     assert "token" not in cuerpo
-    assert ("/tablero" in cuerpo["paginas"]) is (rol == "supervisor")
+    assert ("/tablero" in cuerpo["paginas"]) is (rol != "agente")
+    assert ("/administracion/salud" in cuerpo["paginas"]) is (rol == "administrador")
     assert "/detalle/{alerta_id}" in cuerpo["paginas"] and "/login" in cuerpo["paginas"]
 
 
@@ -254,3 +273,82 @@ async def prueba_salir_borra_la_cookie_y_es_idempotente(http_spa: AsyncClient) -
     assert "centinela_sesion=" in cookie and "max-age=0" in cookie
     assert (await http_spa.get("/api/v1/sesion")).status_code == 401
     assert (await http_spa.delete("/api/v1/sesion")).status_code == 204
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("rol", "inicio"),
+    [("agente", "/panel"), ("supervisor", "/tablero"), ("administrador", "/administracion/salud")],
+)
+async def prueba_la_sesion_dice_donde_aterriza_cada_rol_y_el_nombre_del_agente(
+    http_spa: AsyncClient, rol: str, inicio: str
+) -> None:
+    respuesta = await http_spa.get("/api/v1/sesion", headers=encabezados_de(rol, "AGT-001"))
+
+    cuerpo = respuesta.json()
+    assert cuerpo["inicio"] == inicio
+    assert cuerpo["nombre"] == "Jose Solis"  # el nombre del agente en la base, no el id
+    assert {p["area"] for p in cuerpo["navegacion"]} <= {"Alertas", "Supervisión", "Administración"}
+
+
+@pytest.mark.asyncio
+async def prueba_un_agente_que_ya_no_existe_conserva_la_sesion_sin_nombre(
+    http_spa: AsyncClient,
+) -> None:
+    respuesta = await http_spa.get("/api/v1/sesion", headers=encabezados_de("agente", "AGT-777"))
+
+    assert respuesta.status_code == 200 and respuesta.json()["nombre"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ruta", ["/administracion", "/administracion/salud", "/administracion/respaldos", "/administracion/usuarios"])
+async def prueba_administracion_es_solo_del_administrador(http_spa: AsyncClient, ruta: str) -> None:
+    sin_sesion = await http_spa.get(ruta, follow_redirects=False)
+    assert sin_sesion.status_code == 303 and sin_sesion.headers["location"].startswith("/login")
+    for rol in ("agente", "supervisor"):
+        negada = await http_spa.get(ruta, headers=encabezados_de(rol))
+        assert negada.status_code == 403 and negada.text == INDICE
+    permitida = await http_spa.get(ruta, headers=encabezados_de("administrador"))
+    assert permitida.status_code == 200 and permitida.text == INDICE
+
+
+# ---------------------------------------------------------------------------
+# Una direccion desconocida
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def prueba_una_pagina_desconocida_con_sesion_devuelve_la_spa_con_404(
+    http_spa: AsyncClient,
+) -> None:
+    respuesta = await http_spa.get("/no-existe/en-el-portal", headers=encabezados_de())
+
+    assert respuesta.status_code == 404
+    assert respuesta.text == INDICE and respuesta.headers["content-type"].startswith("text/html")
+
+
+@pytest.mark.asyncio
+async def prueba_una_pagina_desconocida_sin_sesion_lleva_al_login(http_spa: AsyncClient) -> None:
+    respuesta = await http_spa.get("/no-existe", follow_redirects=False)
+
+    assert respuesta.status_code == 303 and respuesta.headers["location"].startswith("/login")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ruta", ["/api/v1/no-existe", "/estaticos/no-existe.js", "/estado/x"])
+async def prueba_la_api_y_los_estaticos_desconocidos_siguen_dando_el_404_json(
+    http_spa: AsyncClient, ruta: str
+) -> None:
+    respuesta = await http_spa.get(ruta, headers=encabezados_de())
+
+    assert respuesta.status_code == 404
+    assert respuesta.json()["error"]["codigo"] == "no_encontrado"
+
+
+@pytest.mark.asyncio
+async def prueba_un_404_de_una_ruta_que_existe_no_se_disfraza_de_pagina(
+    http_spa: AsyncClient,
+) -> None:
+    respuesta = await http_spa.get("/api/v1/alertas/ALR-999/detalle", headers=encabezados_de())
+
+    assert respuesta.status_code == 404 and respuesta.json()["error"]["codigo"] == "no_encontrado"

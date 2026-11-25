@@ -20,11 +20,17 @@ export interface CuerpoError {
 export interface PaginaPermitida {
   ruta: string;
   rotulo: string;
+  /** Grupo del menu: Alertas, Supervisión o Administración. */
+  area: string;
 }
 
 export interface SesionActual {
   agente_id: string;
+  /** Nulo si el agente ya no existe: se muestra el identificador. */
+  nombre: string | null;
   rol: Rol;
+  /** Pagina donde aterriza el rol al entrar. */
+  inicio: string;
   expira: string;
   permisos: string[];
   navegacion: PaginaPermitida[];
@@ -418,4 +424,47 @@ export interface Evaluacion {
   politica_version: number;
   reglas_disparadas: ReglaDisparada[];
   reglas_no_evaluadas: ReglaNoEvaluada[];
+}
+
+/** GET /salud: el proceso vive y la base contesta. */
+export interface SaludBase {
+  estado: string;
+  version: string;
+  entorno: string;
+  mongo_conectado: boolean;
+  replica_set: string | null;
+  es_primario: boolean | null;
+  detalle: string | null;
+}
+
+export type EstadoTarea = "corriendo" | "degradada" | "retrasada" | "detenida" | "fallida" | "no_construida";
+
+export interface TareaSupervisada {
+  nombre: string;
+  estado: EstadoTarea;
+  eventos_procesados: number;
+  ultimo_evento: string | null;
+  retraso_segundos: number | null;
+  ultimo_error: { mensaje: string; fecha: string } | null;
+  historia: string | null;
+  advertencia: string | null;
+  latencia_ms: { n: number; p50: number | null; p95: number | null; max: number | null } | null;
+  rezago: {
+    pendientes: number;
+    antiguedad_segundos: number | null;
+    ritmo_por_segundo: number | null;
+    segundos_para_ponerse_al_dia: number | null;
+    atraso_segundos: number | null;
+    medido_en: string;
+  } | null;
+}
+
+/** GET /estado: el sistema esta haciendo su trabajo, o no. */
+export interface EstadoFuncional {
+  estado: "ok" | "degradado" | "sin_supervision";
+  version: string;
+  entorno: string;
+  tolerancia_retraso_segundos: number;
+  tareas: TareaSupervisada[];
+  advertencias: string[];
 }

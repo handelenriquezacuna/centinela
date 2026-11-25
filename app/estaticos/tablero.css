@@ -3,7 +3,7 @@
 .periodos a { padding: var(--espacio-1) var(--espacio-3); border: 1px solid var(--color-borde);
   border-radius: var(--radio-chico); background: var(--color-superficie); }
 .periodos a[aria-current="true"] { background: var(--color-primario); color: #fff; }
-.rejilla-graficos { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+.rejilla-graficos { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
   gap: var(--espacio-4); }
 .grafico { width: 100%; height: auto; max-width: 560px; }
 .grafico text { font-size: 12px; fill: var(--color-texto); font-family: var(--fuente); }
