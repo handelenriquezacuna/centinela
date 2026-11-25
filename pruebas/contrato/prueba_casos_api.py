@@ -43,7 +43,7 @@ async def armar() -> AsyncIterator[Any]:
         agente: str = "AGT-001",
     ) -> tuple[AsyncClient, RepoAlertasFalso]:
         repo = RepoAlertasFalso(documentos)
-        aplicacion = crear_aplicacion()
+        aplicacion = crear_aplicacion("htmx")
         aplicacion.dependency_overrides[dep_repo_alertas] = lambda: repo
         aplicacion.dependency_overrides[dep_repo_casos_destino] = lambda: RepoCasosFalso(repo, en_riesgo)
         gestor = LifespanManager(aplicacion)

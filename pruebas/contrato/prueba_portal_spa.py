@@ -1,8 +1,8 @@
 """La SPA servida por FastAPI y su sesion (T-61). Sin Mongo y sin construir la SPA.
 
-- `portal.interfaz`: `htmx` por omision; con `spa` las rutas de pagina devuelven el
+- `portal.interfaz`: `spa` por omision (T-67); las rutas de pagina devuelven el
   `index.html` del build, el guardia decide igual que siempre y los fragmentos HTMX siguen
-  vivos durante la migracion.
+  vivos mientras dure el respaldo `htmx` (lo retira T-68).
 - La SPA entra por `POST /api/v1/sesion`, que deja la MISMA cookie HttpOnly y
   SameSite=Strict que `/login`; pregunta quien es con `GET /api/v1/sesion` y sale con
   `DELETE /api/v1/sesion`. Nunca necesita el token en JavaScript.
@@ -64,12 +64,16 @@ async def http_spa(build_spa: Path) -> AsyncIterator[AsyncClient]:
 # ---------------------------------------------------------------------------
 
 
-def prueba_la_interfaz_por_omision_es_htmx_y_el_entorno_la_cambia(
+def prueba_la_interfaz_por_omision_es_spa_y_el_entorno_vuelve_a_htmx(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    assert Ajustes().portal.interfaz == "htmx"
-    monkeypatch.setenv("CENTINELA_PORTAL__INTERFAZ", "spa")
+    """T-67: la SPA es el portal por omision; HTMX queda a una variable de distancia."""
+    monkeypatch.delenv("CENTINELA_PORTAL__INTERFAZ", raising=False)
     assert Ajustes().portal.interfaz == "spa"
+    assert crear_aplicacion().state.interfaz == "spa"
+    monkeypatch.setenv("CENTINELA_PORTAL__INTERFAZ", "htmx")
+    assert Ajustes().portal.interfaz == "htmx"
+    assert crear_aplicacion().state.interfaz == "htmx"
     monkeypatch.setenv("CENTINELA_PORTAL__INTERFAZ", "react")
     with pytest.raises(ValidationError):
         Ajustes()
@@ -145,6 +149,21 @@ async def prueba_sin_build_la_pagina_explica_como_construirla(
 
     assert respuesta.status_code == 503
     assert "python tareas.py front" in respuesta.text
+    assert "CENTINELA_PORTAL__INTERFAZ=htmx" in respuesta.text
+
+
+@pytest.mark.asyncio
+async def prueba_sin_build_un_rol_sin_permiso_sigue_recibiendo_403(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Una negacion no se disfraza de caida: sin build el 403 sigue siendo 403."""
+    monkeypatch.setattr(spa, "RUTA_SPA", tmp_path / "no-existe")
+    async with AsyncClient(
+        transport=ASGITransport(app=_app("spa")), base_url="http://pruebas"
+    ) as cliente:
+        respuesta = await cliente.get("/tablero", headers=encabezados_de("agente"))
+
+    assert respuesta.status_code == 403
 
 
 @pytest.mark.asyncio

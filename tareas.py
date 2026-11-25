@@ -13,7 +13,7 @@ Uso:
     python tareas.py abajo           apaga el replica set
     python tareas.py estado          muestra el estado del replica set
     python tareas.py instalar        sincroniza dependencias con uv
-    python tareas.py dev             corre la API en el host, con recarga
+    python tareas.py dev             corre la API en el host, con recarga (construye la SPA si falta)
     python tareas.py dev --front     lo mismo, mas Vite con recarga de la SPA en :8173 (T-61)
     python tareas.py front           instala (npm ci) y construye la SPA en app/estaticos/spa (T-61)
     python tareas.py datos-demo      carga el conjunto de demo
@@ -543,6 +543,7 @@ def tarea_arriba(args: argparse.Namespace) -> None:
     tarea_estado(args)
 
     if not args.con_app:
+        asegurar_spa(args)
         print(
             "\nListo. Siguiente paso:\n"
             "  python tareas.py datos-demo\n"
@@ -636,6 +637,59 @@ def tarea_front(args: argparse.Namespace) -> None:
     correr(npm("run", "build"), dry_run=args.dry_run)
 
 
+INDICE_SPA = RAIZ / "app" / "estaticos" / "spa" / "index.html"
+# Lo que entra al build: si algo de esto es mas nuevo que el index, el build esta viejo.
+FUENTES_SPA = ("src", "index.html", "package.json", "package-lock.json", "vite.config.ts")
+
+
+def _spa_desactualizada() -> bool:
+    """True si alguna fuente de frontend/ es mas nueva que el build (solo fechas, sin red)."""
+    construido = INDICE_SPA.stat().st_mtime
+    for nombre in FUENTES_SPA:
+        ruta = FRONTEND / nombre
+        archivos = ruta.rglob("*") if ruta.is_dir() else [ruta]
+        if any(a.is_file() and a.stat().st_mtime > construido for a in archivos):
+            return True
+    return False
+
+
+def _interfaz_portal() -> str:
+    """`portal.interfaz` de la configuracion; sin el entorno de uv, la del entorno o `spa`."""
+    try:
+        from app.nucleo.config import Ajustes  # import tardio: no es stdlib
+    except ImportError:
+        return os.environ.get("CENTINELA_PORTAL__INTERFAZ", "spa")
+    return Ajustes().portal.interfaz
+
+
+def asegurar_spa(args: argparse.Namespace) -> None:
+    """Con `portal.interfaz: spa` (la de por omision, T-67), deja la SPA construida.
+
+    Si falta el build lo construye (npm ci + build, lo mismo que `front`); si no hay npm,
+    avisa como seguir sin cortar el arranque. Si el build es mas viejo que las fuentes,
+    solo avisa: reconstruir es `python tareas.py front`. Con `htmx` no hace nada. Es todo
+    en el host y antes de arrancar: en ejecucion la app no usa Node ni la red.
+    """
+    if _interfaz_portal() != "spa":
+        return
+    if INDICE_SPA.is_file():
+        if _spa_desactualizada():
+            print(
+                "AVISO: el build de la SPA es mas viejo que frontend/. Para ver los cambios:\n"
+                "  python tareas.py front"
+            )
+        return
+    if shutil.which("npm") is None:
+        print(
+            "AVISO: falta el build de la SPA (app/estaticos/spa/) y npm no esta en el PATH.\n"
+            "  Instalar Node (la version de frontend/.nvmrc) y correr: python tareas.py front\n"
+            "  O usar el respaldo HTMX: CENTINELA_PORTAL__INTERFAZ=htmx python tareas.py dev"
+        )
+        return
+    print("\nFalta el build de la SPA: se construye una vez (npm ci + build)...")
+    tarea_front(args)
+
+
 def tarea_dev(args: argparse.Namespace) -> None:
     """Modalidad de arranque A: Mongo en Compose, Python en el host con recarga.
 
@@ -649,6 +703,7 @@ def tarea_dev(args: argparse.Namespace) -> None:
     from app.nucleo.config import obtener_ajustes  # import tardio: no es stdlib
 
     ajustes = obtener_ajustes()
+    asegurar_spa(args)
     orden = uv(
         "run",
         "uvicorn",

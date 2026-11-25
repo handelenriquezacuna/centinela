@@ -37,7 +37,7 @@ async def armar() -> Any:
 
     async def _armar(alerta: dict[str, Any]) -> tuple[AsyncClient, RepoAlertasFalso]:
         alertas = RepoAlertasFalso([alerta])
-        creada = crear_aplicacion()
+        creada = crear_aplicacion("htmx")
         creada.dependency_overrides[dep_repo_alertas] = lambda: alertas
         creada.dependency_overrides[dep_repo_casos_destino] = lambda: RepoCasosFalso(alertas)
         creada.dependency_overrides[dep_repo_detalle] = lambda: RepoDetalleFalso(alertas.casos)

@@ -25,7 +25,7 @@ def repo() -> RepoBusquedaFalso:
 
 @pytest_asyncio.fixture
 async def cliente(repo: RepoBusquedaFalso) -> AsyncIterator[AsyncClient]:
-    aplicacion = crear_aplicacion()
+    aplicacion = crear_aplicacion("htmx")
     aplicacion.dependency_overrides[dep_repo_busqueda] = lambda: repo
     async with (
         LifespanManager(aplicacion) as gestionada,

@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from playwright.sync_api import Page, expect
 
-from pruebas.e2e.apoyo_spa import entrar_en_spa
+from pruebas.e2e.apoyo import entrar_en_spa
 from pruebas.e2e.conftest import AGENTE, SUPERVISOR, con_base
 
 pytestmark = pytest.mark.e2e
@@ -21,8 +21,8 @@ async def _entrada_de(base: Any) -> dict[str, Any] | None:
     return await base["listas_riesgo"].find_one({"cuenta": MULA})
 
 
-def prueba_el_supervisor_marca_una_mula_y_el_nodo_cambia(page: Page, servidor_spa: str) -> None:
-    entrar_en_spa(page, servidor_spa, SUPERVISOR, "/detalle/ALR-001")
+def prueba_el_supervisor_marca_una_mula_y_el_nodo_cambia(page: Page, servidor_e2e: str) -> None:
+    entrar_en_spa(page, servidor_e2e, SUPERVISOR, "/detalle/ALR-001")
     page.evaluate("window.__sinRecargar = true")
 
     sankey = page.locator("#sankey-svg")
@@ -75,8 +75,8 @@ def prueba_el_supervisor_marca_una_mula_y_el_nodo_cambia(page: Page, servidor_sp
     assert entrada["motivo"] == "Recibio el dinero de la victima"
 
 
-def prueba_el_agente_ve_el_sankey_pero_no_el_boton_de_marcar(page: Page, servidor_spa: str) -> None:
-    entrar_en_spa(page, servidor_spa, AGENTE, "/red-mulas/6033-9001")
+def prueba_el_agente_ve_el_sankey_pero_no_el_boton_de_marcar(page: Page, servidor_e2e: str) -> None:
+    entrar_en_spa(page, servidor_e2e, AGENTE, "/red-mulas/6033-9001")
 
     expect(page.locator("#sankey-svg path.sankey-banda")).to_have_count(3)
     expect(page.locator("#sankey-cuentas")).to_contain_text(MULA)

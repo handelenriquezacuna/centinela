@@ -12,7 +12,8 @@ antes que estas funciones, asi que sin sesion la pagina redirige a `/login?sigui
 igual que hoy, y con un rol sin permiso devuelve el `index.html` con estado 403 (la SPA
 muestra su pantalla de acceso denegado; ver `app/api/sesion.py`).
 
-Con la interfaz `htmx` este router no se registra y nada de aqui corre.
+`spa` es la interfaz por omision desde T-67. Con `htmx` (el respaldo hasta T-68) este
+router no se registra y nada de aqui corre.
 """
 
 from __future__ import annotations
@@ -42,21 +43,25 @@ SIN_BUILD = (
     "<!doctype html><html lang=\"es\"><meta charset=\"utf-8\"><title>Centinela</title>"
     "<main><h1>Falta construir la interfaz</h1><p>portal.interfaz es <code>spa</code> "
     "pero no existe <code>app/estaticos/spa/index.html</code>. Correr "
-    "<code>python tareas.py front</code> y recargar.</p></main></html>"
+    "<code>python tareas.py front</code> y recargar, o arrancar con "
+    "<code>CENTINELA_PORTAL__INTERFAZ=htmx</code> para usar el respaldo.</p></main></html>"
 )
 
 enrutador = APIRouter(include_in_schema=False)
 
 
 def respuesta_spa(estado: int = status.HTTP_200_OK) -> Response:
-    """`index.html` de la SPA; 503 con instrucciones si todavia no se construyo.
+    """`index.html` de la SPA; sin build, las instrucciones para construirla.
 
+    Sin build una pagina normal responde 503; un 403 sigue siendo 403 (con las mismas
+    instrucciones): una negacion de permiso nunca debe parecer una caida.
     `no-cache`: el index nombra los archivos con hash del build; si el navegador lo
     guardara, despues de un build nuevo pediria archivos que ya no existen.
     """
     indice = RUTA_SPA / "index.html"
     if not indice.is_file():
-        return HTMLResponse(SIN_BUILD, status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+        sin_build = status.HTTP_503_SERVICE_UNAVAILABLE if estado < 400 else estado
+        return HTMLResponse(SIN_BUILD, status_code=sin_build)
     return FileResponse(
         indice,
         status_code=estado,
