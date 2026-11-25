@@ -122,6 +122,50 @@ def prueba_los_tres_niveles_a_la_vez(
     assert ajustes.mongo.uri == URI_DE_PRUEBA
 
 
+def prueba_la_precedencia_tambien_vale_para_los_respaldos(
+    directorio_yaml: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-74: `respaldos.directorio` sigue entorno > local > base (en Compose lo mueve el
+    entorno a un volumen) y su tope de tiempo se hereda del base con merge profundo."""
+    (directorio_yaml / NOMBRE_YAML_BASE).write_text(
+        yaml.safe_dump(
+            {**YAML_BASE, "respaldos": {"directorio": "del_base", "tiempo_maximo_segundos": 99}}
+        ),
+        encoding="utf-8",
+    )
+    assert Ajustes().respaldos.directorio == "del_base"
+
+    escribir_local(directorio_yaml, {"respaldos": {"directorio": "del_local"}})
+    ajustes = Ajustes()
+    assert ajustes.respaldos.directorio == "del_local"
+    assert ajustes.respaldos.tiempo_maximo_segundos == 99
+
+    monkeypatch.setenv("CENTINELA_RESPALDOS__DIRECTORIO", "/respaldos")
+    ajustes = Ajustes()
+    assert ajustes.respaldos.directorio == "/respaldos"
+    assert ajustes.respaldos.ruta_directorio == Path("/respaldos")
+
+
+def prueba_el_directorio_relativo_de_respaldos_cuelga_de_la_raiz_del_repo(
+    directorio_yaml: Path,
+) -> None:
+    assert Ajustes().respaldos.ruta_directorio == RUTA_RAIZ / "respaldos"
+
+
+def prueba_la_uri_de_respaldos_solo_entra_por_el_entorno(
+    directorio_yaml: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Lleva credenciales: no tiene valor en el YAML del repo y se lee del entorno."""
+    assert Ajustes().respaldos.uri is None
+    assert "uri" not in yaml.safe_load(
+        (RUTA_RAIZ / "config" / NOMBRE_YAML_BASE).read_text(encoding="utf-8"))["respaldos"]
+
+    monkeypatch.setenv("CENTINELA_RESPALDOS__URI", "mongodb://u:p@localhost:27018/")
+
+    assert Ajustes().respaldos.uri == "mongodb://u:p@localhost:27018/"
+    assert "u:p" not in repr(Ajustes().respaldos), "la URI no se imprime en un repr"
+
+
 def prueba_el_entorno_convierte_tipos(
     directorio_yaml: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

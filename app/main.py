@@ -48,7 +48,9 @@ from app.repos.deteccion import RepoDeteccion
 from app.repos.indicadores import RepoIndicadores
 from app.repos.perfiles import RepoPerfiles
 from app.repos.rasgos_grafo import RepoRasgosGrafo
+from app.repos.respaldos import RepoRespaldos
 from app.repos.salud import exigir_conexion
+from app.respaldos.servicio import ServicioRespaldos
 from app.seguridad.servicio import ServicioSesion
 from app.supervision import NOMBRE_LATIDO, Supervisor, latido
 
@@ -92,6 +94,15 @@ async def ciclo_vida(aplicacion: FastAPI) -> AsyncIterator[None]:
     cliente = crear_cliente(ajustes)
     aplicacion.state.ajustes = ajustes
     aplicacion.state.cliente_mongo = cliente
+    # D-74: el usuario de respaldo (lee `antifraude`, es dueno de la base temporal de
+    # verificacion) es OTRO usuario y por tanto otro cliente. Solo existe si
+    # `respaldos.uri` esta puesta; sin ella, los respaldos usan el cliente de la app.
+    cliente_respaldos = (
+        crear_cliente(ajustes, uri=ajustes.respaldos.uri) if ajustes.respaldos.uri else cliente
+    )
+    aplicacion.state.servicio_respaldos = ServicioRespaldos(
+        RepoRespaldos(cliente_respaldos), ajustes
+    )
 
     # H-25: la clave de firma. Sin ella en dev se genera una al vuelo y queda la
     # advertencia en /estado; fuera de dev `Ajustes` ya se nego a arrancar.
@@ -152,6 +163,8 @@ async def ciclo_vida(aplicacion: FastAPI) -> AsyncIterator[None]:
         # Primero las tareas, despues el cliente: al reves, una tarea a medio camino se
         # encuentra el cliente cerrado debajo y revienta al apagar.
         await supervisor.detener()
+        if cliente_respaldos is not cliente:
+            await cliente_respaldos.close()
         await cliente.close()
         registro.info("Centinela abajo, cliente de Mongo cerrado")
 

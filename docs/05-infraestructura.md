@@ -47,6 +47,28 @@ la máquina anfitriona los alcanza por los puertos publicados, **sin editar el
 archivo `hosts` del sistema** y sin permisos de administrador — que en Windows
 es un trámite molesto.
 
+### La API y el portal dentro de Compose (modalidad B)
+
+`python tareas.py arriba --con-app` agrega dos servicios al clúster: `api` (uvicorn) y `web`
+(nginx con la SPA, D-73). Los dos comparten también el espacio de red de `mongo1`, por la
+misma razón: los miembros del replica set se anuncian como `localhost:27018-27020`. El
+portal queda en `http://localhost:8000` (nginx, publicado por `mongo1` como
+`127.0.0.1:8000:8080`); la API no se publica. Detalle y motivos: `docs/06-plataforma.md`,
+sección 4.
+
+## Respaldos (D-74)
+
+`mongodump` y `mongorestore` corren desde la API (`/respaldos` en el portal, solo
+administrador) y desde `python tareas.py restaurar`. Los archivos van a `respaldos/` en
+modalidad A y al volumen `respaldos` en Compose. Para copiar uno del volumen al repo:
+
+```
+docker compose -f infra/docker-compose.yml cp api:/respaldos/<id>.gz respaldos/
+```
+
+El usuario `centinela_respaldo` (`04-usuarios.js`) lee `antifraude` y es dueño de la base
+temporal `antifraude_verificacion`; nada más. Detalle: `docs/06-plataforma.md`, "Respaldos".
+
 ## Arranque
 
 Dos comandos, iguales en cualquier sistema operativo:

@@ -26,6 +26,7 @@ from app.repos.flujo_alertas import ProtocoloFlujoAlertas, RepoFlujoAlertas
 from app.repos.red_mulas import RepoRedMulas
 from app.repos.reglas import ProtocoloRepoReglas, RepoReglas
 from app.repos.tablero import ProtocoloRepoTablero, RepoTablero
+from app.respaldos.servicio import ServicioRespaldos
 from app.supervision import Supervisor
 
 
@@ -109,6 +110,15 @@ def dep_flujo_alertas(
     return RepoFlujoAlertas(base)
 
 
+def dep_servicio_respaldos(peticion: Request) -> ServicioRespaldos:
+    """El servicio de respaldos del proceso: uno solo, porque su cerrojo ES la regla de
+    "una operacion a la vez". Lo crea el lifespan."""
+    servicio: ServicioRespaldos | None = getattr(peticion.app.state, "servicio_respaldos", None)
+    if servicio is None:  # pragma: no cover - contrato del lifespan
+        raise RuntimeError("la app se armo sin lifespan: no hay servicio de respaldos")
+    return servicio
+
+
 def dep_supervisor(peticion: Request) -> Supervisor:
     """El supervisor de tareas de fondo, creado en el lifespan.
 
@@ -137,3 +147,4 @@ FlujoAlertasDep = Annotated[ProtocoloFlujoAlertas, Depends(dep_flujo_alertas)]
 SupervisorDep = Annotated[Supervisor, Depends(dep_supervisor)]
 RepoTableroDep = Annotated[ProtocoloRepoTablero, Depends(dep_repo_tablero)]
 RepoRedMulasPortalDep = Annotated[RepoRedMulas, Depends(dep_repo_red_mulas_portal)]
+ServicioRespaldosDep = Annotated[ServicioRespaldos, Depends(dep_servicio_respaldos)]

@@ -42,6 +42,7 @@ class Permiso(StrEnum):
     EDITAR_REGLAS = "editar_reglas"
     GESTIONAR_LISTAS = "gestionar_listas"  # aprobar propuestas, marcar mulas y dar de baja
     ADMINISTRACION = "administracion"  # area de Administracion: solo el administrador
+    RESPALDOS = "respaldos"  # crear y verificar respaldos de la base (D-74): solo administrador
 
 
 _PERMISOS_AGENTE = frozenset(
@@ -158,6 +159,11 @@ ACCESOS: tuple[Acceso, ...] = (
     _a("GET", "/administracion/salud", Permiso.ADMINISTRACION),
     _a("GET", "/administracion/respaldos", Permiso.ADMINISTRACION),
     _a("GET", "/administracion/usuarios", Permiso.ADMINISTRACION),
+    # Respaldos (D-74): la API es solo del administrador. Restaurar sobre la base viva NO es
+    # una ruta: es `python tareas.py restaurar`.
+    _a("GET", "/api/v1/respaldos", Permiso.RESPALDOS),
+    _a("POST", "/api/v1/respaldos", Permiso.RESPALDOS),
+    _a("POST", "/api/v1/respaldos/{respaldo_id}/verificar", Permiso.RESPALDOS),
 )
 
 _PREFIJOS_API = ("/api/", "/estado", "/openapi.json", "/salud")

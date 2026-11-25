@@ -123,11 +123,14 @@ describe("area de Administracion", () => {
     expect(screen.getAllByRole("button", { name: "Reintentar" }).length).toBeGreaterThan(0);
   });
 
-  it("Respaldos es una pagina vacia que explica que viene", async () => {
-    instalarApiFalsa({ "GET /api/v1/sesion": { cuerpo: SESION_ADMINISTRADOR } });
+  it("Respaldos lista los respaldos (el detalle esta en Respaldos.test.tsx)", async () => {
+    instalarApiFalsa({
+      "GET /api/v1/sesion": { cuerpo: SESION_ADMINISTRADOR },
+      "GET /api/v1/respaldos": { cuerpo: { total: 0, en_curso: false, elementos: [] } },
+    });
     montar("/administracion/respaldos");
     expect(await screen.findByRole("heading", { level: 1, name: "Respaldos" })).toBeInTheDocument();
-    expect(screen.getByText("Disponible cuando entre el módulo de respaldos")).toBeInTheDocument();
+    expect(await screen.findByText("Todavía no hay respaldos.")).toBeInTheDocument();
   });
 
   it("Usuarios del portal muestra el comando de tareas.py, sin API", async () => {

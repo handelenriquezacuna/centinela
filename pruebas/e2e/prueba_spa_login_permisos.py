@@ -141,7 +141,8 @@ def prueba_el_administrador_ve_salud_y_las_entradas_de_administracion(page: Page
     expect(tabla.get_by_text("D1 · Detección")).to_be_visible()
     nav = page.get_by_role("navigation", name="Navegación principal")
     nav.get_by_role("link", name="Respaldos").click()
-    expect(page.get_by_text("Disponible cuando entre el módulo de respaldos")).to_be_visible()
+    expect(page.get_by_role("heading", name="Respaldos", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="Crear respaldo")).to_be_visible()
     nav.get_by_role("link", name="Usuarios del portal").click()
     expect(page.get_by_text("python tareas.py usuarios --help")).to_be_visible()
 

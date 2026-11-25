@@ -269,6 +269,32 @@ class AjustesPortal(BaseModel):
     interfaz: Literal["htmx", "spa"] = "spa"
 
 
+class AjustesRespaldos(BaseModel):
+    """Respaldos de la base (D-74, Unidad 8.6): donde se guardan y cuanto se espera.
+
+    Tecnico, no de negocio. `directorio` es donde quedan el archivo `.gz` y su manifiesto
+    JSON; una ruta relativa se toma desde la raiz del repo (en modalidad A, `respaldos/`,
+    ignorada por git). En Compose lo mueve `CENTINELA_RESPALDOS__DIRECTORIO` a un volumen.
+
+    `uri` es opcional y NO va en el YAML: es la URI con las credenciales del usuario de
+    respaldo (`centinela_respaldo`: lee `antifraude` y es dueno de su base temporal de
+    verificacion). Entra por `CENTINELA_RESPALDOS__URI`. Sin ella se usa `mongo.uri`, que es
+    lo correcto en dev y en un nodo sin autenticacion.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    directorio: str = Field(default="respaldos", min_length=1)
+    # Tope de una corrida de mongodump o mongorestore; pasado esto se mata el proceso.
+    tiempo_maximo_segundos: int = Field(default=1800, ge=10)
+    uri: str | None = Field(default=None, repr=False)
+
+    @property
+    def ruta_directorio(self) -> Path:
+        ruta = Path(self.directorio).expanduser()
+        return ruta if ruta.is_absolute() else RUTA_RAIZ / ruta
+
+
 class AjustesRegistro(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -380,6 +406,7 @@ class Ajustes(BaseSettings):
     perfiles: AjustesPerfiles = AjustesPerfiles()
     sesion: AjustesSesion = AjustesSesion()
     portal: AjustesPortal = AjustesPortal()
+    respaldos: AjustesRespaldos = AjustesRespaldos()
     registro: AjustesRegistro = AjustesRegistro()
     generador: AjustesGenerador = Field(default_factory=AjustesGenerador)
 

@@ -59,7 +59,9 @@ ESCRITURA_TIEMPO_MS = 10_000
 LECTURA_NIVEL = "majority"
 
 
-def crear_cliente(ajustes: Ajustes, *, escuchas: Sequence[Any] = ()) -> AsyncMongoClient:
+def crear_cliente(
+    ajustes: Ajustes, *, escuchas: Sequence[Any] = (), uri: str | None = None
+) -> AsyncMongoClient:
     """Cliente listo para usar. No conecta todavia.
 
     `AsyncMongoClient` conecta de forma perezosa, en la primera operacion. Es una
@@ -73,9 +75,13 @@ def crear_cliente(ajustes: Ajustes, *, escuchas: Sequence[Any] = ()) -> AsyncMon
 
     `escuchas` son monitores de comandos del driver (`pymongo.monitoring`); lo usan las
     pruebas para ver lo que de verdad viaja al servidor. Produccion no lo pasa.
+
+    `uri` reemplaza a `mongo.uri`: lo usa el lifespan para el segundo cliente, el del
+    usuario de respaldo (`respaldos.uri`, D-74), que solo existe si esa variable esta
+    puesta. Sin ella el proceso tiene un solo cliente.
     """
     return AsyncMongoClient(
-        ajustes.mongo.uri,
+        uri or ajustes.mongo.uri,
         serverSelectionTimeoutMS=ajustes.mongo.tiempo_espera_seleccion_ms,
         tz_aware=True,
         w=ESCRITURA_W,

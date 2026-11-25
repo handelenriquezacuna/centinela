@@ -5,19 +5,30 @@
 # service:mongo1). Asi los tres se ven entre si en localhost y el host
 # alcanza los tres por los puertos publicados, sin tocar /etc/hosts.
 #
-# El servicio `app` (modalidad de arranque B, H-00B: la API tambien dentro de
-# Compose) hace exactamente lo mismo que mongo2 y mongo3: entra al espacio de red de
-# mongo1 con `network_mode: service:mongo1`. Por eso el puerto 8000 se publica en la
-# lista `ports` de MONGO1 y no en la de `app` -un servicio con `network_mode:
-# service:X` no puede declarar sus propios `ports`, porque no tiene su propia pila de
-# red; la tiene prestada-. El resultado es que `localhost:27018/19/20` Y `localhost:
-# 8000` significan lo mismo desde el host, desde mongo1 y desde el contenedor de la
-# API: la URI de `config/centinela.yml` no cambia ni una letra entre las dos
-# modalidades de arranque. Ver docs/06-plataforma.md, seccion 4.
+# Los servicios `api` y `web` (modalidad de arranque B, H-00B y D-73: la API y el portal
+# tambien dentro de Compose) hacen exactamente lo mismo que mongo2 y mongo3: entran al
+# espacio de red de mongo1 con `network_mode: service:mongo1`. Por eso el puerto del
+# portal se publica en la lista `ports` de MONGO1 y no en la de `web`: un servicio con
+# `network_mode: service:X` no puede declarar sus propios `ports`, porque no tiene su
+# propia pila de red; la tiene prestada.
 #
-# `app` lleva `profiles: ["app"]` para que un `docker compose up` sin mas siga
+# Por que `api` comparte la red de mongo1 y no una red propia: los miembros del replica
+# set se anuncian como localhost:27018-27020 (scripts/init-replicaset.js), y el driver, al
+# descubrir el conjunto, reconecta a esos nombres. Solo en el espacio de red de mongo1
+# `localhost:27018` es el nodo. Cualquier otra red (un bridge con nombres de servicio)
+# obligaria a re-anunciar los miembros con otros nombres y romperia la modalidad A, que
+# usa los mismos nombres desde el host. Es la misma razon por la que mongo2 y mongo3 lo
+# hacen, y el resultado es una sola URI en config/centinela.yml para las dos modalidades.
+#
+# `web` (nginx) comparte esa red por la misma razon practica: tiene que alcanzar a `api`
+# (127.0.0.1:8000) y es lo unico que no obliga a publicar la API. Escucha en 8080 y mongo1 lo
+# publica como 127.0.0.1:8000, el puerto de siempre del portal. La API NO se publica: solo
+# `web` la alcanza. "Sin acceso a Mongo" se cumple por credenciales y por contenido, no por
+# aislamiento de red: la imagen web no lleva driver, ni URI, ni claves, ni volumenes de datos.
+#
+# `api` y `web` llevan `profiles: ["app"]` para que un `docker compose up` sin mas siga
 # levantando solo el replica set (la modalidad A, la que el equipo ya usa a diario) y
-# nadie se encuentre con un contenedor nuevo sin pedirlo. `python tareas.py arriba
+# nadie se encuentre con contenedores nuevos sin pedirlos. `python tareas.py arriba
 # --con-app` es quien pide el perfil explicitamente.
 
 # Nombre de proyecto explicito: sin esta clave, Compose lo deriva del nombre del
@@ -49,7 +60,7 @@ services:
       - "127.0.0.1:27018:27018"   # primario
       - "127.0.0.1:27019:27019"   # mongo2
       - "127.0.0.1:27020:27020"   # mongo3
-      - "127.0.0.1:8000:8000"     # API del servicio app (comparte este espacio de red)
+      - "127.0.0.1:8000:8080"     # el portal: nginx del servicio web (comparte este espacio de red)
     volumes:
       - mongo1data:/data/db
       # H-25: el punto de entrada que agrega --keyFile y el keyfile que genera tareas.py.
@@ -105,22 +116,34 @@ services:
       mongo1:
         condition: service_healthy
 
-  # Modalidad de arranque B (H-00B): la API tambien dentro de Compose. No lleva
-  # `ports` (ver la nota de arriba) ni su propia red: comparte la de mongo1, igual
-  # que mongo2 y mongo3. `profiles: ["app"]` la deja afuera de un `docker compose up`
-  # sin argumentos.
-  app:
+  # Modalidad de arranque B (H-00B, D-73): la API y el portal tambien dentro de Compose.
+  # Ninguno lleva `ports` (ver la nota de arriba) ni su propia red: comparten la de mongo1.
+  # `profiles: ["app"]` los deja afuera de un `docker compose up` sin argumentos.
+  api:
     build:
       context: ..
       dockerfile: infra/Dockerfile
-    container_name: fraude-app
+      target: api
+    container_name: fraude-api
     restart: unless-stopped
     profiles: ["app"]
     network_mode: "service:mongo1"
+    # Sistema de archivos de solo lectura: lo unico escribible es /tmp (sin estado) y el
+    # volumen de respaldos.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
     environment:
-      # La URI con el usuario centinela_app la arma tareas.py desde .env (H-25). Nunca
-      # va en el repo ni en config/centinela.yml.
+      # Las URI con usuario las arma tareas.py desde .env (H-25, D-74). Nunca van en el repo
+      # ni en config/centinela.yml. La de respaldo es la del usuario centinela_respaldo.
       CENTINELA_MONGO__URI: ${CENTINELA_MONGO__URI:-}
+      CENTINELA_RESPALDOS__URI: ${CENTINELA_RESPALDOS__URI:-}
+    volumes:
+      # Los respaldos (D-74) sobreviven a la recreacion del contenedor. El directorio
+      # (/respaldos) lo fija el Dockerfile con CENTINELA_RESPALDOS__DIRECTORIO.
+      - respaldos:/respaldos
     depends_on:
       mongo1:
         condition: service_healthy
@@ -128,6 +151,26 @@ services:
         condition: service_started
       mongo3:
         condition: service_started
+
+  # El portal: nginx sin privilegios con la SPA y el proxy a `api` (D-73). Sin variables de
+  # entorno, sin volumenes y sin dependencia de Mongo: no habla con la base.
+  web:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+      target: web
+    container_name: fraude-web
+    restart: unless-stopped
+    profiles: ["app"]
+    network_mode: "service:mongo1"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      api:
+        condition: service_healthy
 
 # Volumenes normales, sin `external` y sin `name`: Compose los crea y los administra.
 #
@@ -145,3 +188,5 @@ volumes:
   mongo1data:
   mongo2data:
   mongo3data:
+  # Los respaldos de la API (D-74): archivos .gz y manifiestos JSON.
+  respaldos:

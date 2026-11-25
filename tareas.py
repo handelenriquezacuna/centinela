@@ -28,6 +28,7 @@ Uso:
     python tareas.py procedimientos [nombre] [--desde D --hasta H]  procedimientos de mongosh (T-76)
     python tareas.py demo-cadena-viva [--disparar]  cadena de mulas con fecha de ahora para ensenar R-11 (D-68)
     python tareas.py cargar --archivo x.jsonl  carga transacciones desde JSONL, en lotes (T-57)
+    python tareas.py restaurar --archivo x.gz --si  restaura un respaldo sobre la base viva (D-74)
     python tareas.py pruebas         corre las pruebas
     python tareas.py e2e [...]             recorridos con navegador real (Chromium) contra la app (T-58)
     python tareas.py resiliencia     failover de D1 con un replica set de 3 nodos en Docker (T-52)
@@ -63,10 +64,13 @@ SCRIPT_USUARIOS = RAIZ / "scripts" / "semilla" / "04-usuarios.js"
 ARCHIVO_ENV = RAIZ / ".env"
 DIRECTORIO_SECRETOS = RAIZ / "infra" / "secretos"
 KEYFILE = DIRECTORIO_SECRETOS / "keyfile"
+# D-74. Donde `restaurar` busca archivos y deja el respaldo previo (modalidad A).
+DIRECTORIO_RESPALDOS = RAIZ / "respaldos"
 BASE_DATOS = "antifraude"
 VARIABLE_URI = "CENTINELA_MONGO__URI"
 VARIABLE_SIN_AUTH = "CENTINELA_SIN_AUTH"
 VARIABLE_CLAVE_SESION = "CENTINELA_SESION__CLAVE"
+VARIABLE_URI_RESPALDOS = "CENTINELA_RESPALDOS__URI"
 
 # usuario de base de datos -> variable de entorno con su contrasena
 USUARIOS = {
@@ -74,6 +78,7 @@ USUARIOS = {
     "centinela_analista": "MONGO_CLAVE_ANALISTA",
     "centinela_admin": "MONGO_CLAVE_ADMIN",
     "centinela_pruebas": "MONGO_CLAVE_PRUEBAS",
+    "centinela_respaldo": "MONGO_CLAVE_RESPALDO",  # D-74: respaldos desde el portal
 }
 
 # La siembra de estructura y catalogos, EN ESTE ORDEN y no en otro: 01 hace drop de
@@ -286,6 +291,11 @@ def entorno_app(*, usuario: str = "centinela_app") -> dict[str, str]:
         uri = uri_usuario(usuario)
         if uri != uri_base():
             entorno[VARIABLE_URI] = uri
+        # D-74: el usuario de respaldo (lee antifraude, es dueno de su base temporal de
+        # verificacion). Solo si hay clave y nadie fijo otra URI a mano.
+        respaldo = _con_usuario(uri_base(), "centinela_respaldo")
+        if VARIABLE_URI_RESPALDOS not in entorno and respaldo != uri_base():
+            entorno[VARIABLE_URI_RESPALDOS] = respaldo
     return entorno
 
 
@@ -374,11 +384,22 @@ def asegurar_secretos(dry_run: bool = False) -> None:
             ARCHIVO_ENV.write_text("\n".join(lineas) + "\n", encoding="utf-8")
             with contextlib.suppress(OSError):
                 ARCHIVO_ENV.chmod(0o600)
-    elif VARIABLE_CLAVE_SESION not in ARCHIVO_ENV.read_text(encoding="utf-8"):
-        print("Agregando la clave de sesion a .env...")
-        if not dry_run:
-            with ARCHIVO_ENV.open("a", encoding="utf-8") as archivo:
-                archivo.write(f"{VARIABLE_CLAVE_SESION}={secrets.token_urlsafe(48)}\n")
+    else:
+        # Un .env de antes de una variable nueva (la clave de sesion, la del usuario de
+        # respaldo) recibe solo la que le falta, sin tocar las demas.
+        presentes = {
+            linea.split("=", 1)[0].strip()
+            for linea in ARCHIVO_ENV.read_text(encoding="utf-8").splitlines()
+            if "=" in linea and not linea.lstrip().startswith("#")
+        }
+        faltan = [v for v in (*USUARIOS.values(), VARIABLE_CLAVE_SESION) if v not in presentes]
+        if faltan:
+            print(f"Agregando a .env: {', '.join(faltan)}...")
+            if not dry_run:
+                with ARCHIVO_ENV.open("a", encoding="utf-8") as archivo:
+                    for variable in faltan:
+                        largo = 48 if variable == VARIABLE_CLAVE_SESION else 24
+                        archivo.write(f"{variable}={secrets.token_urlsafe(largo)}\n")
     if not KEYFILE.is_file():
         print("Creando el keyfile del replica set (infra/secretos/keyfile, permisos 400)...")
         if not dry_run:
@@ -424,17 +445,24 @@ def esperar_entrada(usuario: str, segundos: int = 90) -> bool:
     return False
 
 
-CONTEO_JS = (
-    f'const d = db.getSiblingDB("{BASE_DATOS}");'
-    "JSON.stringify(Object.fromEntries(d.getCollectionNames()"
-    '.filter(n => !n.startsWith("system.")).sort()'
-    ".map(n => [n, d.getCollection(n).countDocuments({})])))"
-)
+def _conteo_js(base: str) -> str:
+    # Solo colecciones reales: una vista no tiene documentos propios (igual que el respaldo).
+    return (
+        f"const d = db.getSiblingDB({json.dumps(base)});"
+        "JSON.stringify(Object.fromEntries(d.getCollectionInfos({type: 'collection'})"
+        ".map(c => c.name).filter(n => !n.startsWith('system.')).sort()"
+        ".map(n => [n, d.getCollection(n).countDocuments({})])))"
+    )
 
 
-def contar_documentos(usuario: str | None) -> dict[str, int] | None:
-    """Documentos por coleccion de antifraude, o None si no se pudo contar."""
-    texto = _salida([_buscar("mongosh"), uri_directa(usuario), "--quiet", "--eval", CONTEO_JS])
+CONTEO_JS = _conteo_js(BASE_DATOS)
+
+
+def contar_documentos(usuario: str | None, base: str = BASE_DATOS) -> dict[str, int] | None:
+    """Documentos por coleccion de `base` (antifraude), o None si no se pudo contar."""
+    texto = _salida(
+        [_buscar("mongosh"), uri_directa(usuario), "--quiet", "--eval", _conteo_js(base)]
+    )
     try:
         return json.loads(texto.splitlines()[-1])
     except (ValueError, IndexError):
@@ -493,7 +521,7 @@ def _asegurar(args: argparse.Namespace) -> None:
         return
 
     print("\n[4/4] Comprobacion...")
-    for usuario in ("centinela_admin", "centinela_app", "centinela_analista"):
+    for usuario in ("centinela_admin", "centinela_app", "centinela_analista", "centinela_respaldo"):
         if not esperar_entrada(usuario):
             raise Fallo(f"{usuario} no consigue entrar. Ver el log: docker logs fraude-mongo1")
         print(f"  {usuario}: entra")
@@ -522,8 +550,9 @@ def tarea_arriba(args: argparse.Namespace) -> None:
 
     `init-replicaset.js` es idempotente: correrlo de nuevo no hace nada.
 
-    Con `--con-app` se agrega un tercer paso al final: levantar tambien el servicio
-    `app` (la API en un contenedor, modalidad de arranque B). Va DESPUES de esperar
+    Con `--con-app` se agrega un tercer paso al final: levantar tambien los servicios
+    `api` (la API) y `web` (nginx: la SPA y el proxy a la API, D-73), la modalidad de
+    arranque B. Van DESPUES de esperar
     el primario y no junto con los tres nodos, a proposito: la API arrancaria de
     todos modos aunque el replica set siguiera eligiendo primario (el cliente de
     Mongo conecta perezoso, ver `app/main.py`), pero levantarla despues da un primer
@@ -559,16 +588,17 @@ def tarea_arriba(args: argparse.Namespace) -> None:
         )
         return
 
-    print("\nLevantando el servicio app (la API en un contenedor)...")
+    print("\nLevantando los servicios api y web (la API y nginx con la SPA)...")
     correr(
-        compose("--profile", "app", "up", "-d", "--build", "--wait", "app"),
+        compose("--profile", "app", "up", "-d", "--build", "--wait", "api", "web"),
         dry_run=args.dry_run,
         env=entorno_compose(),
     )
     print(
-        "\nListo, con la API dentro de Compose. Siguiente paso:\n"
+        "\nListo, con la API y el portal dentro de Compose. Siguiente paso:\n"
         "  python tareas.py datos-demo\n"
-        "  curl http://localhost:8000/salud"
+        "  curl http://localhost:8000/salud     (nginx -> api)\n"
+        "  abrir http://localhost:8000/login"
     )
 
 
@@ -577,15 +607,115 @@ def tarea_abajo(args: argparse.Namespace) -> None:
 
     Lleva `--profile app` siempre, se haya usado `--con-app` o no: un servicio con
     perfil que Compose no ve activo en ESTA invocacion no cuenta como "definido" para
-    `down`, y sin la bandera el contenedor de la API sobrevive, huerfano, sin la red
-    de mongo1 que se acaba de apagar. Pedir el perfil no hace nada si `app` no estaba
-    arriba; si estaba, es la unica forma de que este comando lo apague tambien.
+    `down`, y sin la bandera los contenedores `api` y `web` sobreviven, huerfanos, sin la
+    red de mongo1 que se acaba de apagar. Pedir el perfil no hace nada si no estaban
+    arriba; si estaban, es la unica forma de que este comando los apague tambien.
     """
     orden = compose("--profile", "app", "down")
     if args.borrar_datos:
         orden.append("-v")
         print("Se borran los volumenes: el replica set habra que inicializarlo de nuevo.")
     correr(orden, dry_run=args.dry_run, env=entorno_compose())
+
+
+def _resolver_archivo_respaldo(valor: str) -> Path:
+    """`--archivo`: una ruta, un nombre dentro de `respaldos/` o un identificador RSP-..."""
+    candidato = Path(valor).expanduser()
+    opciones = [candidato, RAIZ / candidato, DIRECTORIO_RESPALDOS / candidato.name]
+    if not valor.endswith(".gz"):
+        opciones.append(DIRECTORIO_RESPALDOS / f"{valor}.gz")
+    for opcion in opciones:
+        if opcion.is_file():
+            return opcion.resolve()
+    raise Fallo(
+        f"no se encontro el archivo de respaldo '{valor}'.\n"
+        f"  Se busca como ruta y dentro de {DIRECTORIO_RESPALDOS}.\n"
+        "  Un respaldo hecho con la app en Compose esta en su volumen: copiarlo con\n"
+        "  docker compose -f infra/docker-compose.yml cp api:/respaldos/<id>.gz respaldos/"
+    )
+
+
+def _manifiesto_de(archivo: Path) -> dict | None:
+    ruta = archivo.with_suffix(".json")
+    try:
+        return json.loads(ruta.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _mostrar_conteos(titulo: str, conteos: dict[str, int] | None) -> None:
+    if conteos is None:
+        print(f"  {titulo}: no se pudo contar")
+        return
+    print(f"  {titulo}: {sum(conteos.values())} documentos en {len(conteos)} colecciones")
+
+
+def tarea_restaurar(args: argparse.Namespace) -> None:
+    """Restaura un respaldo SOBRE LA BASE VIVA (D-74). Pide --archivo y --si.
+
+    Es lo unico que reemplaza datos reales, por eso NO esta en la API ni en el portal (que
+    solo muestra este comando). Pasos: (1) cuenta los documentos, (2) hace un respaldo
+    previo automatico en respaldos/previo-restauracion-<fecha>.gz, (3) mongorestore --drop
+    del archivo, (4) vuelve a contar y lo compara con el manifiesto si existe. Entra con
+    centinela_admin (dueno de la base). `--base` para otra base (nodo de prueba).
+    Vuelta atras: restaurar el respaldo previo con este mismo comando.
+    """
+    archivo = _resolver_archivo_respaldo(args.archivo)
+    base = args.base
+    manifiesto = _manifiesto_de(archivo)
+    origen = (manifiesto or {}).get("base", base)
+    if not args.si:
+        raise Fallo(
+            f"esto REEMPLAZA los datos de '{base}' con {archivo.name}.\n"
+            "  Falta confirmar con --si (se hace antes un respaldo previo automatico)."
+        )
+    dry = args.dry_run
+    uri = uri_usuario("centinela_admin")
+
+    print("\n[1/4] Conteo antes de restaurar...")
+    antes = None if dry else contar_documentos("centinela_admin", base)
+    _mostrar_conteos("antes", antes)
+
+    print("\n[2/4] Respaldo previo automatico...")
+    marca = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
+    previo = DIRECTORIO_RESPALDOS / f"previo-restauracion-{marca}.gz"
+    if not dry:
+        DIRECTORIO_RESPALDOS.mkdir(parents=True, exist_ok=True)
+    correr(
+        [_buscar("mongodump"), f"--uri={uri}", f"--archive={previo}", "--gzip", f"--db={base}"],
+        dry_run=dry,
+    )
+
+    print("\n[3/4] Restaurando...")
+    orden = [
+        _buscar("mongorestore"), f"--uri={uri}", f"--archive={archivo}", "--gzip",
+        "--drop", f"--nsInclude={origen}.*",
+    ]
+    if origen != base:
+        orden += [f"--nsFrom={origen}.*", f"--nsTo={base}.*"]
+    correr(orden, dry_run=dry)
+    if dry:
+        return
+
+    print("\n[4/4] Conteo despues de restaurar...")
+    despues = contar_documentos("centinela_admin", base)
+    _mostrar_conteos("despues", despues)
+    if manifiesto and despues is not None:
+        esperado = manifiesto.get("documentos_al_terminar") or {}
+        desde = manifiesto.get("documentos_por_coleccion") or {}
+        malas = [
+            n for n in sorted(set(esperado) | set(despues))
+            if not min(desde.get(n, 0), esperado.get(n, 0))
+            <= despues.get(n, 0)
+            <= max(desde.get(n, 0), esperado.get(n, 0))
+        ]
+        if malas:
+            raise Fallo(
+                f"los conteos no coinciden con el manifiesto en: {', '.join(malas)}.\n"
+                f"  Vuelta atras: python tareas.py restaurar --archivo {previo} --si"
+            )
+        print("  coincide con el manifiesto del respaldo")
+    print(f"\nListo. Respaldo previo (vuelta atras): {previo}")
 
 
 def tarea_asegurar(args: argparse.Namespace) -> None:
@@ -598,9 +728,14 @@ def tarea_asegurar(args: argparse.Namespace) -> None:
     """
     asegurar_secretos(args.dry_run)
     if not args.dry_run and entra("centinela_admin"):
-        print("La base ya exige autenticacion y centinela_admin entra. Nada que hacer.")
-        print("Para rotar contrasenas: cambiarlas en .env y correr `arriba` otra vez.")
-        return
+        if entra("centinela_respaldo"):
+            print("La base ya exige autenticacion y los usuarios entran. Nada que hacer.")
+            print("Para rotar contrasenas: cambiarlas en .env y correr `arriba` otra vez.")
+            return
+        # D-74: una base asegurada antes del usuario de respaldo. Crearlo pide la auth
+        # apagada un momento (da roles sobre otra base); es el mismo paso, idempotente y
+        # sin tocar los volumenes.
+        print("Falta el usuario centinela_respaldo (D-74): se vuelve a asegurar, sin perder datos.")
     _asegurar(args)
 
 
@@ -1125,6 +1260,7 @@ TAREAS = {
     "pruebas": tarea_pruebas,
     "e2e": tarea_e2e,
     "resiliencia": tarea_resiliencia,
+    "restaurar": tarea_restaurar,
     "verificar": tarea_verificar,
 }
 
@@ -1162,8 +1298,8 @@ def construir_analizador() -> argparse.ArgumentParser:
                 action="store_true",
                 dest="con_app",
                 help=(
-                    "tambien levanta el servicio 'app' (la API en un contenedor, "
-                    "modalidad de arranque B)"
+                    "tambien levanta los servicios 'api' y 'web' (la API y nginx con la "
+                    "SPA, en contenedores: modalidad de arranque B)"
                 ),
             )
         if nombre == "dev":
@@ -1184,6 +1320,17 @@ def construir_analizador() -> argparse.ArgumentParser:
                 action="store_true",
                 help="confirma que se borran los datos y se vuelve a sembrar",
             )
+        if nombre == "restaurar":
+            sub.add_argument(
+                "--archivo", required=True,
+                help="el .gz del respaldo: una ruta, un nombre en respaldos/ o un RSP-...",
+            )
+            sub.add_argument(
+                "--si",
+                action="store_true",
+                help="confirma que se REEMPLAZAN los datos de la base",
+            )
+            sub.add_argument("--base", default=BASE_DATOS, help="base a restaurar")
         if nombre in {"pruebas", "verificar"}:
             sub.add_argument(
                 "--tipo",

@@ -127,6 +127,15 @@ sesion:
 portal:
   interfaz: spa
 
+# Respaldos de la base (D-74): mongodump y mongorestore desde el portal del administrador.
+# `directorio` es donde quedan el archivo y su manifiesto; relativo = desde la raiz del repo
+# (carpeta ignorada por git). Compose lo mueve a un volumen con CENTINELA_RESPALDOS__DIRECTORIO.
+# La URI del usuario de respaldo (con credenciales) entra por CENTINELA_RESPALDOS__URI.
+respaldos:
+  directorio: respaldos
+  # Tope de una corrida de mongodump o mongorestore; pasado esto se mata el proceso.
+  tiempo_maximo_segundos: 1800
+
 registro:
   nivel: INFO
 
