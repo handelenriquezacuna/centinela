@@ -9,7 +9,7 @@
 Nodo de prueba: contenedor `t70`, mongo:8, replica set `rsfraude`, puerto 27312, cache 0.25 GB.
 Base `antifraude`. App en `127.0.0.1:8150`. Fecha de la corrida: 2026-11-24, hora local 18:47 (Costa Rica).
 
-Scripts: `scripts/demo/00-ayudas.js`, `01-flujo.js`, `02-reglas.js`, `99-limpiar.js`.
+Scripts: `scripts/demo/00-ayudas.js`, `01-flujo.js`, `02-reglas.js`, `03-crud.js`, `99-limpiar.js`.
 
 ## 0. Nodo, semilla y datos
 
@@ -452,6 +452,63 @@ quedan: transacciones 7, alertas 3
 ```
 
 Que mirar: vuelve a la semilla (7 transacciones, 3 alertas).
+
+## 5b. CRUD: insercion, modificacion y eliminacion (03-crud.js)
+
+Las escrituras que hace la API, hechas a mano en mongosh sobre documentos de la semilla.
+Muestra tres operaciones y deja la base como estaba al final.
+
+```
+mongosh "$URI_DEMO" --file scripts/demo/03-crud.js
+```
+
+Salida (nodo de prueba con la demo cargada, 24 nov 2026):
+
+```
+== (a) updateOne: umbral de R-01 con versionado ==
+antes:       umbral 8 | version 1 | versiones_anteriores 0
+tras subir:  umbral 9 | version 2 | versiones_anteriores 1
+tras volver: umbral 8 | version 3 | versiones_anteriores 2
+despues:     umbral 8 | version 1 | versiones_anteriores 0 (era 0)
+== (b) updateOne con $push: transicion de una alerta ==
+antes: ALR-002 | estado nueva | historial 1 entradas | sin agente_id
+transicion valida: matchedCount 1, modifiedCount 1
+transicion invalida con filtro condicionado: matchedCount 0, modifiedCount 0
+despues: ALR-002 | estado nueva | agente_id ausente | historial 1 entradas (era 1)
+== (c) insertOne y deleteOne: listas_riesgo ==
+insertOne acknowledged: true, insertedId: RSK-990
+deleteOne deletedCount: 1
+== Estado final ==
+R-01: umbral 8 | version 1 | versiones_anteriores 0
+listas_riesgo RSK-990 presente: false
+```
+
+Lo que hace, en orden:
+
+- **(a) updateOne con versionado** sobre `reglas_deteccion`, regla R-01: el umbral sube de 8 a 9 y
+  vuelve a 8. Cada edicion sigue la forma de `app/repos/reglas.py` (`editar`): `version` sube en uno,
+  la version anterior entra completa a `versiones_anteriores` con `reemplazada_en`, y el filtro lleva
+  la version leida. El script imprime umbral, version y cantidad de historia antes, tras subir, tras
+  volver y al final.
+- **(b) updateOne con $push** sobre `alertas`: una alerta en `nueva` y sin agente pasa a `en_revision`,
+  asigna `AGT-001` y gana una entrada en `historial` (la forma de `planear_transicion` en
+  `app/repos/alertas.py`). Despues, un intento de `nueva -> confirmada`, que no esta en la tabla de
+  `app/modelos/estados.py`: el filtro pide `estado: "nueva"`, la alerta ya no esta ahi, y el resultado
+  es `matchedCount 0`. Nada se escribe. La limpieza devuelve la alerta a `nueva`, quita `agente_id` y
+  saca las dos entradas de la demo por su `nota`.
+- **(c) insertOne y deleteOne** sobre `listas_riesgo`: inserta `RSK-990` (cuenta `7000-0990`), cuenta
+  cuantos documentos tiene esa cuenta, la borra y vuelve a contar. Ninguna transaccion usa esa cuenta.
+
+Requisitos: semillas 01 a 03 corridas. Para (b), una alerta en `nueva` sin agente; si no hay, (b) se
+omite y lo dice. Si `RSK-990` o `7000-0990` ya existen, (c) se omite. No hace falta la app para
+escribir; con la app corriendo, el panel recibe por el change stream el cambio de (b) y su reversa.
+
+Que mirar: `matchedCount 0` en el intento invalido (la guarda es el filtro, no solo la tabla);
+al final, `R-01` con el umbral y la version de antes, la alerta en `nueva` sin `agente_id`, y
+`RSK-990 presente: false`.
+
+Estado de la prueba: el script se reviso leyendo y pasa la sintaxis, pero no se corrio contra ninguna base
+al escribir esta seccion. La salida real la pega el dictador desde su nodo.
 
 ## 6. Compuertas
 
