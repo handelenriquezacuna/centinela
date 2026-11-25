@@ -25,7 +25,7 @@ Uso:
     python tareas.py indicadores [...] recalcula indicadores_diarios (H-22)
     python tareas.py cargar --archivo x.jsonl  carga transacciones desde JSONL, en lotes (T-57)
     python tareas.py pruebas         corre las pruebas
-    python tareas.py e2e             recorridos con navegador real (Chromium) contra la app (T-58)
+    python tareas.py e2e [...]             recorridos con navegador real (Chromium) contra la app (T-58)
     python tareas.py resiliencia     failover de D1 con un replica set de 3 nodos en Docker (T-52)
     python tareas.py verificar       instala, prueba y reporta
 
@@ -911,13 +911,24 @@ def tarea_pruebas(args: argparse.Namespace) -> None:
 
 
 def tarea_e2e(args: argparse.Namespace) -> None:
-    """Pruebas extremo a extremo con navegador real: lo mismo que corre el CI (T-58)."""
+    """Pruebas extremo a extremo con navegador real: lo mismo que corre el CI (T-58).
+
+    Las banderas pasan tal cual a pytest, para verlas correr:
+      python tareas.py e2e --headed --slowmo 700 pruebas/e2e/prueba_spa_sankey.py
+      CENTINELA_E2E_TRAZA=siempre python tareas.py e2e -k detalle
+    y despues: uv run playwright show-trace pruebas/e2e/trazas/<prueba>.zip
+    (no usar --tracing de pytest-playwright: el conftest ya graba la traza)
+    """
     # Primera vez en la maquina: `uv run playwright install chromium` (el CI usa
     # --with-deps). La base de la prueba es `antifraude_pruebas_e2e`: se siembra, se usa y
     # se borra; la de trabajo no se toca. Con auth, entra con centinela_pruebas.
     entorno = entorno_app(usuario="centinela_pruebas")
     entorno["CENTINELA_EXIGIR_MONGO"] = "1"
-    correr(uv("run", "pytest", "-m", "e2e", "-rs"), dry_run=args.dry_run, env=entorno)
+    correr(
+        uv("run", "pytest", "-m", "e2e", "-rs", *args.argumentos),
+        dry_run=args.dry_run,
+        env=entorno,
+    )
 
 
 def tarea_resiliencia(args: argparse.Namespace) -> None:
@@ -1030,7 +1041,7 @@ def main(argumentos: list[str] | None = None) -> int:
     # Todo lo que sigue a `generar` es del generador (incluidas sus banderas y --help):
     # argparse no sabe repartir banderas desconocidas a un subcomando, asi que se corta aca.
     pasadas: list[str] = []
-    for pasante in ("generar", "indicadores", "usuarios", "cargar"):
+    for pasante in ("generar", "indicadores", "usuarios", "cargar", "e2e"):
         if pasante not in argumentos:
             continue
         corte = argumentos.index(pasante) + 1
