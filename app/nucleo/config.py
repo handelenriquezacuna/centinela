@@ -185,6 +185,27 @@ class AjustesIndicadores(BaseModel):
     intervalo_segundos: float = Field(default=10.0, gt=0)
 
 
+class AjustesRasgosGrafo(BaseModel):
+    """Rasgos de grafo por cuenta (T-63): la extension de D3 que alimenta a R-11.
+
+    Tecnico, no de negocio: no dice que es sospechoso (eso es el umbral y los parametros de
+    la regla, en Mongo), dice cuanta historia mira el calculo y cuanto se da por bueno
+    un rasgo despues de calculado.
+
+    - `horizonte_horas`: cuanto hacia atras desde cada recalculo se miran las
+      transferencias. Acota el trabajo del pipeline: el indice por fecha hace que
+      solo se lea ese rango.
+    - `vigencia_segundos`: pasado este tiempo desde su corte, un rasgo ya no vale y R-11
+      queda como no evaluada. Tiene que ser mayor que `indicadores.intervalo_segundos`
+      (D3 recalcula con ese ritmo), o un D3 sano dejaria rasgos vencidos.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    horizonte_horas: float = Field(default=24.0, gt=0)
+    vigencia_segundos: int = Field(default=60, ge=1)
+
+
 class AjustesSesion(BaseModel):
     """Sesion del portal y la API (H-25). Tecnico: duracion y forma de la cookie.
 
@@ -327,10 +348,22 @@ class Ajustes(BaseSettings):
     canal: AjustesCanal = AjustesCanal()
     deteccion: AjustesDeteccion = AjustesDeteccion()
     indicadores: AjustesIndicadores = AjustesIndicadores()
+    rasgos_grafo: AjustesRasgosGrafo = AjustesRasgosGrafo()
     sesion: AjustesSesion = AjustesSesion()
     portal: AjustesPortal = AjustesPortal()
     registro: AjustesRegistro = AjustesRegistro()
     generador: AjustesGenerador = Field(default_factory=AjustesGenerador)
+
+    @model_validator(mode="after")
+    def los_rasgos_duran_mas_que_el_intervalo_de_d3(self) -> Ajustes:
+        """D3 recalcula los rasgos con el ritmo de `indicadores`; si la vigencia fuera
+        menor, un D3 sano los dejaria vencidos entre un recalculo y el siguiente."""
+        if self.rasgos_grafo.vigencia_segundos <= self.indicadores.intervalo_segundos:
+            raise ValueError(
+                "rasgos_grafo.vigencia_segundos tiene que ser mayor que "
+                "indicadores.intervalo_segundos"
+            )
+        return self
 
     @model_validator(mode="after")
     def el_cursor_late_antes_de_la_tolerancia(self) -> Ajustes:

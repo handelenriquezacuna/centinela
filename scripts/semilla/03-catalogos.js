@@ -199,12 +199,16 @@ const reglas = [
     // llamarlo cadena. Los tres saltos de UC-04 caen dentro: +4, +9 y +11 minutos.
     parametros: { ventana_minutos: 15, saltos_minimos: 2 },
     peso: 20,
-    // Nace apagada, y es a proposito: el reenvio ocurre DESPUES de la transaccion que se
-    // esta evaluando, asi que en linea (D1) esta regla todavia no tiene con que disparar.
-    // Sirve para el recorrido de la red de mulas (H-23) y para la medicion retrospectiva
-    // (H-10). Encenderla es un solo updateOne, sin desplegar nada: es la demostracion
-    // del criterio "se pueden activar y desactivar" de H-07.
-    activa: false,
+    // Activa desde T-63: ya no depende del reenvio posterior a la transaccion evaluada.
+    // Lee el rasgo de grafo del destino (cuanto recibio y cuanto reenvio dentro de la
+    // ventana), que D3 materializa en deteccion_estado cada pocos segundos mientras esta
+    // regla este activa. Dispara en la transaccion SIGUIENTE hacia una cuenta que ya
+    // reenvio casi todo; sin rasgos vigentes queda como no evaluada, no dispara a ciegas.
+    // Calibracion (docs/08-calibracion.md): los parametros de arriba son los que ganan
+    // por tener el mismo F1 con menos cambios; el efecto es marginal (una deteccion mas
+    // en 10 conjuntos, sin falsos positivos nuevos y sin bajar la exhaustividad minima).
+    // Se apaga con un solo updateOne, sin desplegar nada.
+    activa: true,
     version: 1,
     esquema_version: ESQUEMA_VERSION
   }
@@ -246,7 +250,8 @@ const politica = {
   umbral_alerta: 35,
   // El puntaje se topa aqui. No es capricho: `alertas.puntaje` esta validado hasta 100 y
   // los pesos se pasan de ahi. Los dos numeros, para que nadie los confunda: las 6 reglas
-  // del catalogo suman 165, y las 5 que nacen activas suman 145 (R-11 nace apagada).
+  // del catalogo suman 165 y las 6 nacen activas (R-11 desde T-63), asi que la suma de las
+  // activas tambien es 165.
   // El evaluador (H-08) calcula min(suma_de_pesos, puntaje_maximo).
   puntaje_maximo: 100,
   // Tramos contiguos que cubren de `umbral_alerta` hasta `puntaje_maximo`, sin huecos ni
@@ -373,7 +378,8 @@ exigir(
 // R-05, suma 75 y es CRITICA (UC-02 y ALR-001).
 //
 // Las otras tres reglas no disparan en TXN-001, y cada una por su razon: R-09 porque
-// CTA-001 hizo una sola transferencia (no hay rafaga), R-11 porque esta apagada, y R-07
+// CTA-001 hizo una sola transferencia (no hay rafaga), R-11 porque a las 22:47 el destino todavia no habia reenviado nada (lee el rasgo de grafo,
+// que no ve el futuro), y R-07
 // porque las cuentas de la cadena de UC-04 se reportan a las 23:10, DESPUES de la
 // transaccion de las 22:47. Ese "vigente al momento de la transaccion" no es adorno: si
 // el evaluador compara contra la lista de hoy en vez de contra la de las 22:47, TXN-001

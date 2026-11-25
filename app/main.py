@@ -46,6 +46,7 @@ from app.nucleo.config import Ajustes, obtener_ajustes
 from app.nucleo.db import crear_cliente, obtener_base
 from app.repos.deteccion import RepoDeteccion
 from app.repos.indicadores import RepoIndicadores
+from app.repos.rasgos_grafo import RepoRasgosGrafo
 from app.repos.salud import exigir_conexion
 from app.seguridad.servicio import ServicioSesion
 from app.supervision import NOMBRE_LATIDO, Supervisor, latido
@@ -123,7 +124,16 @@ async def ciclo_vida(aplicacion: FastAPI) -> AsyncIterator[None]:
     # H-09: transaccion -> alerta. Recibe el repositorio, no la base (ver app/deteccion/d1.py).
     supervisor.lanzar(NOMBRE_D1, d1(RepoDeteccion(base), supervisor, ajustes=ajustes.deteccion))
     # H-22: recalcula indicadores_diarios del dia actual cada N segundos.
-    supervisor.lanzar(NOMBRE_D3, d3(RepoIndicadores(base), supervisor, ajustes=ajustes.indicadores))
+    # T-63: la misma vuelta de D3 recalcula los rasgos de grafo de R-11 (solo con la regla activa).
+    supervisor.lanzar(
+        NOMBRE_D3,
+        d3(
+            RepoIndicadores(base),
+            supervisor,
+            ajustes=ajustes.indicadores,
+            repo_rasgos=RepoRasgosGrafo(base, ajustes.rasgos_grafo),
+        ),
+    )
 
     registro.info(
         "Centinela %s arriba | entorno=%s base=%s",

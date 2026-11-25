@@ -96,7 +96,7 @@ def prueba_la_tabla_de_tipos_coincide_con_lo_que_lee_el_evaluador() -> None:
             assert leidos == declarados, tipo
         else:
             assert leidos <= declarados, tipo
-    assert evaluador.TIPOS_REGLA["red_mulas"].evaluable is False
+    assert evaluador.TIPOS_REGLA["red_mulas"].evaluable is True  # T-63
 
 
 def prueba_siguiente_regla_id() -> None:
@@ -163,7 +163,7 @@ async def prueba_publica_los_tipos_soportados(cliente: AsyncClient) -> None:
         "monto_acumulado_crc",
     ]
     assert tipos["monto"]["parametros"] == []
-    assert tipos["red_mulas"]["evaluable"] is False
+    assert tipos["red_mulas"]["evaluable"] is True  # T-63
 
 
 # ---------------------------------------------------------------------------

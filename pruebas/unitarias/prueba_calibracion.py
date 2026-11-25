@@ -69,12 +69,22 @@ def prueba_la_semilla_dice_lo_que_la_calibracion_declara_ganadora() -> None:
     assert int(primer_corte.group(1)) == calibrar.GANADORA.umbral_alerta
 
 
-def prueba_la_ganadora_no_toca_los_pesos_del_caso_documentado_ni_enciende_r11() -> None:
+def prueba_la_ganadora_no_toca_los_pesos_del_caso_documentado() -> None:
     pesos_base = {fila[0]: fila[5] for fila in calibrar.BASE.reglas}
     pesos_ganadora = {fila[0]: fila[5] for fila in calibrar.GANADORA.reglas}
     assert pesos_ganadora == pesos_base
     assert [pesos_ganadora[c] for c in ("R-01", "R-03", "R-05")] == [35, 25, 15]
-    assert calibrar.GANADORA.regla("R-11")[6] is False
+
+
+def prueba_r11_se_enciende_con_los_parametros_que_la_semilla_ya_declaraba() -> None:
+    """T-63: la calibracion de R-11 (`--r11`) elige, entre configuraciones de igual F1, la
+    que menos se aparta de la semilla; el cambio aplicado es solo `activa`."""
+    base = calibrar.BASE.regla("R-11")
+    ganadora = calibrar.GANADORA.regla("R-11")
+    assert ganadora[3:6] == base[3:6]
+    assert (base[6], ganadora[6]) == (False, True)
+    # La rejilla principal no la toca: R-11 sigue apagada en la ganadora de T-33.
+    assert calibrar.GANADORA_REJILLA.regla("R-11")[6] is False
 
 
 @pytest.mark.parametrize("config", [calibrar.BASE, calibrar.GANADORA], ids=lambda c: c.nombre)
@@ -92,8 +102,15 @@ def prueba_txn_001_sigue_dando_75_critica(config) -> None:
     assert [d.codigo for d in evaluacion.reglas_disparadas] == ["R-01", "R-03", "R-05"]
 
 
-def prueba_las_diferencias_con_la_base_son_exactamente_las_tres_aplicadas() -> None:
+def prueba_las_diferencias_con_la_base_son_exactamente_las_cuatro_aplicadas() -> None:
     assert sorted(calibrar.GANADORA.diferencias(calibrar.BASE)) == [
+        "R-01 umbral 10 -> 8",
+        "R-05 umbral 0 -> 120",
+        "R-11 activa False -> True",
+        "umbral_alerta 40 -> 35",
+    ]
+    # Sin R-11, las tres de T-33.
+    assert sorted(calibrar.GANADORA_REJILLA.diferencias(calibrar.BASE)) == [
         "R-01 umbral 10 -> 8",
         "R-05 umbral 0 -> 120",
         "umbral_alerta 40 -> 35",
@@ -121,3 +138,30 @@ def prueba_las_metricas_usan_la_definicion_de_h10() -> None:
         "cadena_mulas": (4, 3),
         "rafaga_fragmentada": (4, 4),
     }
+
+
+def prueba_los_rasgos_de_la_calibracion_son_la_definicion_pura_deslizada() -> None:
+    """T-63: `Datos.rasgos` (bisect, rapido) da lo mismo que `calcular_rasgo` sobre todas
+    las transacciones del conjunto, que es lo que el pipeline de Mongo reproduce."""
+    from datetime import timedelta
+
+    from app.deteccion.rasgos_grafo import calcular_rasgo, indexar
+
+    datos = calibrar.generar_datos(7)
+    rasgos = datos.rasgos(15)
+    # Todas las del fraude etiquetado (cadenas incluidas) y una muestra del resto.
+    muestra = [
+        i
+        for i, (fraude, _) in enumerate(datos.etiquetas)
+        if fraude or i % 97 == 0
+    ]
+    assert len(muestra) > 60
+    for i in muestra:
+        txn = datos.transacciones[i]
+        desde = txn.fecha - timedelta(hours=calibrar.HORIZONTE_HORAS)
+        por_destino, por_origen = indexar(datos.transacciones, desde, txn.fecha)
+        esperado = calcular_rasgo(
+            txn.cuenta_destino, por_destino, por_origen,
+            desde=desde, corte=txn.fecha, ventana_minutos=15, vigencia_segundos=60,
+        )  # fmt: skip
+        assert rasgos[i] == esperado, txn.transaccion_id

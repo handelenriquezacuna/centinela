@@ -23,6 +23,8 @@ Uso:
     python tareas.py generar [...]   corre el generador de datos (T-28), con sus banderas
     python tareas.py usuarios [...]  administra los usuarios de la app (T-41)
     python tareas.py indicadores [...] recalcula indicadores_diarios (H-22)
+    python tareas.py rasgos [...]    recalcula los rasgos de grafo de R-11 (T-63)
+    python tareas.py demo-cadena-viva [--disparar]  cadena de mulas con fecha de ahora para ensenar R-11 (D-68)
     python tareas.py cargar --archivo x.jsonl  carga transacciones desde JSONL, en lotes (T-57)
     python tareas.py pruebas         corre las pruebas
     python tareas.py e2e [...]             recorridos con navegador real (Chromium) contra la app (T-58)
@@ -921,6 +923,36 @@ def tarea_indicadores(args: argparse.Namespace) -> None:
     )
 
 
+def tarea_rasgos(args: argparse.Namespace) -> None:
+    """Recalcula los rasgos de grafo por cuenta que lee R-11 (T-63).
+
+    Ejemplo: python tareas.py rasgos --horas 48 --ventana-minutos 15
+    Sin banderas usa la ventana de la regla red_mulas y el horizonte del YAML. Se puede
+    volver a correr: reemplaza el documento de cada cuenta. D3 hace lo mismo cada pocos
+    segundos cuando R-11 esta activa.
+    """
+    correr(
+        uv("run", "python", "-m", "app.deteccion.rasgos_grafo", *args.argumentos),
+        dry_run=args.dry_run,
+        env=entorno_app(),
+    )
+
+
+def tarea_demo_cadena_viva(args: argparse.Namespace) -> None:
+    """Inserta la cadena de mulas con fecha de ahora y calcula el rasgo de R-11 (D-68).
+
+    Ejemplo: python tareas.py demo-cadena-viva --disparar
+    No borra nada y se puede repetir. Con --disparar agrega una transferencia hacia
+    6033-9001 para que D1, si esta corriendo, levante la alerta con R-11. Respeta
+    CENTINELA_MONGO__URI. Necesita el demo cargado (datos-demo).
+    """
+    correr(
+        uv("run", "python", "-m", "app.deteccion.demo_cadena", *args.argumentos),
+        dry_run=args.dry_run,
+        env=entorno_app(),
+    )
+
+
 def tarea_cargar(args: argparse.Namespace) -> None:
     """Carga transacciones desde un archivo JSONL, en lotes y sin duplicar (T-57).
 
@@ -1016,6 +1048,8 @@ TAREAS = {
     "validadores": tarea_validadores,
     "generar": tarea_generar,
     "indicadores": tarea_indicadores,
+    "rasgos": tarea_rasgos,
+    "demo-cadena-viva": tarea_demo_cadena_viva,
     "cargar": tarea_cargar,
     "usuarios": tarea_usuarios,
     "pruebas": tarea_pruebas,
@@ -1096,7 +1130,9 @@ def main(argumentos: list[str] | None = None) -> int:
     # Todo lo que sigue a `generar` es del generador (incluidas sus banderas y --help):
     # argparse no sabe repartir banderas desconocidas a un subcomando, asi que se corta aca.
     pasadas: list[str] = []
-    for pasante in ("generar", "indicadores", "usuarios", "cargar", "e2e"):
+    for pasante in (
+        "generar", "indicadores", "rasgos", "demo-cadena-viva", "usuarios", "cargar", "e2e",
+    ):
         if pasante not in argumentos:
             continue
         corte = argumentos.index(pasante) + 1

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from fractions import Fraction
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -81,6 +82,35 @@ class VentanaOrigen(_Congelado):
     monto_acumulado_crc: MontoCRC
 
 
+class RasgoRed(_Congelado):
+    """Rasgos de grafo de UNA cuenta destino (T-63), materializados por D3.
+
+    Es lo que R-11 lee: cuanto recibio la cuenta, cuanto de eso reenvio dentro de
+    `ventana_minutos` y en cuantos saltos sigue el dinero. El calculo no es de este
+    modulo (lo hace el pipeline de `app/repos/rasgos_grafo.py`); aqui llega ya hecho.
+
+    El rasgo cubre las transferencias de `[desde, corte)`. Una cuenta sin movimientos en
+    ese rango llega con todo en cero: es un rasgo valido que dice "no paso nada", no un
+    rasgo ausente. `vigencia_segundos` es cuanto despues de `corte` se sigue dando por
+    bueno (D3 lo recalcula cada pocos segundos; si D3 se detiene, el rasgo envejece).
+    """
+
+    cuenta: CuentaSinpe
+    ventana_minutos: int = Field(ge=1)
+    desde: datetime
+    corte: datetime
+    vigencia_segundos: int = Field(ge=1)
+    fan_in: int = Field(ge=0, description="Origenes distintos que le enviaron")
+    fan_out: int = Field(ge=0, description="Destinos distintos a los que envio")
+    monto_recibido_crc: MontoCRC
+    monto_reenviado_crc: MontoCRC
+    proporcion_pb: int = Field(
+        ge=0, le=10_000, description="Reenviado sobre recibido, en puntos basicos (10.000 = 100 %)"
+    )
+    minutos_reenvio: int = Field(ge=0, description="Minutos hasta el ultimo reenvio contado")
+    saltos: int = Field(ge=0, description="Largo de la cadena de reenvios que parte de la cuenta")
+
+
 class ContextoEvaluacion(_Congelado):
     """Hechos que la consulta de H-09 precalcula antes de llamar a `evaluar`.
 
@@ -98,6 +128,10 @@ class ContextoEvaluacion(_Congelado):
     # filtro "vigente al momento de la transaccion" lo aplica el evaluador (R-07).
     entradas_lista_riesgo: tuple[EntradaListaRiesgo, ...]
     ventana_origen: VentanaOrigen
+    # Rasgos de grafo del destino (R-11). Es la unica excepcion a "todos obligatorios":
+    # `None` significa que D3 todavia no los materializo, y R-11 lo reporta como no
+    # evaluada; no se confunde con "sin movimientos", que es un `RasgoRed` en ceros.
+    rasgo_red: RasgoRed | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -317,11 +351,64 @@ def _regla_velocidad(
     )
 
 
+def _hora_cr(fecha: datetime) -> str:
+    return f"{fecha.astimezone(ZONA_COSTA_RICA):%H:%M}"
+
+
 def _regla_red_mulas(
     regla: Regla, transaccion: Transaccion, contexto: ContextoEvaluacion
 ) -> _Resultado:
-    return _no_evaluada(
-        "red_mulas necesita los reenvios posteriores del destino; ese contexto lo trae H-23"
+    """R-11: el destino reenvia casi todo lo recibido, en pocos minutos y en cadena.
+
+    Lee el rasgo materializado del destino; no busca nada. Sin rasgo, con rasgo de otra
+    ventana, que no cubre la fecha de la transaccion o que ya envejecio, queda como no
+    evaluada con su motivo: no dispara a ciegas.
+    """
+    if regla.umbral is None:
+        return _no_evaluada("la regla no tiene umbral")
+    ventana = _parametro(regla, "ventana_minutos")
+    saltos_minimos = _parametro(regla, "saltos_minimos")
+    if ventana is None or saltos_minimos is None:
+        return _no_evaluada("faltan los parametros ventana_minutos o saltos_minimos")
+    rasgo = contexto.rasgo_red
+    if rasgo is None:
+        return _no_evaluada(
+            "no hay rasgos de grafo calculados; D3 los materializa cuando R-11 esta activa"
+        )
+    if rasgo.cuenta != transaccion.cuenta_destino:
+        return _no_evaluada(
+            f"el rasgo es de {rasgo.cuenta} y el destino es {transaccion.cuenta_destino}"
+        )
+    if ventana != rasgo.ventana_minutos:
+        return _no_evaluada(
+            f"el rasgo se calculo con {rasgo.ventana_minutos} minutos y la regla pide {ventana}"
+        )
+    if transaccion.fecha < rasgo.desde:
+        return _no_evaluada(
+            f"el rasgo cubre desde las {_hora_cr(rasgo.desde)} y la transaccion es anterior"
+        )
+    vence = rasgo.corte + timedelta(seconds=rasgo.vigencia_segundos)
+    if transaccion.fecha > vence:
+        return _no_evaluada(
+            f"el rasgo es viejo: se calculo a las {_hora_cr(rasgo.corte)} y vale "
+            f"{rasgo.vigencia_segundos} segundos"
+        )
+    if rasgo.monto_recibido_crc <= 0:
+        return _Resultado(dispara=False)
+    umbral = _exacto(regla.umbral)
+    # Exacto: reenviado / recibido contra el umbral, sin pasar por un flotante.
+    proporcion = Fraction(rasgo.monto_reenviado_crc, rasgo.monto_recibido_crc)
+    if not (proporcion >= umbral and rasgo.saltos >= _exacto(saltos_minimos)):
+        return _Resultado(dispara=False)
+    return _Resultado(
+        dispara=True,
+        explicacion=(
+            f"destino {rasgo.cuenta} recibio {_colones(rasgo.monto_recibido_crc)} y reenvio "
+            f"{_colones(rasgo.monto_reenviado_crc)} ({_decimal(Fraction(rasgo.proporcion_pb, 100))} %) "
+            f"en {rasgo.minutos_reenvio} minutos, en una cadena de {rasgo.saltos} saltos; "
+            f"umbral {_decimal(umbral * 100)} % en {_decimal(_exacto(ventana))} minutos y "
+            f"{_decimal(_exacto(saltos_minimos))} saltos"
+        ),
     )
 
 
@@ -348,6 +435,7 @@ class TipoRegla:
 
     `evaluable` es falso cuando el motor todavia no evalua el tipo en linea; sus
     parametros se declaran igual para que las reglas del catalogo se puedan editar.
+    Hoy todos los tipos son evaluables: `red_mulas` lo es desde T-63 (rasgos de grafo).
     """
 
     umbral: str
@@ -380,7 +468,6 @@ TIPOS_REGLA: Mapping[str, TipoRegla] = {
             "ventana_minutos": "minutos en los que tiene que ocurrir el reenvio",
             "saltos_minimos": "saltos minimos para llamarlo cadena",
         },
-        evaluable=False,
     ),
 }
 

@@ -102,6 +102,14 @@ db.transacciones.createIndex(
   { name: "idx_transacciones_sinpe_origen_fecha" }
 );
 
+// T-63: el pipeline de rasgos de grafo (D3) arranca con $match por rango de fecha. Sin
+// este indice recorreria toda la coleccion en cada recalculo; con el, lee solo el
+// horizonte (docs/06-plataforma.md, "R-11 y rasgos de grafo").
+db.transacciones.createIndex(
+  { fecha: 1 },
+  { name: "idx_transacciones_fecha" }
+);
+
 // ------------------------------------------------------------
 // agentes
 // Consulta: filtrar agentes vs supervisores/administradores.
