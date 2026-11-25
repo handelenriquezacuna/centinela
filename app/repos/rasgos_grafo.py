@@ -36,6 +36,7 @@ borran al final.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -366,6 +367,36 @@ class RepoRasgosGrafo:
             "corte": _con_zona(corrida["corte"]),
         }
         return a_rasgo_red(documentos.get(id_rasgo(cuenta)), corrida, cuenta)
+
+    async def leer_rasgos(self, cuentas: Sequence[str]) -> dict[str, RasgoRed | None | Exception]:
+        """Los rasgos de varias cuentas destino en UNA lectura (D1 por lotes, T-62).
+
+        Mismo resultado que `leer_rasgo` cuenta por cuenta: sin documento de corrida todas
+        valen `None`. Un documento de rasgo que no se puede convertir se devuelve como la
+        excepcion, para que D1 aisle solo a las transacciones de esa cuenta.
+        """
+        unicas = sorted(set(cuentas))
+        documentos = {
+            doc["_id"]: doc
+            async for doc in self._estado.find(
+                {"_id": {"$in": [NOMBRE_RASGOS, *(id_rasgo(cuenta) for cuenta in unicas)]}}
+            )
+        }
+        corrida = documentos.get(NOMBRE_RASGOS)
+        if corrida is None:
+            return dict.fromkeys(unicas)
+        corrida = {
+            **corrida,
+            "desde": _con_zona(corrida["desde"]),
+            "corte": _con_zona(corrida["corte"]),
+        }
+        resultado: dict[str, RasgoRed | None | Exception] = {}
+        for cuenta in unicas:
+            try:
+                resultado[cuenta] = a_rasgo_red(documentos.get(id_rasgo(cuenta)), corrida, cuenta)
+            except Exception as fallo:  # noqa: BLE001 - se aisla por cuenta
+                resultado[cuenta] = fallo
+        return resultado
 
     async def explicar(
         self, corte: datetime, *, ventana_minutos: int, horizonte: timedelta

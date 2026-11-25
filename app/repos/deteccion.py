@@ -13,6 +13,13 @@ este modulo, en el orden en que D1 lo usa por cada transaccion:
 4. `insertar_alerta`: el indice unico de `alertas.transaccion_id` decide si es nueva.
 5. `guardar_token`: DESPUES de la alerta, nunca antes.
 
+Desde T-62 D1 procesa el change stream por lotes (`deteccion.lote_maximo`) y el
+repositorio ofrece la version por lote de cada lectura: `leer_origenes`,
+`armar_contextos` e `insertar_alertas`. Leen para todo el lote con `$in` y cuentan en
+memoria con la fecha de cada transaccion (ver `app/deteccion/contexto_lote.py`); las
+versiones por transaccion siguen, porque son el camino de un evento solo y el de
+aislamiento de un evento fallido.
+
 `deteccion_estado` guarda cuatro clases de documento (validador en el bloque 13 de
 `scripts/semilla/01-colecciones.js`): el token de reanudacion, uno por disparador, los
 eventos descartados tras agotar los reintentos y, desde T-63, los rasgos de grafo por
@@ -28,10 +35,23 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 
+from pydantic import ValidationError
 from pymongo.asynchronous.database import AsyncDatabase
-from pymongo.errors import DuplicateKeyError, OperationFailure
+from pymongo.errors import BulkWriteError, DuplicateKeyError, OperationFailure
 
-from app.deteccion.evaluador import ContextoEvaluacion, PoliticaDeteccion, VentanaOrigen
+from app.deteccion.contexto_lote import (
+    HistorialPorOrigen,
+    a_movimiento,
+    movimiento_de_documento,
+    previas_al_destino,
+    ventana_de_origen,
+)
+from app.deteccion.evaluador import (
+    ContextoEvaluacion,
+    PoliticaDeteccion,
+    RasgoRed,
+    VentanaOrigen,
+)
 from app.deteccion.rasgos_grafo import TIPO_REGLA_RED
 from app.modelos import (
     COLECCION_ALERTAS,
@@ -102,6 +122,10 @@ TIPO_RED_MULAS = TIPO_REGLA_RED
 # reporta como no evaluada antes de mirar el contexto.
 DIAS_SIN_REGLA = 1
 MINUTOS_SIN_REGLA = 1
+
+# Codigo de MongoDB de "clave duplicada" y proyeccion minima del historial por lote.
+_CLAVE_DUPLICADA = 11000
+_PROYECCION_MOVIMIENTO = {"cuenta_origen": 1, "cuenta_destino": 1, "fecha": 1, "monto_crc": 1}
 
 
 def _hora_de_insercion(cambio: Mapping[str, Any]) -> datetime | None:
@@ -202,6 +226,19 @@ class ProtocoloRepoDeteccion(Protocol):
     ) -> ContextoEvaluacion: ...
 
     async def insertar_alerta(self, alerta: Alerta) -> bool: ...
+
+    async def leer_origenes(
+        self, transacciones: Sequence[Transaccion]
+    ) -> dict[str, DatosOrigen | Exception]: ...
+
+    async def armar_contextos(
+        self,
+        transacciones: Sequence[Transaccion],
+        origenes: Mapping[str, DatosOrigen],
+        reglas: Sequence[Regla],
+    ) -> dict[str, ContextoEvaluacion | Exception]: ...
+
+    async def insertar_alertas(self, alertas: Sequence[Alerta]) -> dict[str, bool | Exception]: ...
 
     async def leer_token(self, disparador: str) -> Mapping[str, Any] | None: ...
 
@@ -474,6 +511,263 @@ class RepoDeteccion:
             if existente is not None:
                 return False
             raise
+
+    # -- Por lote (T-62) ----------------------------------------------------
+
+    async def leer_origenes(
+        self, transacciones: Sequence[Transaccion]
+    ) -> dict[str, DatosOrigen | Exception]:
+        """`leer_origen` de todo el lote en dos lecturas (cuentas y clientes), por `$in`.
+
+        La clave es la cuenta de origen. Una cuenta o un cliente que no existe es el mismo
+        `LookupError` de `leer_origen`, devuelto y no lanzado: afecta solo a las
+        transacciones de esa cuenta.
+        """
+        ids = sorted({transaccion.cuenta_origen for transaccion in transacciones})
+        cuentas = {
+            doc["_id"]: doc async for doc in self._base[CUENTAS].find({"_id": {"$in": ids}})
+        }
+        clientes_ids = sorted({doc["cliente_id"] for doc in cuentas.values()})
+        clientes = {
+            doc["_id"]: doc
+            async for doc in self._base[CLIENTES].find(
+                {"_id": {"$in": clientes_ids}}, {"nombre": 1}
+            )
+        }
+        resultado: dict[str, DatosOrigen | Exception] = {}
+        for cuenta_id in ids:
+            cuenta = cuentas.get(cuenta_id)
+            if cuenta is None:
+                resultado[cuenta_id] = LookupError(f"la cuenta de origen {cuenta_id} no existe")
+                continue
+            cliente = clientes.get(cuenta["cliente_id"])
+            if cliente is None:
+                resultado[cuenta_id] = LookupError(f"el cliente {cuenta['cliente_id']} no existe")
+                continue
+            resultado[cuenta_id] = DatosOrigen(
+                cuenta_sinpe=cuenta["cuenta_sinpe"],
+                cliente_id=cuenta["cliente_id"],
+                cliente_nombre=cliente["nombre"],
+            )
+        return resultado
+
+    async def armar_contextos(
+        self,
+        transacciones: Sequence[Transaccion],
+        origenes: Mapping[str, DatosOrigen],
+        reglas: Sequence[Regla],
+    ) -> dict[str, ContextoEvaluacion | Exception]:
+        """`armar_contexto` de todo el lote. La clave es `transaccion_id`.
+
+        Una lectura por tipo de dato, para el lote entero: perfiles, cuentas de los
+        clientes, historial para R-03, historial para R-09, listas de riesgo y rasgos de
+        R-11. Despues se cuenta en memoria con la fecha de cada transaccion, con los
+        mismos limites de `_destinos_conocidos` y `_ventana_origen`. Si no hay regla de
+        destino o de velocidad no se lee su historial: el evaluador no mira ese campo sin
+        la regla, igual que hoy.
+
+        Un documento que no valida (perfil, lista, rasgo) se devuelve como excepcion de las
+        transacciones que lo usan, no del lote.
+        """
+        if not transacciones:
+            return {}
+        dias = _parametro(reglas, TIPO_DESTINO, "dias_historial")
+        dias_contexto = max(1, int(dias)) if dias is not None else DIAS_SIN_REGLA
+        minutos = _parametro(reglas, TIPO_VELOCIDAD, "ventana_minutos")
+        minutos_contexto = max(1, int(minutos)) if minutos is not None else MINUTOS_SIN_REGLA
+        con_red = any(r.activa and r.tipo == TIPO_RED_MULAS for r in reglas)
+
+        clientes_ids = sorted({origenes[t.cuenta_origen].cliente_id for t in transacciones})
+        destinos = sorted({t.cuenta_destino for t in transacciones})
+
+        perfiles: dict[str, PerfilComportamiento | None | Exception] = dict.fromkeys(
+            clientes_ids
+        )
+        async for documento in self._base[PERFILES].find({"_id": {"$in": clientes_ids}}):
+            try:
+                perfiles[documento["_id"]] = PerfilComportamiento.model_validate(documento)
+            except ValidationError as fallo:
+                perfiles[documento["_id"]] = fallo
+
+        listas: dict[str, list[EntradaListaRiesgo] | Exception] = {}
+        async for documento in self._base[LISTAS_RIESGO].find({"cuenta": {"$in": destinos}}):
+            cuenta = documento["cuenta"]
+            try:
+                entrada = EntradaListaRiesgo.model_validate(documento)
+            except ValidationError as fallo:
+                listas[cuenta] = fallo
+                continue
+            if not isinstance(listas.get(cuenta), Exception):
+                listas.setdefault(cuenta, []).append(entrada)  # type: ignore[union-attr]
+
+        rasgos: dict[str, RasgoRed | None | Exception] = {}
+        if con_red:
+            rasgos = await self._rasgos.leer_rasgos(destinos)
+
+        cuentas_del_cliente: dict[str, set[str]] = {}
+        historial_destinos = HistorialPorOrigen()
+        if dias is not None:
+            cuentas_del_cliente = await self._cuentas_de_clientes(clientes_ids)
+            historial_destinos = await self._historial_destinos(
+                transacciones, origenes, cuentas_del_cliente, dias_contexto
+            )
+        historial_ventana = HistorialPorOrigen()
+        if minutos is not None:
+            historial_ventana = await self._historial_ventana(transacciones, minutos_contexto)
+
+        resultado: dict[str, ContextoEvaluacion | Exception] = {}
+        for transaccion in transacciones:
+            cliente_id = origenes[transaccion.cuenta_origen].cliente_id
+            perfil = perfiles.get(cliente_id)
+            entradas = listas.get(transaccion.cuenta_destino, [])
+            rasgo = rasgos.get(transaccion.cuenta_destino)
+            for dato in (perfil, entradas, rasgo):
+                if isinstance(dato, Exception):
+                    resultado[transaccion.transaccion_id] = dato
+                    break
+            else:
+                previas = (
+                    previas_al_destino(
+                        transaccion, cuentas_del_cliente[cliente_id], dias_contexto, historial_destinos
+                    )
+                    if dias is not None
+                    else 0
+                )
+                ventana = (
+                    ventana_de_origen(transaccion, minutos_contexto, historial_ventana)
+                    if minutos is not None
+                    else VentanaOrigen(
+                        ventana_minutos=minutos_contexto,
+                        cantidad=1,
+                        monto_acumulado_crc=transaccion.monto_crc,
+                    )
+                )
+                resultado[transaccion.transaccion_id] = ContextoEvaluacion(
+                    perfil=perfil,  # type: ignore[arg-type]
+                    dias_historial=dias_contexto,
+                    destinos_conocidos={transaccion.cuenta_destino: previas},
+                    entradas_lista_riesgo=tuple(entradas),  # type: ignore[arg-type]
+                    ventana_origen=ventana,
+                    rasgo_red=rasgo,  # type: ignore[arg-type]
+                )
+        return resultado
+
+    async def _cuentas_de_clientes(self, clientes_ids: Sequence[str]) -> dict[str, set[str]]:
+        """Todas las cuentas de cada cliente, en una lectura (R-03 cuenta por cliente)."""
+        cuentas: dict[str, set[str]] = {cliente: set() for cliente in clientes_ids}
+        async for documento in self._base[CUENTAS].find(
+            {"cliente_id": {"$in": list(clientes_ids)}}, {"cliente_id": 1}
+        ):
+            cuentas[documento["cliente_id"]].add(documento["_id"])
+        return cuentas
+
+    async def _historial_destinos(
+        self,
+        transacciones: Sequence[Transaccion],
+        origenes: Mapping[str, DatosOrigen],
+        cuentas_del_cliente: Mapping[str, set[str]],
+        dias: int,
+    ) -> HistorialPorOrigen:
+        """Transferencias de los clientes del lote a los destinos del lote.
+
+        Una clausula por cliente: sus cuentas, sus destinos y el rango de fechas de SUS
+        transacciones del lote. Es un superconjunto de lo que cada transaccion necesita;
+        el recorte exacto (`[fecha - dias, fecha)`) lo hace `previas_al_destino`. Las
+        transacciones del propio lote se agregan aparte: cuentan aunque la lectura no las
+        devuelva.
+        """
+        por_cliente: dict[str, list[Transaccion]] = {}
+        for transaccion in transacciones:
+            cliente_id = origenes[transaccion.cuenta_origen].cliente_id
+            por_cliente.setdefault(cliente_id, []).append(transaccion)
+        clausulas = [
+            {
+                "cuenta_origen": {"$in": sorted(cuentas_del_cliente[cliente_id])},
+                "cuenta_destino": {"$in": sorted({t.cuenta_destino for t in propias})},
+                "fecha": {
+                    "$gte": min(t.fecha for t in propias) - timedelta(days=dias),
+                    "$lte": max(t.fecha for t in propias),
+                },
+            }
+            for cliente_id, propias in por_cliente.items()
+        ]
+        historial = HistorialPorOrigen()
+        async for documento in self._transacciones.find(
+            {"$or": clausulas}, _PROYECCION_MOVIMIENTO
+        ):
+            historial.agregar(movimiento_de_documento(documento))
+        for transaccion in transacciones:
+            historial.agregar(a_movimiento(transaccion))
+        return historial
+
+    async def _historial_ventana(
+        self, transacciones: Sequence[Transaccion], minutos: int
+    ) -> HistorialPorOrigen:
+        """Transferencias de los origenes del lote dentro de la ventana de cada una.
+
+        Una clausula por origen, con el rango de fechas de SUS transacciones del lote. La
+        rafaga del mismo origen dentro del lote queda en el historial (esta insertada, y
+        ademas se agrega aparte) y por eso cuenta en la ventana de las siguientes.
+        """
+        por_origen: dict[str, list[Transaccion]] = {}
+        for transaccion in transacciones:
+            por_origen.setdefault(transaccion.cuenta_origen, []).append(transaccion)
+        clausulas = [
+            {
+                "cuenta_origen": origen,
+                "fecha": {
+                    "$gte": min(t.fecha for t in propias) - timedelta(minutes=minutos),
+                    "$lte": max(t.fecha for t in propias),
+                },
+            }
+            for origen, propias in por_origen.items()
+        ]
+        historial = HistorialPorOrigen()
+        async for documento in self._transacciones.find(
+            {"$or": clausulas}, _PROYECCION_MOVIMIENTO
+        ):
+            historial.agregar(movimiento_de_documento(documento))
+        for transaccion in transacciones:
+            historial.agregar(a_movimiento(transaccion))
+        return historial
+
+    async def insertar_alertas(self, alertas: Sequence[Alerta]) -> dict[str, bool | Exception]:
+        """`insertar_alerta` de todo el lote: un `insert_many(ordered=False)`.
+
+        La clave es `transaccion_id`; `True` si la alerta es nueva, `False` si la
+        transaccion ya tenia una (el reproceso de un lote que se cayo antes del token: lo
+        decide el indice unico, no este codigo, y `ordered=False` hace que un duplicado no
+        impida insertar el resto). Un duplicado que NO es de esa transaccion (el `_id`
+        tomado por otra) se devuelve como excepcion, igual que lo levanta `insertar_alerta`.
+        Cualquier otro error de escritura sube y D1 reintenta evento por evento.
+        """
+        if not alertas:
+            return {}
+        documentos = [a_entero_64(alerta.a_documento()) for alerta in alertas]
+        resultado: dict[str, bool | Exception] = {
+            alerta.transaccion_id: True for alerta in alertas
+        }
+        try:
+            await self._alertas.insert_many(documentos, ordered=False)
+            return resultado
+        except BulkWriteError as fallo:
+            errores = fallo.details.get("writeErrors", [])
+            if not errores or any(error.get("code") != _CLAVE_DUPLICADA for error in errores):
+                raise
+            duplicadas = [alertas[error["index"]].transaccion_id for error in errores]
+        existentes = {
+            documento["transaccion_id"]
+            async for documento in self._alertas.find(
+                {"transaccion_id": {"$in": duplicadas}}, {"transaccion_id": 1}
+            )
+        }
+        for transaccion_id in duplicadas:
+            resultado[transaccion_id] = (
+                False
+                if transaccion_id in existentes
+                else DuplicateKeyError(f"el _id de la alerta de {transaccion_id} ya esta tomado")
+            )
+        return resultado
 
     async def leer_token(self, disparador: str) -> Mapping[str, Any] | None:
         documento = await self._estado.find_one({"_id": disparador, "clase": "reanudacion"})

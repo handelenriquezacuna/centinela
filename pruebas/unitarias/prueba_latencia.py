@@ -123,7 +123,7 @@ async def _correr(repo: RepoDeteccionFalso, escrita_en: datetime) -> Supervisor:
     supervisor = Supervisor(tolerancia_segundos=30)
     supervisor.lanzar(NOMBRE_D1, d1(repo, supervisor, ajustes=AJUSTES, reloj=lambda: escrita_en))
     try:
-        await asyncio.wait_for(repo.agotado.wait(), timeout=5)
+        await repo.esperar_procesado(supervisor)
         return supervisor
     finally:
         await supervisor.detener()

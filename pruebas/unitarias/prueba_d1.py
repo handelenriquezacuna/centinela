@@ -13,7 +13,6 @@ Contra Mongo de verdad, el mismo contrato lo prueba `pruebas/integracion/prueba_
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import AsyncIterator, Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -28,7 +27,10 @@ from app.supervision import InformeTarea, Supervisor
 from pruebas.dobles.datos_demo import TRANSACCIONES
 from pruebas.dobles.repo_deteccion_falso import RepoDeteccionFalso, token
 
+# `lote_maximo=1`: estas pruebas sostienen el contrato por evento (una alerta, un token). El
+# lote tiene las suyas en `prueba_d1_lotes.py`.
 AJUSTES = AjustesDeteccion(
+    lote_maximo=1,
     espera_cursor_ms=10,
     reintentos=2,
     espera_inicial_segundos=0.001,
@@ -52,7 +54,7 @@ async def _correr(repo: RepoDeteccionFalso) -> InformeTarea:
     supervisor = Supervisor(tolerancia_segundos=30)
     supervisor.lanzar(NOMBRE_D1, d1(repo, supervisor, ajustes=AJUSTES, reloj=lambda: AHORA))
     try:
-        await asyncio.wait_for(repo.agotado.wait(), timeout=5)
+        await repo.esperar_procesado(supervisor)
         return supervisor.informe().tarea(NOMBRE_D1)
     finally:
         await supervisor.detener()
@@ -283,7 +285,7 @@ async def prueba_sin_reglas_activas_d1_queda_degradado() -> None:
     supervisor = Supervisor(tolerancia_segundos=30)
     supervisor.lanzar(NOMBRE_D1, d1(repo, supervisor, ajustes=AJUSTES, reloj=lambda: AHORA))
     try:
-        await asyncio.wait_for(repo.agotado.wait(), timeout=5)
+        await repo.esperar_procesado(supervisor)
         informe = supervisor.informe()
     finally:
         await supervisor.detener()
@@ -375,7 +377,7 @@ async def _correr_midiendo_siempre(repo: RepoDeteccionFalso) -> InformeTarea:
     supervisor = Supervisor(tolerancia_segundos=30)
     supervisor.lanzar(NOMBRE_D1, d1(repo, supervisor, ajustes=ajustes, reloj=lambda: AHORA))
     try:
-        await asyncio.wait_for(repo.agotado.wait(), timeout=5)
+        await repo.esperar_procesado(supervisor)
         return supervisor.informe().tarea(NOMBRE_D1)
     finally:
         await supervisor.detener()
