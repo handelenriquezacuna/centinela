@@ -1,8 +1,13 @@
-{# T-57: aviso de D1 atrasado. Sin pendientes sobre el umbral, el fragmento queda vacio. #}
+{# T-57: aviso de D1 atrasado. Sin pendientes sobre el umbral ni atraso sobre el suyo, el fragmento queda vacio. #}
 {% if atrasada %}
 <div class="mensaje mensaje-error aviso-rezago">
   <strong>Detección atrasada:</strong>
+  {% if por_conteo %}
   {{ pendientes }} transacciones por evaluar{% if estimado %}, unos {{ estimado }} para ponerse al día{% else %}; todavía sin ritmo medido{% endif %}.
   Las alertas de esas transacciones aparecerán cuando D1 se ponga al día.
+  {% else %}
+  va unos {{ atraso }} detrás de la ingesta.
+  Las alertas de las transacciones recientes aparecerán cuando D1 se ponga al día.
+  {% endif %}
 </div>
 {% endif %}

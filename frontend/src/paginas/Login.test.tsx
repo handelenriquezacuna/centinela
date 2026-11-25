@@ -73,7 +73,7 @@ describe("Login y sesion", () => {
         return { cuerpo: {} };
       },
       "GET /api/v1/casos-destino": { cuerpo: { total: 0, limite: 50, desplazamiento: 0, elementos: [] } },
-      "GET /api/v1/deteccion/rezago": { cuerpo: { atrasada: false, pendientes: null, aviso_desde: 500, segundos_para_ponerse_al_dia: null, estimado: "", medido_en: null } },
+      "GET /api/v1/deteccion/rezago": { cuerpo: { atrasada: false, por_conteo: false, pendientes: null, aviso_desde: 500, atraso_segundos: null, aviso_atraso_desde: 15, atraso_legible: "", segundos_para_ponerse_al_dia: null, estimado: "", medido_en: null } },
     });
     const enrutador = montar("/login?siguiente=%2F%2Fotro.sitio%2Fx");
 

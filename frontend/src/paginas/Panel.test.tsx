@@ -15,7 +15,7 @@ const MULA = casoDestino("6033-9001", [alertaDeCaso("ALR-001"), alertaDeCaso("AL
   en_lista_riesgo: true,
 });
 const NUEVA = casoDestino("7001-0010", [alertaDeCaso("ALR-900", { cuenta_destino: "7001-0010", monto_crc: 600_000 })]);
-const SIN_REZAGO = { atrasada: false, pendientes: 0, aviso_desde: 500, segundos_para_ponerse_al_dia: null, estimado: "", medido_en: null };
+const SIN_REZAGO = { atrasada: false, por_conteo: false, pendientes: 0, aviso_desde: 500, atraso_segundos: 0, aviso_atraso_desde: 15, atraso_legible: "", segundos_para_ponerse_al_dia: null, estimado: "", medido_en: null };
 
 function pagina(...elementos: unknown[]) {
   return { cuerpo: { total: elementos.length, limite: 50, desplazamiento: 0, elementos } };
@@ -166,7 +166,7 @@ describe("Panel por cuenta destino", () => {
   it("muestra el aviso de rezago cuando D1 esta atrasado", async () => {
     instalarApiFalsa({
       "GET /api/v1/casos-destino": pagina(),
-      "GET /api/v1/deteccion/rezago": { cuerpo: { ...SIN_REZAGO, atrasada: true, pendientes: 9988, estimado: "2 min" } },
+      "GET /api/v1/deteccion/rezago": { cuerpo: { ...SIN_REZAGO, atrasada: true, por_conteo: true, pendientes: 9988, estimado: "2 min" } },
     });
     montar();
     const aviso = await screen.findByText(/Detección atrasada/);

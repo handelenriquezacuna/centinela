@@ -977,7 +977,7 @@ mismas funciones puras que la página HTMX.
 | `GET /alertas/{alerta_id}/detalle` | detalle | Alerta, transacción (sin `simulacion`), cliente, perfil, cada regla con aporte, acumulado y evidencia, cortes con el alcanzado, política (`usada`/`vigente`/`ninguna`), acciones que permite la máquina, caso y nombres de agentes | `app/api/detalle.py` |
 | `GET /casos-destino[?limite=&desplazamiento=]` | panel | Página de cuentas destino con alertas abiertas: totales, víctimas, monto entero, severidad y puntaje máximos, reglas repetidas, alertas (`_id`), sugerencia y acciones de lote | `app/api/casos.py`, `RepoCasosDestino` |
 | `GET /casos-destino/{cuenta}` | panel | Un caso; 404 si ya no tiene abiertas | idem |
-| `GET /deteccion/rezago` | panel | `{atrasada, pendientes, aviso_desde, segundos_para_ponerse_al_dia, estimado, medido_en}`; no consulta la base | `antiguedad_legible` |
+| `GET /deteccion/rezago` | panel | `{atrasada, por_conteo, pendientes, aviso_desde, atraso_segundos, aviso_atraso_desde, atraso_legible, segundos_para_ponerse_al_dia, estimado, medido_en}`; no consulta la base | `antiguedad_legible` |
 | `GET /tablero?dias=` | tablero | `resumen` de `indicadores_diarios` (`ResumenVacio` o `ResumenTablero`, discriminado por `vacio`) y la geometría de sus gráficos (`GraficosTablero`), ya tipados (T-66); las fechas salen con zona UTC | `app/repos/tablero.py`, `app/api/graficos.py` |
 | `GET /red-mulas/{cuenta}/sankey?transaccion=&desde=&ventana_minutos=&saltos=` | red_mulas | Disposición del Sankey: nodos, bandas (trazado SVG y grosor entero proporcional a los colones), columnas, víctima en la columna 0 si viene `transaccion`; `sankey: null` con `motivo` si no hay salidas | `app/api/sankey.py` |
 | `GET /red-mulas/{cuenta}/grafo?...` | red_mulas | La red, la posición de nodos y aristas, y las entradas de `listas_riesgo` solo para quien puede darlas de baja | `app/api/graficos.disponer_grafo` |
@@ -1264,8 +1264,7 @@ no se ve con ellos. El comando (modulo `app/deteccion/demo_cadena.py`, respeta
 1. Con el demo cargado (`datos-demo`), la API y D1 corriendo y R-11 activa (viene activa de
    `03-catalogos.js`).
 2. `python tareas.py demo-cadena-viva`: inserta una victima que envia 280.000 a 6033-9001 y, a
-   los +4, +9 y +11 minutos, 276.000, 185.000 y 90.000 por la cadena, con ids TXN-9NNNNN (desde TXN-900001, de seis digitos por el rezago de D1)
-   libres. Recalcula los rasgos con la misma funcion que D3 e imprime el de 6033-9001:
+   los +4, +9 y +11 minutos, 276.000, 185.000 y 90.000 por la cadena, con ids TXN-NNNNNN, el siguiente al mayor de seis digitos (asignador comun, ver el contrato de ids del rezago de D1). Recalcula los rasgos con la misma funcion que D3 e imprime el de 6033-9001:
    recibido 280000, reenviado 276000, 98,6 %, 4 minutos, 3 saltos.
 3. `python tareas.py demo-cadena-viva --disparar` (o el mismo comando con la bandera desde el
    inicio): ademas inserta una transferencia nueva de CTA-002 hacia 6033-9001. D1 la evalua con
@@ -1478,14 +1477,11 @@ token, cuantas transacciones hay sin evaluar y la antiguedad de la mas vieja.
 `GET /estado`, en la tarea `d1_deteccion`, publica:
 
 ```json
-"rezago": {"pendientes": 9988, "antiguedad_segundos": 2592000.0, "medido_en": "2026-11-23T18:04:11Z"}
+"rezago": {"pendientes": 9988, "antiguedad_segundos": 2592000.0, "atraso_segundos": 41.3, "medido_en": "2026-11-23T18:04:11Z"}
 ```
 
-- Pendientes son las transacciones con `_id` posterior a `ultima_transaccion_id` del token
-  de D1 en `deteccion_estado`. Los identificadores `TXN-NNNNNN` se asignan en orden de
-  insercion, de modo que el orden por `_id` es el orden en que D1 las recibe. Es valido
-  mientras el numero tenga el mismo ancho (seis digitos); con un contrato de ids de otro
-  ancho habria que medir de otra forma.
+- Pendientes son las transacciones de seis digitos con `_id` posterior a
+  `ultima_transaccion_id` del token de D1 en `deteccion_estado`. Ver el contrato de ids.
 - Sin `ultima_transaccion_id` (D1 nunca termino una transaccion, por ejemplo una base
   recien sembrada) no hay referencia y se publica 0. D1 arranca "desde ahora" y no evalua
   lo anterior, asi que contar todo el historico como pendiente seria falso.
@@ -1499,16 +1495,42 @@ token, cuantas transacciones hay sin evaluar y la antiguedad de la mas vieja.
 - Una falla al medir no detiene a D1: se registra y se conserva la cifra anterior.
 - La consulta vive en `app/repos/deteccion.py` (`medir_rezago`, `filtro_pendientes`).
 
-Plan de la consulta, con `explain("executionStats")` sobre 3.000 transacciones y 2.500
-pendientes (`pruebas/integracion/prueba_rezago_mongo.py`; no hace falta indice nuevo, el
+### Contrato de ids de transaccion (T-69)
+
+Hay tres familias de ids: la demo sembrada (`TXN-001`..`TXN-007`, tres digitos), el generador
+(`TXN-000001`..) y la cadena en vivo del demo (antes `TXN-9NNNNN`). El conteo compara `_id`
+como texto, y una carga masiva mostraba rezago 0 con miles pendientes si D1 habia procesado
+antes una transaccion de otra familia (`"TXN-000500" > "TXN-007"` es falso, y tambien contra
+`TXN-900001`). La demo de la defensa hace justo eso: inserta a mano y luego carga masiva.
+
+- **Un solo asignador** para todo lo que se inserta despues de la siembra:
+  `app/repos/ids_transaccion.py`, "el siguiente al mayor TXN de seis digitos". Lo usan el
+  generador (limpia lo generado antes y continua despues del mayor que queda; el contenido
+  sigue siendo determinista, solo se desplaza el numero) y `demo-cadena-viva`.
+  `tareas.py cargar` no cambia: sus ids vienen del archivo, y deben respetar el contrato.
+- **El filtro solo cuenta ids de seis digitos**: rango de texto `(ultima, TXN-999999]` mas un
+  patron anclado `^TXN-[0-9]{6}$` en el mismo `_id`. Si `ultima_transaccion_id` no es de seis
+  digitos (D1 termino `TXN-007`), el limite inferior es `TXN-000000`. El patron es necesario:
+  en texto, `TXN-001` queda entre `TXN-000999` y `TXN-001000`, y el rango solo la contaria como
+  pendiente para siempre. Al agotarse `TXN-999999` el asignador se detiene (no pasa a siete
+  digitos, que romperia la comparacion de texto).
+- **Atraso en segundos**, red de seguridad que no depende del orden de ids. D1 recibe del
+  change stream la hora de insercion de cada evento (`wallTime`) y publica
+  `atraso_segundos` = ahora menos la insercion del ultimo evento procesado, y 0 cuando la
+  vuelta del cursor llega vacia. Viaja en `rezago` de `/estado` y en `GET /deteccion/rezago`.
+  Si el conteo falla por cualquier orden de ids, un D1 atrasado igual se ve.
+
+Plan de la consulta, con `explain("executionStats")` sobre 3.000 transacciones, 2.500
+pendientes y la demo de tres digitos mezclada (7 claves mas que se descartan) (`pruebas/integracion/prueba_rezago_mongo.py`; no hace falta indice nuevo, el
 de `_id` ya existe):
 
 | Consulta | Plan | nReturned | totalKeysExamined | totalDocsExamined |
 |---|---|---|---|---|
-| Contar pendientes (`$match` + `$group`) | COUNT_SCAN sobre `_id_` | 1 | 2.500 | 0 |
+| Contar pendientes (`$match` + `$group`) | IXSCAN sobre `_id_`, el patron se evalua sobre la clave | 1 | 2.507 | 0 |
 | La mas vieja (`find`, orden `_id`, limite 1) | IXSCAN sobre `_id_`, sin SORT | 1 | 1 | 1 |
 
-Contar recorre claves del indice y no lee un documento; la mas vieja lee uno solo, sin
+Contar recorre claves del indice y no lee un documento (antes del patron era COUNT_SCAN;
+sigue sin leer documentos); la mas vieja lee uno solo, sin
 importar cuantos haya pendientes. El costo del conteo crece con el rezago (una clave por
 pendiente), por eso se mide cada 2 s y no por evento.
 
@@ -1516,13 +1538,19 @@ pendiente), por eso se mide cada 2 s y no por evento.
 
 `/panel` incluye una region `role="status"` (`aria-live="polite"`) que se refresca con HTMX
 cada 10 s desde `GET /panel/rezago`. Ese fragmento no consulta la base: lee la ultima
-medicion del supervisor, igual que `/estado`. Si los pendientes superan
-`deteccion.rezago_aviso_desde` (500, en `config/centinela.yml`) muestra:
+medicion del supervisor, igual que `/estado`; la SPA hace lo mismo con
+`GET /api/v1/deteccion/rezago`. El aviso aparece si los pendientes superan
+`deteccion.rezago_aviso_desde` (500) o el atraso supera
+`deteccion.rezago_aviso_atraso_segundos` (15), los dos en `config/centinela.yml`:
 
-> Deteccion atrasada: N transacciones por evaluar, la mas vieja de hace X.
+> Deteccion atrasada: N transacciones por evaluar, unos X para ponerse al dia.
 
-Sobre el umbral el aviso aparece; en el umbral o debajo, o sin medicion, el fragmento va
-vacio. El umbral es operacion, no una regla de negocio: no decide que es fraude.
+Cuando solo hay atraso (el conteo no lo explica), dice:
+
+> Deteccion atrasada: va unos X detras de la ingesta.
+
+En el umbral o debajo, o sin medicion, el fragmento va vacio. Los umbrales son operacion,
+no reglas de negocio: no deciden que es fraude.
 
 ### Throughput de D1 medido
 

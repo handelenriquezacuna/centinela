@@ -25,6 +25,7 @@ from app.generador.poblacion import (
 )
 from app.modelos.base import ESQUEMA_VERSION, ZONA_COSTA_RICA
 from app.nucleo.config import AjustesGenerador
+from app.repos.ids_transaccion import id_transaccion
 
 # Peso relativo de cada hora local (0 a 23) de un dia de transferencias SINPE Movil:
 # valle de madrugada, subida a media manana, pico al mediodia y otro a la salida.
@@ -140,12 +141,15 @@ def generar_legitimas(
 
 
 def ordenar_y_numerar(
-    borradores: list[TxnBorrador], sinpe_de: Mapping[str, str]
+    borradores: list[TxnBorrador], sinpe_de: Mapping[str, str], *, primer_numero: int = 1
 ) -> list[dict]:
     """Documentos de `transacciones`, en orden cronologico y con su TXN-xxxxxx.
 
     El orden total (fecha y luego los demas campos) hace que el resultado no dependa de
-    como se construyo la lista: misma semilla, mismos identificadores.
+    como se construyo la lista: misma semilla, mismo contenido. `primer_numero` solo
+    desplaza la numeracion: el generador continua despues del mayor TXN de seis digitos
+    que ya existe (`app/repos/ids_transaccion.py`), para que lo nuevo sea siempre mayor
+    que lo ya evaluado y el rezago de D1 cuente bien.
 
     `sinpe_de` es `cuenta_id -> cuenta_sinpe`: cada transaccion lleva el SINPE de su
     origen (`sinpe_origen`), el mismo espacio que `cuenta_destino`, para que la red de
@@ -156,16 +160,15 @@ def ordenar_y_numerar(
         borradores,
         key=lambda t: (t.fecha, t.cuenta_origen, t.cuenta_destino, t.monto_crc),
     )
-    ancho = max(6, len(str(len(ordenados))))
     documentos: list[dict] = []
-    for numero, txn in enumerate(ordenados, start=1):
+    for numero, txn in enumerate(ordenados, start=primer_numero):
         simulacion: dict = {"fraude": txn.fraude}
         if txn.fraude:
             simulacion["patron"] = txn.patron
             simulacion["episodio"] = txn.episodio
         documentos.append(
             {
-                "_id": f"TXN-{numero:0{ancho}d}",
+                "_id": id_transaccion(numero),
                 "cuenta_origen": txn.cuenta_origen,
                 "sinpe_origen": sinpe_de[txn.cuenta_origen],
                 "cuenta_destino": txn.cuenta_destino,

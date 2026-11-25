@@ -8,7 +8,9 @@ const CADA_MS = 10_000;
 /**
  * Aviso de D1 atrasado (T-57): GET /api/v1/deteccion/rezago cada 10 s, como el fragmento
  * HTMX. La region `role="status"` existe siempre para que el lector de pantalla anuncie
- * el aviso cuando aparece; vacia mientras D1 esta al dia.
+ * el aviso cuando aparece; vacia mientras D1 esta al dia. Se muestra si los pendientes pasan
+ * `aviso_desde` (dice el conteo) o si el atraso en segundos pasa `aviso_atraso_desde` (dice
+ * cuanto va detras de la ingesta): el atraso no depende del orden de los ids.
  */
 export function AvisoRezago() {
   const { data } = useQuery({
@@ -22,9 +24,19 @@ export function AvisoRezago() {
     <div id="aviso-rezago" role="status" aria-live="polite">
       {data?.atrasada ? (
         <div className="mensaje mensaje-error aviso-rezago">
-          <strong>Detección atrasada:</strong> {pendientes.toLocaleString("es-CR")} transacciones por evaluar
-          {data.estimado ? `, unos ${data.estimado} para ponerse al día` : "; todavía sin ritmo medido"}. Las
-          alertas de esas transacciones aparecerán cuando D1 se ponga al día.
+          <strong>Detección atrasada:</strong>{" "}
+          {data.por_conteo ? (
+            <>
+              {pendientes.toLocaleString("es-CR")} transacciones por evaluar
+              {data.estimado ? `, unos ${data.estimado} para ponerse al día` : "; todavía sin ritmo medido"}. Las
+              alertas de esas transacciones aparecerán cuando D1 se ponga al día.
+            </>
+          ) : (
+            <>
+              va unos {data.atraso_legible} detrás de la ingesta. Las alertas de las transacciones recientes
+              aparecerán cuando D1 se ponga al día.
+            </>
+          )}
         </div>
       ) : null}
     </div>

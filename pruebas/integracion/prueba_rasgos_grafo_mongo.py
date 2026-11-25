@@ -506,7 +506,7 @@ async def prueba_el_modulo_se_puede_correr_varias_veces_y_no_borra_nada(base_dem
     assert "transferencia de disparo: TXN-" in primera
     despues = {d["_id"] async for d in base_demo["transacciones"].find({}, {"_id": 1})}
     assert antes < despues and len(despues - antes) == 10, "ids nuevos en cada corrida"
-    assert min(despues - antes) == "TXN-900001" and max(despues - antes) == "TXN-900010"
+    assert min(despues - antes) == "TXN-000001" and max(despues - antes) == "TXN-000010"
     # Repetir dentro del horizonte diluye la proporcion: la transferencia de disparo de la
     # primera corrida es dinero recibido por 6033-9001 que no se reenvio.
     assert "rasgo de 6033-9001" in segunda and "proporcion 98,6 %" not in segunda

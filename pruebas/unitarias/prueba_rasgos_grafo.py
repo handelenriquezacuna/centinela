@@ -454,19 +454,17 @@ def prueba_la_cadena_viva_dice_que_cuentas_faltan() -> None:
         armar_cadena(CORTE, 1, {"8712-4455": "CTA-001"})
 
 
-def prueba_los_ids_de_la_cadena_viva_son_de_seis_digitos_con_prefijo_9() -> None:
-    """El rezago de D1 compara `_id` como texto: si un id fuera de 3 digitos o menor que los
-    del generador (TXN-000001...), `TXN-000500 > TXN-950` daria falso y el aviso quedaria en 0."""
+def prueba_los_ids_de_la_cadena_viva_son_de_seis_digitos_y_siguen_al_mayor() -> None:
+    """El rezago de D1 compara `_id` como texto: la cadena usa el asignador comun, el
+    siguiente al mayor TXN de seis digitos, no un rango propio."""
     import re
 
     from app.deteccion.demo_cadena import armar_cadena
-    from app.repos.demo_cadena import PRIMER_NUMERO
+    from app.repos.ids_transaccion import numero_siguiente
 
-    assert PRIMER_NUMERO == 900_001
-    cadena = armar_cadena(CORTE, PRIMER_NUMERO, CUENTAS_DEMO | {"6001-3344": "x"})
+    cadena = armar_cadena(CORTE, numero_siguiente("TXN-003000"), CUENTAS_DEMO | {"6001-3344": "x"})
     ids = [t.transaccion_id for t in (*cadena.transacciones, cadena.disparo)]
 
-    assert all(re.fullmatch(r"TXN-9\d{5}", i) for i in ids), ids
-    assert ids == sorted(ids)
-    assert min(ids) > "TXN-099999"
-    assert "TXN-005000" < min(ids), "por encima de lo que genera el generador"
+    assert ids == [f"TXN-00300{n}" for n in range(1, 6)]
+    assert all(re.fullmatch(r"TXN-\d{6}", i) for i in ids), ids
+    assert min(ids) > "TXN-003000"

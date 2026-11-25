@@ -77,6 +77,7 @@ from app.repos.red_mulas import (
 )
 from app.repos.tablero import DIAS_MAXIMOS
 from app.seguridad.permisos import Permiso, rol_tiene
+from app.supervision.rezago import aviso_por_atraso, aviso_por_conteo
 
 enrutador = APIRouter(tags=["portal"])
 
@@ -260,13 +261,19 @@ async def aviso_rezago(supervisor: SupervisorDep, ajustes: AjustesDep) -> AvisoR
         medida = supervisor.informe().tarea(NOMBRE_D1).rezago
     except KeyError:
         pass
-    umbral = ajustes.deteccion.rezago_aviso_desde
+    desde = ajustes.deteccion.rezago_aviso_desde
+    atraso_desde = ajustes.deteccion.rezago_aviso_atraso_segundos
     if medida is None:
-        return AvisoRezago(atrasada=False, aviso_desde=umbral)
+        return AvisoRezago(atrasada=False, aviso_desde=desde, aviso_atraso_desde=atraso_desde)
+    por_conteo = aviso_por_conteo(medida, desde)
     return AvisoRezago(
-        atrasada=medida.pendientes > umbral,
+        atrasada=por_conteo or aviso_por_atraso(medida, atraso_desde),
+        por_conteo=por_conteo,
         pendientes=medida.pendientes,
-        aviso_desde=umbral,
+        aviso_desde=desde,
+        atraso_segundos=medida.atraso_segundos,
+        aviso_atraso_desde=atraso_desde,
+        atraso_legible=antiguedad_legible(medida.atraso_segundos),
         segundos_para_ponerse_al_dia=medida.segundos_para_ponerse_al_dia,
         estimado=antiguedad_legible(medida.segundos_para_ponerse_al_dia),
         medido_en=medida.medido_en,
