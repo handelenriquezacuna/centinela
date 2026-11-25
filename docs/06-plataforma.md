@@ -1917,3 +1917,76 @@ latencia de la alerta (p50/p95) de 34,9 s / 69,8 s a 0,7 s / 1,3 s: era espera e
 - Las pruebas por evento (`prueba_d1.py`) usan `lote_maximo=1`: sostienen el contrato de una
   alerta y un token por evento. Como D1 lee el cursor por adelantado, el doble ya no puede
   usar "se agoto el flujo" como "D1 termino": `esperar_procesado` espera los latidos.
+
+## Procedimientos de mongosh (T-76)
+
+Rubro 9 de la rubrica ("uso de procedimientos almacenados"): MongoDB no tiene procedimientos
+almacenados como los motores relacionales, y el profesor acepto en clase que un script `.js`
+corrido con `mongosh --file` cuenta como procedimiento. Los cinco viven en
+`scripts/procedimientos/`. Cada uno es idempotente, trae un encabezado (que hace, entradas por
+variables globales, que escribe, como verificarlo) y recibe sus entradas con `--eval`
+(`BASE_CENTINELA`, `DESDE`, `HASTA`, `CORTE`, `DIAS`...), igual que `03-catalogos.js`.
+
+| Script | Que hace | Coleccion que escribe | Comando |
+|---|---|---|---|
+| `01-recalcular-indicadores.js` | El pipeline de H-22 (`$match`, `$group`, `$project`, `$merge`) para un rango de dias de Costa Rica | `indicadores_diarios` | `python tareas.py procedimientos 01 --desde 2026-11-01 --hasta 2026-11-22` |
+| `02-recalcular-rasgos-grafo.js` | El pipeline de T-63 (`$graphLookup` + `$merge`) y su documento de corrida | `deteccion_estado` (clase `rasgo_grafo` y `rasgo_grafo_corrida`) | `python tareas.py procedimientos 02` |
+| `03-recalcular-perfiles.js` | Perfil de cada cliente con sus ultimas N transferencias (H-21), con `$merge` | `perfiles_comportamiento` | `python tareas.py procedimientos 03` (o `python tareas.py perfiles`, que corre el equivalente en Python) |
+| `04-reporte-efectividad.js` | Exhaustividad, precision y F1 contra la etiqueta oculta `simulacion` (H-10), como tabla | ninguna (solo lee) | `python tareas.py procedimientos 04` |
+| `05-map-reduce-comparativo.js` | Monto y cantidad por cuenta destino de las alertas, con `mapReduce` (`out: {inline: 1}`) y con `$group`; compara e imprime la nota | ninguna (solo lee) | `python tareas.py procedimientos 05` |
+
+`python tareas.py procedimientos` sin nombre corre los cinco en orden. Entra con el usuario
+`centinela_app` y la URI de `entorno_app` (respeta `CENTINELA_MONGO__URI`, T-53): sus permisos
+(`find`, `insert`, `update`, `remove`) alcanzan para los cinco, incluido `$merge`, asi que
+`04-usuarios.js` no cambia (solo agrega la base de pruebas `antifraude_pruebas_procedimientos`).
+
+**No hay dos pipelines distintos.** 01, 02 y 03 son el mismo pipeline que ya corre el motor en
+Python (`app/repos/indicadores.py`, `app/repos/rasgos_grafo.py`, `app/repos/perfiles.py`), escrito
+en JavaScript. La prueba `pruebas/integracion/prueba_procedimientos_mongo.py` corre el script y la
+funcion de Python sobre los mismos datos (el generador con semilla fija) y exige documentos
+identicos byte a byte, salvo la marca de tiempo del calculo. Para 04 comprueba que cada linea de
+la tabla de `formatear_tabla` aparece en la salida del script; para 05, que los dos resultados
+coinciden entre si y con un calculo hecho aparte en Python.
+
+**Por que `mapReduce` no se usa en produccion.** `mapReduce` esta obsoleto desde MongoDB 5.0 y la
+documentacion de MongoDB 8 pide reemplazarlo con aggregation: corre JavaScript dentro del servidor
+por cada documento, es mas lento y mas dificil de optimizar que un pipeline, y todo lo que hace se
+expresa con `$group`, `$merge` o `$accumulator`. Centinela usa aggregation en indicadores, perfiles,
+rasgos de grafo y efectividad; el script 05 existe solo para mostrar la comparacion (tema 7.3).
+
+### Perfiles de comportamiento (H-21)
+
+El perfil lo leen R-01 (monto atipico: monto contra `promedio_crc`) y R-05 (horario: hora de la
+transferencia contra `horario_habitual`). Antes de T-76 lo escribia el generador a partir de sus
+propios habitos; ahora hay un procedimiento que lo calcula con lo que realmente paso.
+
+Que transferencias cuentan. Las que el cliente envio (`cuenta_origen` -> `cuentas.cliente_id`) en
+`[corte - N dias, corte)`, N = 90 por omision, y que no tienen una alerta viva (estado distinto de
+`descartada`). Una alerta viva saca su transaccion del perfil, para que el fraude no se vuelva
+"normal" para el motor; una descartada (falso positivo) la deja. El criterio no lee la etiqueta
+oculta `simulacion`. Un cliente sin transferencias que cuenten conserva su perfil anterior.
+
+| Campo | Definicion |
+|---|---|
+| `promedio_crc` | suma / cantidad, mitad hacia arriba, con enteros: `(2 * suma + n) // (2 * n)`. Es un `long`, nunca un flotante |
+| `maximo_crc` | el mayor monto |
+| `desviacion_crc` | desviacion estandar poblacional, `sqrt(n * suma_cuadrados - suma^2) / n`, redondeada con `floor(x + 0.5)` |
+| `num_transferencias` | cuantas transferencias contaron |
+| `horario_habitual` | la ventana de horas de Costa Rica mas corta (circular: puede cruzar la medianoche) que reune al menos el 90 % de las transferencias; empate, la que empieza antes. Se escribe `HH:00` a `HH:59` (`22:00` a `06:59`, por ejemplo) |
+| `destinos_frecuentes` | cuentas destino con 2 o mas transferencias, de mas a menos (empate por numero), hasta 10; si ninguna se repite, la mas usada |
+| `esquema_version` | 1; el documento lleva exactamente los campos del validador (que no declara `calculado_en`) |
+
+Frecuencia y activacion. D3 puede recalcularlos cada `perfiles.intervalo_segundos` (3600: un perfil
+mira 90 dias y una hora lo mueve menos del 0,05 %, mientras que el pipeline lee todo el rango de
+`transacciones` con dos `$lookup` por transaccion; por eso no usa el ritmo de 10 segundos de los
+indicadores). Esta **apagado** (`perfiles.activo: false` en `config/centinela.yml`): recalcular
+perfiles cambia lo que R-01 y R-05 deciden, y eso es una decision, no un efecto de arrancar la app.
+A mano: `python tareas.py perfiles [--dias 30] [--cliente CLI-001] [--corte 2026-11-23T00:00:00+00:00]`.
+
+El caso de la demo no cambia. TXN-001 (280.000 CRC, 22:47) tiene su alerta ALR-001, asi que no entra
+al perfil de Maria: el perfil de CLI-001 queda intacto y TXN-001 sigue en 75, CRITICA (lo comprueba
+`prueba_03_recalcular_perfiles_no_cambia_el_caso_de_la_demo`). El caso contrario tambien esta
+probado y es la razon de dejarlo apagado: si el recalculo corre cuando TXN-001 ya existe pero su
+alerta todavia no (D1 sin procesarla, o la demo reiniciada sin alertas), TXN-001 entra al perfil, el
+promedio de Maria pasa a 280.000 y R-01 deja de dispararse. Ademas, los clientes que no tenian perfil
+(CLI-002 a CLI-004 del demo) lo reciben, y R-01 y R-05 pasan de "no evaluada" a evaluar.

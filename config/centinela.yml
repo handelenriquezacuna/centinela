@@ -101,6 +101,15 @@ rasgos_grafo:
   # Mayor que indicadores.intervalo_segundos.
   vigencia_segundos: 60
 
+# Recalculo de perfiles_comportamiento (H-21): lo leen R-01 y R-05, asi que recalcularlos
+# cambia la deteccion. Apagado: a mano con `python tareas.py perfiles`. Tecnico, no de negocio.
+perfiles:
+  activo: false
+  # Cada cuanto lo repite D3 si esta activo (un perfil mira 90 dias; una hora no lo mueve).
+  intervalo_segundos: 3600
+  # Cuantos dias hacia atras mira cada perfil.
+  dias: 90
+
 # Sesion del portal y la API (H-25). La clave de firma NO va aqui: entra por la variable
 # de entorno CENTINELA_SESION__CLAVE (minimo 32 caracteres). Sin ella, en entorno dev se
 # genera una al arrancar y /estado lo advierte; en otro entorno no arranca.

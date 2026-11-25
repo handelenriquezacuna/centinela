@@ -24,6 +24,8 @@ Uso:
     python tareas.py usuarios [...]  administra los usuarios de la app (T-41)
     python tareas.py indicadores [...] recalcula indicadores_diarios (H-22)
     python tareas.py rasgos [...]    recalcula los rasgos de grafo de R-11 (T-63)
+    python tareas.py perfiles [...]  recalcula perfiles_comportamiento, ojo: cambia la deteccion (H-21)
+    python tareas.py procedimientos [nombre] [--desde D --hasta H]  procedimientos de mongosh (T-76)
     python tareas.py demo-cadena-viva [--disparar]  cadena de mulas con fecha de ahora para ensenar R-11 (D-68)
     python tareas.py cargar --archivo x.jsonl  carga transacciones desde JSONL, en lotes (T-57)
     python tareas.py pruebas         corre las pruebas
@@ -90,6 +92,10 @@ SCRIPTS_SEMILLA = (
 # idempotente (solo toca documentos de la version que convierte), asi que correrlas de
 # nuevo no cambia nada.
 DIRECTORIO_MIGRACIONES = RAIZ / "scripts" / "migraciones"
+
+# T-76. Procedimientos de mongosh (rubro de procedimientos almacenados): se corren con
+# `mongosh --file`, uno por uno o todos.
+DIRECTORIO_PROCEDIMIENTOS = RAIZ / "scripts" / "procedimientos"
 
 # D-15. La historia de versiones de una regla (H-16) vive DENTRO del documento de la
 # regla, y 01-colecciones.js hace drop + create de `reglas_deteccion`.
@@ -938,6 +944,68 @@ def tarea_rasgos(args: argparse.Namespace) -> None:
     )
 
 
+def tarea_perfiles(args: argparse.Namespace) -> None:
+    """Recalcula perfiles_comportamiento (H-21): promedio, desviacion, maximo, horario y destinos.
+
+    Ejemplo: python tareas.py perfiles --dias 30 --cliente CLI-001
+    Sin banderas recalcula a todos los clientes con sus ultimos 90 dias. ATENCION: R-01 y
+    R-05 leen estos perfiles, asi que correrlo cambia la deteccion; por eso D3 no lo hace
+    solo (perfiles.activo es false en config/centinela.yml). Se puede repetir: reemplaza
+    el perfil de cada cliente.
+    """
+    correr(
+        uv("run", "python", "-m", "app.deteccion.perfiles", *args.argumentos),
+        dry_run=args.dry_run,
+        env=entorno_app(),
+    )
+
+
+def procedimientos_disponibles() -> list[Path]:
+    """Los scripts de `scripts/procedimientos/`, en orden de nombre."""
+    return sorted(DIRECTORIO_PROCEDIMIENTOS.glob("[0-9][0-9]-*.js"))
+
+
+def tarea_procedimientos(args: argparse.Namespace) -> None:
+    """Corre procedimientos de mongosh (T-76): uno por nombre o todos, con la URI de la app.
+
+    Ejemplos:
+      python tareas.py procedimientos                       corre los 5, en orden
+      python tareas.py procedimientos 01                    solo el 01 (nombre o numero)
+      python tareas.py procedimientos 01-recalcular-indicadores --desde 2026-11-01 --hasta 2026-11-22
+    --desde y --hasta (YYYY-MM-DD, dia de Costa Rica) los usa el 01; los demas los ignoran.
+    Entra como centinela_app, que tiene los permisos que piden (find, insert, update); respeta
+    CENTINELA_MONGO__URI. La base es la de CENTINELA_MONGO__BASE, o antifraude.
+    """
+    todos = procedimientos_disponibles()
+    if args.nombre:
+        elegidos = [
+            ruta for ruta in todos if ruta.stem == args.nombre or ruta.stem.startswith(f"{args.nombre}-")
+        ]
+        if not elegidos:
+            validos = ", ".join(ruta.stem for ruta in todos)
+            raise Fallo(f"no hay un procedimiento '{args.nombre}'. Disponibles: {validos}")
+    else:
+        elegidos = todos
+    if (args.desde is None) != (args.hasta is None):
+        raise Fallo("--desde y --hasta van juntos")
+
+    base = os.environ.get("CENTINELA_MONGO__BASE", "").strip()
+    for ruta in elegidos:
+        preludio = []
+        if base:
+            preludio.append(f"BASE_CENTINELA = {json.dumps(base)}")
+        if args.desde is not None and ruta.name.startswith("01-"):
+            preludio.append(f"DESDE = {json.dumps(args.desde)}")
+            preludio.append(f"HASTA = {json.dumps(args.hasta)}")
+        orden = mongosh(
+            *(["--eval", "; ".join(preludio) + "; void 0"] if preludio else []),
+            "--file",
+            str(ruta),
+            usuario="centinela_app",
+        )
+        correr(orden, dry_run=args.dry_run)
+
+
 def tarea_demo_cadena_viva(args: argparse.Namespace) -> None:
     """Inserta la cadena de mulas con fecha de ahora y calcula el rasgo de R-11 (D-68).
 
@@ -1049,6 +1117,8 @@ TAREAS = {
     "generar": tarea_generar,
     "indicadores": tarea_indicadores,
     "rasgos": tarea_rasgos,
+    "perfiles": tarea_perfiles,
+    "procedimientos": tarea_procedimientos,
     "demo-cadena-viva": tarea_demo_cadena_viva,
     "cargar": tarea_cargar,
     "usuarios": tarea_usuarios,
@@ -1078,6 +1148,14 @@ def construir_analizador() -> argparse.ArgumentParser:
         sub = subs.add_parser(nombre, help=documento, description=funcion.__doc__)
         sub.set_defaults(funcion=funcion)
 
+        if nombre == "procedimientos":
+            sub.add_argument(
+                "nombre",
+                nargs="?",
+                help="nombre o numero del procedimiento (por omision, todos)",
+            )
+            sub.add_argument("--desde", help="primer dia YYYY-MM-DD (el 01)")
+            sub.add_argument("--hasta", help="ultimo dia YYYY-MM-DD (el 01)")
         if nombre == "arriba":
             sub.add_argument(
                 "--con-app",
@@ -1131,7 +1209,7 @@ def main(argumentos: list[str] | None = None) -> int:
     # argparse no sabe repartir banderas desconocidas a un subcomando, asi que se corta aca.
     pasadas: list[str] = []
     for pasante in (
-        "generar", "indicadores", "rasgos", "demo-cadena-viva", "usuarios", "cargar", "e2e",
+        "generar", "indicadores", "rasgos", "perfiles", "demo-cadena-viva", "usuarios", "cargar", "e2e",
     ):
         if pasante not in argumentos:
             continue
