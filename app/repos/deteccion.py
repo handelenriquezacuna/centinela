@@ -13,9 +13,11 @@ este modulo, en el orden en que D1 lo usa por cada transaccion:
 4. `insertar_alerta`: el indice unico de `alertas.transaccion_id` decide si es nueva.
 5. `guardar_token`: DESPUES de la alerta, nunca antes.
 
-`deteccion_estado` guarda dos clases de documento (validador en el bloque 13 de
-`scripts/semilla/01-colecciones.js`): el token de reanudacion, uno por disparador, y
-los eventos descartados tras agotar los reintentos.
+`deteccion_estado` guarda cuatro clases de documento (validador en el bloque 13 de
+`scripts/semilla/01-colecciones.js`): el token de reanudacion, uno por disparador, los
+eventos descartados tras agotar los reintentos y, desde T-63, los rasgos de grafo por
+cuenta y su documento de corrida (los escribe D3, `app/repos/rasgos_grafo.py`; D1 solo los
+lee, para R-11).
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import DuplicateKeyError, OperationFailure
 
 from app.deteccion.evaluador import ContextoEvaluacion, PoliticaDeteccion, VentanaOrigen
+from app.deteccion.rasgos_grafo import TIPO_REGLA_RED
 from app.modelos import (
     COLECCION_ALERTAS,
     COLECCION_DETECCION_ESTADO,
@@ -47,6 +50,7 @@ from app.repos.flujo_alertas import (
     CHANGE_STREAM_HISTORY_LOST,
     TokenDeReanudacionInvalido,
 )
+from app.repos.rasgos_grafo import RepoRasgosGrafo
 from app.repos.reglas import leer_politica_vigente
 
 registro_log = logging.getLogger("centinela.deteccion")
@@ -84,6 +88,7 @@ LISTAS_RIESGO = _dominio("listas_riesgo")
 # Los `tipo` de regla cuyo contexto depende de un parametro de la propia regla.
 TIPO_DESTINO = "destino"
 TIPO_VELOCIDAD = "velocidad"
+TIPO_RED_MULAS = TIPO_REGLA_RED
 
 # Cuando no hay regla activa de ese tipo, el contexto igual tiene que llevar un valor
 # (todos sus campos son obligatorios). Con estos, la regla ausente no se evalua y
@@ -219,6 +224,7 @@ class RepoDeteccion:
         self._transacciones = base[COLECCION_TRANSACCIONES]
         self._alertas = base[COLECCION_ALERTAS]
         self._estado = base[COLECCION_DETECCION_ESTADO]
+        self._rasgos = RepoRasgosGrafo(base)
 
     # -- Change stream ----------------------------------------------------
 
@@ -353,12 +359,20 @@ class RepoDeteccion:
         minutos_contexto = max(1, int(minutos)) if minutos is not None else MINUTOS_SIN_REGLA
         ventana = await self._ventana_origen(transaccion, minutos_contexto)
 
+        # R-11 (T-63): solo se lee el rasgo si hay una regla red_mulas activa. El rasgo
+        # lo materializa D3; aqui no se calcula nada. Sin corrida de D3 es None y la
+        # regla queda como no evaluada.
+        rasgo_red = None
+        if any(r.activa and r.tipo == TIPO_RED_MULAS for r in reglas):
+            rasgo_red = await self._rasgos.leer_rasgo(transaccion.cuenta_destino)
+
         return ContextoEvaluacion(
             perfil=perfil,
             dias_historial=dias_contexto,
             destinos_conocidos=destinos,
             entradas_lista_riesgo=tuple(entradas),
             ventana_origen=ventana,
+            rasgo_red=rasgo_red,
         )
 
     async def _destinos_conocidos(

@@ -283,13 +283,15 @@ def prueba_r09_contexto_con_otra_ventana_no_se_evalua() -> None:
     assert "15 minutos" in evaluacion.reglas_no_evaluadas[0].motivo
 
 
-def prueba_r11_activa_queda_no_evaluada_con_motivo() -> None:
+def prueba_r11_activa_sin_rasgos_queda_no_evaluada_con_motivo() -> None:
+    # T-63: R-11 lee el rasgo de grafo que materializa D3. Sin el no dispara a ciegas.
+    # Las pruebas del disparo y de los rasgos viejos estan en prueba_rasgos_grafo.py.
     evaluacion = una("R-11", activa=True)
 
     assert codigos(evaluacion) == []
     [no_evaluada] = evaluacion.reglas_no_evaluadas
     assert (no_evaluada.codigo, no_evaluada.version) == ("R-11", 1)
-    assert "H-23" in no_evaluada.motivo
+    assert "rasgos de grafo" in no_evaluada.motivo
 
 
 # ---------------------------------------------------------------------------

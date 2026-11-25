@@ -14,7 +14,8 @@ Metodologia, para no sobreajustar:
    de las pruebas de H-10 (4 entidades bancarias) y el de config/centinela.yml (5).
 2. La rejilla es chica y solo toca parametros con sentido de negocio. Los pesos de
    R-01, R-03 y R-05 NO entran: el caso documentado (35 + 25 + 15 = 75, CRITICA) depende
-   de ellos. R-11 sigue inactiva: en linea no tiene con que disparar.
+   de ellos. R-11 no entra en la rejilla principal: se evalua aparte con `--r11` (T-63),
+   encima de la ganadora, con los rasgos de grafo que D3 materializa en linea.
 3. A igual F1 de calibracion gana la configuracion que cambia menos parametros.
 
 La definicion de metricas es la de H-10 (`app/deteccion/efectividad.py`): una
@@ -24,6 +25,7 @@ umbral_alerta y con severidad), sin importar el estado posterior de la alerta.
 Uso:
 
     uv run python scripts/calibracion/calibrar.py
+    uv run python scripts/calibracion/calibrar.py --r11     # experimento de R-11 (T-63)
 """
 
 from __future__ import annotations
@@ -43,9 +45,11 @@ if str(RAIZ) not in sys.path:
 from app.deteccion.evaluador import (
     ContextoEvaluacion,
     PoliticaDeteccion,
+    RasgoRed,
     VentanaOrigen,
     evaluar,
 )
+from app.deteccion.rasgos_grafo import calcular_rasgo
 from app.generador.ejecucion import generar_conjunto
 from app.modelos import (
     EntradaListaRiesgo,
@@ -129,19 +133,26 @@ class Configuracion:
                 cambios.append(f"{mia[0]} peso {base[5]} -> {mia[5]}")
             if mia[4] != base[4]:
                 cambios.append(f"{mia[0]} parametros {dict(base[4])} -> {dict(mia[4])}")
+            if mia[6] != base[6]:
+                cambios.append(f"{mia[0]} activa {base[6]} -> {mia[6]}")
         return cambios
 
 
 BASE = Configuracion("base", 40, BASE_REGLAS)
 
-# Lo que quedo aplicado en scripts/semilla/03-catalogos.js tras la calibracion (T-33).
-# `pruebas/unitarias/prueba_calibracion.py` verifica que la semilla dice exactamente esto.
-GANADORA = BASE.con(
-    "ganadora",
+# Ganadora de la rejilla principal (T-33): lo que cambia R-01, R-05 y el umbral de alerta.
+# R-11 no entra en la rejilla; se evalua aparte, encima de esta (`--r11`).
+GANADORA_REJILLA = BASE.con(
+    "ganadora de la rejilla",
     35,
     R_01={"umbral": 8},
     R_05={"umbral": 120},
 )
+
+# Lo que quedo aplicado en scripts/semilla/03-catalogos.js: la de la rejilla (T-33) y R-11
+# encendida con los parametros que la semilla ya declaraba (T-63).
+# `pruebas/unitarias/prueba_calibracion.py` verifica que la semilla dice exactamente esto.
+GANADORA = GANADORA_REJILLA.con("ganadora", R_11={"activa": True})
 
 
 def reglas_de(config: Configuracion) -> list[Regla]:
@@ -186,6 +197,25 @@ def politica_de(config: Configuracion) -> PoliticaDeteccion:
 # ---------------------------------------------------------------------------
 
 
+HORIZONTE_HORAS = 24  # el de config/centinela.yml, rasgos_grafo.horizonte_horas
+
+
+class _VistaAlCorte:
+    """`indice.get(cuenta)` restringido a `[desde, corte)`, con bisect sobre lo ya ordenado.
+
+    Lo justo de `Mapping` que usa `calcular_rasgo`, para no reindexar 5.000 veces.
+    """
+
+    def __init__(self, indice: dict, desde, corte) -> None:
+        self._indice, self._desde, self._corte = indice, desde, corte
+
+    def get(self, cuenta: str, por_omision=()):
+        if cuenta not in self._indice:
+            return por_omision
+        fechas, txns = self._indice[cuenta]
+        return txns[bisect_left(fechas, self._desde) : bisect_left(fechas, self._corte)]
+
+
 @dataclass
 class Datos:
     semilla: int
@@ -198,7 +228,12 @@ class Datos:
     _fechas_destino: dict[tuple[str, str], list] = field(default_factory=dict)
     _fechas_origen: dict[str, list] = field(default_factory=dict)
     _acumulado_origen: dict[str, list[int]] = field(default_factory=dict)
-    _contextos: dict[tuple[int, int], list[ContextoEvaluacion]] = field(default_factory=dict)
+    _contextos: dict[tuple[int, int, int | None], list[ContextoEvaluacion]] = field(
+        default_factory=dict
+    )
+    _rasgos: dict[int, list[RasgoRed]] = field(default_factory=dict)
+    _recibos: dict[str, tuple[list, list[Transaccion]]] = field(default_factory=dict)
+    _salidas: dict[str, tuple[list, list[Transaccion]]] = field(default_factory=dict)
 
     def indexar(self) -> None:
         por_destino: dict[tuple[str, str], list] = defaultdict(list)
@@ -209,15 +244,56 @@ class Datos:
             por_destino[(cliente, txn.cuenta_destino)].append(txn.fecha)
             por_origen[txn.cuenta_origen].append(txn.fecha)
             montos[txn.cuenta_origen].append(txn.monto_crc)
+        recibos: dict[str, list[Transaccion]] = defaultdict(list)
+        salidas: dict[str, list[Transaccion]] = defaultdict(list)
+        for txn in self.transacciones:
+            recibos[txn.cuenta_destino].append(txn)
+            if txn.sinpe_origen is not None:
+                salidas[txn.sinpe_origen].append(txn)
+        self._recibos = {c: ([t.fecha for t in ts], ts) for c, ts in recibos.items()}
+        self._salidas = {c: ([t.fecha for t in ts], ts) for c, ts in salidas.items()}
         self._fechas_destino = dict(por_destino)
         self._fechas_origen = dict(por_origen)
         self._acumulado_origen = {
             cuenta: [0, *itertools.accumulate(lista)] for cuenta, lista in montos.items()
         }
 
-    def contextos(self, dias: int, minutos: int) -> list[ContextoEvaluacion]:
+    def rasgos(self, ventana_minutos: int, horas: int = HORIZONTE_HORAS) -> list[RasgoRed]:
+        """El rasgo del destino de cada transaccion, tal como lo tendria D3 un instante
+        antes de que llegue: `[fecha - horas, fecha)`, sin la propia ni lo posterior.
+
+        Es `calcular_rasgo`, la definicion que el pipeline de Mongo reproduce (una prueba de
+        integracion las compara). Aqui el rango se desliza con cada transaccion, que es el
+        mejor caso para R-11: D3 recalcula cada pocos segundos, no en cada evento.
+        """
+        if ventana_minutos in self._rasgos:
+            return self._rasgos[ventana_minutos]
+        from datetime import timedelta
+
+        recibos, salidas = self._recibos, self._salidas
+        resultado = []
+        for txn in self.transacciones:
+            desde = txn.fecha - timedelta(hours=horas)
+            corte = txn.fecha
+            resultado.append(
+                calcular_rasgo(
+                    txn.cuenta_destino,
+                    _VistaAlCorte(recibos, desde, corte),
+                    _VistaAlCorte(salidas, desde, corte),
+                    desde=desde,
+                    corte=corte,
+                    ventana_minutos=ventana_minutos,
+                    vigencia_segundos=60,
+                )
+            )
+        self._rasgos[ventana_minutos] = resultado
+        return resultado
+
+    def contextos(
+        self, dias: int, minutos: int, ventana_rasgo: int | None = None
+    ) -> list[ContextoEvaluacion]:
         """Un contexto por transaccion, con ventanas hacia atras desde su fecha."""
-        clave = (dias, minutos)
+        clave = (dias, minutos, ventana_rasgo)
         if clave in self._contextos:
             return self._contextos[clave]
         from datetime import timedelta
@@ -248,6 +324,12 @@ class Datos:
                     ),
                 )
             )
+        if ventana_rasgo is not None:
+            rasgos = self.rasgos(ventana_rasgo)
+            resultado = [
+                contexto.model_copy(update={"rasgo_red": rasgo})
+                for contexto, rasgo in zip(resultado, rasgos, strict=True)
+            ]
         self._contextos[clave] = resultado
         return resultado
 
@@ -348,7 +430,7 @@ def medir(config: Configuracion, datos: Datos) -> Resultado:
     """Evalua toda la configuracion con el evaluador real, transaccion por transaccion."""
     reglas = reglas_de(config)
     politica = politica_de(config)
-    contextos = datos.contextos(*_ventanas(config))
+    contextos = datos.contextos(*_ventanas(config), _ventana_rasgo(config))
     conteos: Counter = Counter()
     for txn, contexto, (fraude, patron) in zip(
         datos.transacciones, contextos, datos.etiquetas, strict=True
@@ -357,6 +439,12 @@ def medir(config: Configuracion, datos: Datos) -> Resultado:
         alerta = evaluacion.genera_alerta and evaluacion.severidad is not None
         conteos[(fraude, patron, alerta)] += 1
     return resultado_de(conteos)
+
+
+def _ventana_rasgo(config: Configuracion) -> int | None:
+    """Ventana de R-11 si esta activa en la configuracion; sin R-11 no se arman rasgos."""
+    fila = config.regla("R-11")
+    return int(dict(fila[4])["ventana_minutos"]) if fila[6] else None
 
 
 def _ventanas(config: Configuracion) -> tuple[int, int]:
@@ -478,6 +566,163 @@ def buscar(datos: Datos) -> list[tuple[Configuracion, Resultado]]:
     return salida
 
 
+
+# ---------------------------------------------------------------------------
+# R-11 (T-63): encender la regla encima de la ganadora
+# ---------------------------------------------------------------------------
+
+UMBRALES_R11 = (0.5, 0.6, 0.7, 0.8, 0.9)  # proporcion minima reenviada
+SALTOS_R11 = (1, 2, 3)
+VENTANAS_R11 = (15, 30, 60)
+PESOS_R11 = (10, 20, 30, 40)
+
+
+def _suma_sin_tope(config: Configuracion, datos: Datos) -> list[int]:
+    """Por transaccion, lo que suman los pesos de las reglas que disparan (sin el tope)."""
+    reglas = reglas_de(config)
+    politica = politica_de(config)
+    contextos = datos.contextos(*_ventanas(config), _ventana_rasgo(config))
+    return [
+        sum(d.peso for d in evaluar(txn, contexto, reglas, politica).reglas_disparadas)
+        for txn, contexto in zip(datos.transacciones, contextos, strict=True)
+    ]
+
+
+def _bandera_r11(config: Configuracion, datos: Datos) -> list[bool]:
+    """Si R-11 dispara en cada transaccion, con el evaluador real y SOLO esa regla.
+
+    Salto honesto, dicho aqui: una transaccion cuyo destino no reenvio nada en el rango
+    tiene proporcion 0, y el umbral de la rejilla es mayor que 0, asi que no puede
+    disparar. Esas no se pasan por el evaluador (son la inmensa mayoria): se marcan en
+    falso. Todas las demas si.
+    """
+    solo = Configuracion("solo", 0, tuple(f for f in config.reglas if f[0] == "R-11"))
+    reglas = reglas_de(solo)
+    politica = politica_de(BASE)
+    ventana = _ventana_rasgo(config)
+    assert ventana is not None
+    contextos = datos.contextos(DIAS_HISTORIAL, 30, ventana)
+    rasgos = datos.rasgos(ventana)
+    return [
+        rasgo.monto_reenviado_crc > 0 and bool(evaluar(txn, contexto, reglas, politica).reglas_disparadas)
+        for txn, contexto, rasgo in zip(datos.transacciones, contextos, rasgos, strict=True)
+    ]
+
+
+def _con_r11(base: Configuracion, ventana: int, umbral: float, saltos: int, peso: int) -> Configuracion:
+    return base.con(
+        "con R-11",
+        R_11={
+            "umbral": umbral,
+            "parametros": (("ventana_minutos", ventana), ("saltos_minimos", saltos)),
+            "peso": peso,
+            "activa": True,
+        },
+    )
+
+
+def experimento_r11(calibracion: list[Datos], validacion: list[Datos]) -> int:
+    """R-11 activa sobre la ganadora: F1 y exhaustividad antes y despues, por conjunto."""
+    base = GANADORA_REJILLA
+    todos = [*calibracion, *validacion]
+    sumas = {id(d): _suma_sin_tope(base, d) for d in todos}
+    antes = {id(d): medir(base, d) for d in todos}
+    print(f"\nR-11 sobre la ganadora ({base.nombre}, umbral_alerta {base.umbral_alerta})")
+    for datos in todos:
+        print(linea(f"sin R-11 / {datos.semilla} {datos.mundo}", antes[id(datos)]))
+    piso_base = min(antes[id(d)].exhaustividad for d in validacion)
+    f1_base = f1_medio([antes[id(d)] for d in validacion])
+    print(f"base: exhaustividad minima en validacion {_pct(piso_base)}, F1 medio {_pct(f1_base)}")
+
+    def resultado(datos: Datos, banderas: list[bool], peso: int) -> Resultado:
+        conteos: Counter = Counter()
+        for suma, bandera, (fraude, patron) in zip(
+            sumas[id(datos)], banderas, datos.etiquetas, strict=True
+        ):
+            puntaje = min(suma + (peso if bandera else 0), 100)
+            conteos[(fraude, patron, puntaje >= base.umbral_alerta)] += 1
+        return resultado_de(conteos)
+
+    filas = []
+    disparos: dict[tuple, tuple[int, int]] = {}
+    for ventana, umbral, saltos in itertools.product(VENTANAS_R11, UMBRALES_R11, SALTOS_R11):
+        config = _con_r11(base, ventana, umbral, saltos, PESOS_R11[0])
+        banderas = {id(d): _bandera_r11(config, d) for d in todos}
+        total = sum(sum(b) for b in banderas.values())
+        en_fraude = sum(
+            1
+            for d in todos
+            for bandera, (fraude, _) in zip(banderas[id(d)], d.etiquetas, strict=True)
+            if bandera and fraude
+        )
+        disparos[(ventana, umbral, saltos)] = (total, en_fraude)
+        for peso in PESOS_R11:
+            r_cal = [resultado(d, banderas[id(d)], peso) for d in calibracion]
+            r_val = [resultado(d, banderas[id(d)], peso) for d in validacion]
+            filas.append(((ventana, umbral, saltos, peso), r_cal, r_val))
+
+    base_cal = [antes[id(d)] for d in calibracion]
+    # Igual que en la rejilla principal: gana el F1 de calibracion y, a igual F1, la que
+    # se aparta menos de lo que la semilla ya declara (R-11: 0,8; 15 minutos; 2 saltos;
+    # peso 20). Validacion no elige, solo veta.
+    semilla_r11 = (15, 0.8, 2, 20)
+
+    def cambios(clave: tuple) -> int:
+        return sum(1 for a, b in zip(clave, semilla_r11, strict=True) if a != b)
+
+    filas.sort(key=lambda f: (-round(f1_medio(f[1]), 6), cambios(f[0])))
+    print(f"\ncandidatas de R-11: {len(filas)}")
+    documentada = next(f for f in filas if f[0] == semilla_r11)
+    total, en_fraude = disparos[semilla_r11[:3]]
+    print(
+        f"la de la semilla (15 min, 0,8, 2 saltos, peso 20): dispara {total} veces ({en_fraude} "
+        f"sobre fraude); F1 validacion {_pct(f1_medio(documentada[2]))}, exhaustividad minima "
+        f"{_pct(min(r.exhaustividad for r in documentada[2]))}"
+    )
+    mejores = 0
+    ganadora = None
+    for (ventana, umbral, saltos, peso), r_cal, r_val in filas:
+        total, en_fraude = disparos[(ventana, umbral, saltos)]
+        mejora = (
+            pasa_piso(r_cal)
+            and min(r.exhaustividad for r in r_val) >= piso_base
+            and f1_medio(r_val) > f1_base
+        )
+        if mejora and ganadora is None:
+            ganadora = ((ventana, umbral, saltos, peso), r_cal, r_val)
+        if mejores < 5 or mejora:
+            mejores += 1
+            print(
+                f"\nventana {ventana}, umbral {umbral}, saltos {saltos}, peso {peso}: R-11 dispara "
+                f"{total} veces en los {len(todos)} conjuntos ({en_fraude} sobre fraude); "
+                f"{'MEJORA' if mejora else 'no mejora'}"
+            )
+            print(
+                f"   F1 calibracion {_pct(f1_medio(r_cal))} (base {_pct(f1_medio(base_cal))}); "
+                f"validacion {_pct(f1_medio(r_val))} (base {_pct(f1_base)}); "
+                f"exhaustividad minima validacion {_pct(min(r.exhaustividad for r in r_val))} "
+                f"(base {_pct(piso_base)})"
+            )
+        if ganadora is not None and mejores >= 5:
+            break
+
+    if ganadora is None:
+        print("\nninguna configuracion de R-11 mejora el F1 de validacion sin bajar el piso: queda inactiva")
+        return 1
+    (ventana, umbral, saltos, peso), r_cal, r_val = ganadora
+    config = _con_r11(base, ventana, umbral, saltos, peso)
+    for datos, rapido in zip(todos, [*r_cal, *r_val], strict=True):
+        lento = medir(config, datos)
+        assert (lento.detectados, lento.falsos_positivos) == (
+            rapido.detectados,
+            rapido.falsos_positivos,
+        )
+        print(linea(f"con R-11 / {datos.semilla} {datos.mundo}", lento))
+    print(f"\nGANADORA CON R-11 (verificada con el evaluador completo): ventana {ventana}, "
+          f"umbral {umbral}, saltos {saltos}, peso {peso}")
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Informe
 # ---------------------------------------------------------------------------
@@ -509,6 +754,11 @@ def principal(argv: list[str] | None = None) -> int:
     analizador.add_argument("--semilla", type=int, help="semilla de calibracion (YAML por omision)")
     analizador.add_argument("--validacion", type=int, nargs="+", default=list(SEMILLAS_VALIDACION))
     analizador.add_argument("--top", type=int, default=5, help="rechazadas que se muestran")
+    analizador.add_argument(
+        "--r11",
+        action="store_true",
+        help="solo el experimento de R-11 sobre la ganadora (T-63), sin la rejilla principal",
+    )
     argumentos = analizador.parse_args(argv)
 
     semilla = argumentos.semilla or obtener_ajustes().generador.semilla
@@ -521,6 +771,9 @@ def principal(argv: list[str] | None = None) -> int:
         for s in argumentos.validacion
         for yaml in (False, True)
     ]
+
+    if argumentos.r11:
+        return experimento_r11(calibracion, validacion)
 
     base_cal = [medir(BASE, d) for d in calibracion]
     base_val = [medir(BASE, d) for d in validacion]

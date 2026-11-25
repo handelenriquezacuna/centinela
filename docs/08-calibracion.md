@@ -44,7 +44,7 @@ uv run python scripts/calibracion/calibrar.py
    R-05 holgura {0, 60, 120} minutos; R-09 umbral {2, 3, 4}, ventana {15, 30, 60} minutos y
    piso {150.000, 300.000, 450.000} CRC; peso de R-07 {30, 40, 50}; peso de R-09
    {20, 30, 40}; `umbral_alerta` {35, 40, 45, 50}. No se tocan los pesos de R-01, R-03 y
-   R-05 (35 + 25 + 15 = 75, el caso documentado) ni se enciende R-11.
+   R-05 (35 + 25 + 15 = 75, el caso documentado) ni se enciende R-11 (eso se mide aparte, ver abajo).
 
 ## Resultado
 
@@ -87,7 +87,7 @@ En `scripts/semilla/03-catalogos.js`, cada cambio con su comentario:
 | `umbral_alerta` (y primer corte, MEDIA) | 40 (MEDIA 40-54) | 35 (MEDIA 35-54) |
 
 Los pesos no cambian. TXN-001 sigue dando 75 CRÍTICA (R-01 35 + R-03 25 + R-05 15): va
-16,6 veces el promedio y 227 minutos fuera de horario. R-11 sigue inactiva.
+16,6 veces el promedio y 227 minutos fuera de horario. R-11 se evalua aparte (T-63), mas abajo.
 `pruebas/unitarias/prueba_calibracion.py` verifica que la semilla dice exactamente lo que el
 script declara como ganadora, que el caso documentado se mantiene y que las métricas usan la
 definición de H-10. Para aplicar a una base ya sembrada: volver a correr `03-catalogos.js`.
@@ -95,6 +95,46 @@ definición de H-10. Para aplicar a una base ya sembrada: volver a correr `03-ca
 Costo, dicho claro: con `umbral_alerta` 35, R-01 (35 puntos) abre alerta por sí sola. Antes
 solo R-07 lo hacía. Es MEDIA, y el supervisor puede volver a 40 por la API sin desplegar
 (UC-07); el precio es exhaustividad.
+
+## R-11 (T-63): encenderla encima de la ganadora
+
+R-11 deja de ser un stub: lee el rasgo de grafo del destino (docs/06-plataforma.md, "R-11 y
+rasgos de grafo"). La pregunta es si encenderla mejora el motor sin costo. El mismo script,
+con `--r11`:
+
+```
+uv run python scripts/calibracion/calibrar.py --r11
+```
+
+Mismos conjuntos (calibracion con la semilla 20261207; validacion con 7, 1234, 98765 y
+20260501, cada una en los dos mundos), misma definicion de metricas y el evaluador real. El
+rasgo de cada transaccion es el que D3 tendria un instante antes de que llegue
+(`[fecha - 24 h, fecha)`, sin la propia ni lo posterior): el mejor caso para la regla, porque
+D3 recalcula cada pocos segundos y no en cada evento. Rejilla: ventana {15, 30, 60} minutos,
+umbral {0,5 a 0,9}, saltos {1, 2, 3} y peso {10, 20, 30, 40}, 180 combinaciones. Una candidata
+gana si su exhaustividad de calibracion pasa el piso, la exhaustividad minima en validacion
+no baja de la de la ganadora (91,7 %) y el F1 medio de validacion mejora; a igual F1 de
+calibracion gana la que menos se aparta de la semilla (15 minutos, 0,8, 2 saltos, peso 20).
+
+**Resultado.** Antes (ganadora de T-33, R-11 apagada): F1 medio de validacion 89,1 %,
+exhaustividad minima 91,7 %. Con R-11 encendida con los parametros de la semilla: F1 medio de
+validacion 89,2 %, exhaustividad minima 91,7 %. R-11 dispara **una vez** en los 10 conjuntos
+(sobre una transaccion de fraude): en la semilla 7 del mundo de las pruebas pasa de 57/60 a
+58/60 detectados (exhaustividad 95,0 % a 96,7 %, F1 90,5 % a 91,3 %), con los mismos falsos
+positivos. En los otros 9 conjuntos no cambia nada. Cumple el criterio y se enciende, con los
+parametros que ya tenia: el cambio aplicado es solo `activa: true`.
+
+Hay que leerlo por lo que es. Una deteccion mas de 600 fraudes etiquetados esta dentro del
+ruido; no se presenta como una mejora medida del motor. La razon es estructural: en el
+generador cada cadena la hace una victima una vez, y una mula solo tiene historial de
+reenvio la segunda vez que el generador la reutiliza; ahi el primer eslabon de la cadena ya
+lo detectaban R-01 y R-03. R-11 no cuesta falsos positivos (ninguno nuevo en los 10
+conjuntos) y es la unica regla que ve la cadena como grafo, que es lo que muestra la demo:
+6033-9001 recibe 280.000, reenvia 276.000 y la siguiente transferencia hacia esa cuenta
+dispara R-11 con la explicacion en colones y minutos.
+
+Con los datos reales, o con un generador que reuse mulas mas seguido, hay que volver a
+medir. Se apaga con un `updateOne` sin desplegar.
 
 ## Por qué se confía en esto (y hasta dónde)
 

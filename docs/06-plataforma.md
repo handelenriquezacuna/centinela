@@ -234,7 +234,7 @@ Práctica 1). H-14 **agrega** a esta lista, nunca la sobrescribe.
 | Colección | Qué es |
 |---|---|
 | `politica_deteccion` | Cortes de severidad y umbral de creación. Por esto los umbrales no están en el YAML |
-| `deteccion_estado` | Token de reanudación del change stream, para que H-09 retome donde quedó |
+| `deteccion_estado` | Estado derivado del detector: token de reanudación del change stream (H-09), descartes y, desde T-63, los rasgos de grafo de R-11 |
 
 Los nombres se toman de `app/modelos/__init__.py` (`COLECCIONES`, `COLECCION_ALERTAS`,
 ...) y no se escriben a mano: así un nombre mal escrito es un error de importación y no
@@ -1160,6 +1160,161 @@ error y reintenta en la vuelta siguiente.
 
 **A mano:** `python tareas.py indicadores [--desde YYYY-MM-DD --hasta YYYY-MM-DD]` (o
 `python -m app.deteccion.indicadores`); sin banderas, el dia de hoy.
+
+## R-11 y rasgos de grafo (T-63)
+
+R-11 ("el destino reenvia casi todo lo recibido en pocos minutos") era un stub: el reenvio
+ocurre despues de la transaccion que se evalua, y D1 no ve el futuro. Ahora lee un
+**rasgo de grafo** de la cuenta destino, materializado por D3 en lote, y dispara en la
+transaccion **siguiente** hacia una cuenta que ya reenvio casi todo.
+
+**Rasgos** (definicion pura en `app/deteccion/rasgos_grafo.py`, `calcular_rasgo`), por cuenta
+destino y sobre las transferencias de `[desde, corte)`:
+
+| Campo | Significado |
+|---|---|
+| `fan_in`, `fan_out` | origenes distintos que le enviaron; destinos distintos a los que envio |
+| `monto_recibido_crc` | colones recibidos (long) |
+| `monto_reenviado_crc` | colones que salieron de la cuenta hasta `ventana_minutos` despues de una entrada, topados en lo recibido (long) |
+| `proporcion_pb` | reenviado / recibido en puntos basicos enteros (10.000 = 100 %). El evaluador compara la fraccion exacta `Fraction(reenviado, recibido)`, no este numero |
+| `minutos_reenvio` | mayor demora, redondeada hacia arriba, entre una salida contada y la entrada previa |
+| `saltos` | largo de la cadena de reenvios que parte de la cuenta (el recorrido de `$graphLookup`, tope 6) |
+
+Caso de la demo: 6033-9001 recibe 280.000 y reenvia 276.000 a los 4 minutos: 9.857 puntos
+basicos (98,6 %), 3 saltos (7104-2288, 8455-1177, 6001-3344). R-11 con umbral 0,8 y 2
+saltos dispara, y la explicacion dice: "destino 6033-9001 recibio 280.000 CRC y reenvio
+276.000 CRC (98,6 %) en 4 minutos, en una cadena de 3 saltos; umbral 80 % en 15 minutos
+y 2 saltos". El portal muestra el texto tal cual esta en la alerta (`reglas_disparadas[].
+explicacion`); los montos van en el formato de las demas reglas (`280.000 CRC`).
+
+### Donde vive el rasgo: `deteccion_estado`, clase `rasgo_grafo`
+
+El contrato fija 13 colecciones, asi que no hay una nueva. `perfiles_comportamiento` no
+sirve: su `_id` es el cliente, y una mula destino es una cuenta SINPE que casi nunca es
+cliente ni tiene documento en `cuentas`. `deteccion_estado` ya guarda **estado derivado
+del detector** (token de reanudacion, descarte) y distingue sus documentos por `clase`;
+el rasgo es lo mismo: lo calcula el detector y solo el lo escribe. El validador del bloque
+13 de `01-colecciones.js` pasa de dos a cuatro ramas:
+
+- `rasgo_grafo`: un documento por cuenta, `_id` `d3_rasgos_grafo:6033-9001`, con los campos
+  de arriba mas `ventana_minutos`, `desde`, `corte`, `vigencia_segundos`, `calculado_en`
+  y `esquema_version`. `additionalProperties: false`, dinero `long`.
+- `rasgo_grafo_corrida`: un solo documento, `_id` `d3_rasgos_grafo`. Dice de que rango son
+  los rasgos y hasta cuando valen. Una cuenta **sin** documento no tuvo movimiento en el
+  rango y su rasgo es el de ceros; **sin** documento de corrida no hay rasgos y R-11 queda
+  como no evaluada.
+
+### Pipeline (`app/repos/rasgos_grafo.py`, `construir_pipeline`)
+
+```
+transacciones.aggregate([
+  {$match: {fecha: {$gte: desde, $lt: corte}}},                      // idx_transacciones_fecha
+  {$group: {_id: "$cuenta_destino", origenes: {$addToSet: "$cuenta_origen"},
+            recibos: {$push: {f: "$fecha"}}, recibido: {$sum: "$monto_crc"}}},
+  {$graphLookup: {from: "transacciones", startWith: "$_id",
+                  connectFromField: "cuenta_destino", connectToField: "sinpe_origen",
+                  maxDepth: 5, depthField: "nivel", as: "cadena",
+                  restrictSearchWithMatch: {fecha: {$gte: desde, $lt: corte}}}},
+  {$addFields: {salidas: <cadena con nivel 0>}},
+  {$addFields: {contadas: <salidas con una entrada en [salida - ventana, salida]>}},
+  {$addFields: {reenviado: {$min: [sum(contadas), recibido]}, minutos: ...}},
+  {$project: <forma del documento: _id "d3_rasgos_grafo:<cuenta>", saltos, fan_in, fan_out,
+              $toLong en los montos, proporcion_pb: floor(reenviado * 10000 / recibido)>},
+  {$merge: {into: "deteccion_estado", on: "_id", whenMatched: "replace", whenNotMatched: "insert"}}
+])
+```
+
+Idempotente como H-22: el `_id` es la cuenta y `$merge` reemplaza el documento; dos corridas
+con el mismo corte dejan los mismos documentos (cambia `calculado_en`). Despues del `$merge`
+se escribe el documento de corrida y se borran los rasgos de cortes anteriores (una cuenta
+que ya no tiene movimiento desaparece). Una prueba de integracion compara el pipeline con la
+definicion pura para **todas** las cuentas de un conjunto generado, con ventanas de 15 y 60
+minutos.
+
+**Quien recalcula.** D3 (`app/deteccion/d3.py`): en la misma vuelta que los indicadores,
+si la regla `red_mulas` esta activa, recalcula con su `ventana_minutos`. Cada trabajo falla
+por separado (un fallo de los rasgos se anota en `/estado` y no impide los indicadores);
+con la regla apagada no se gasta ni una lectura. A mano, para el rubro de procedimientos:
+`python tareas.py rasgos [--ventana-minutos N] [--horas H]` o `python -m
+app.deteccion.rasgos_grafo` (usa la ventana de la regla, este activa o no). Configuracion
+tecnica en `rasgos_grafo` del YAML: `horizonte_horas` (24) y `vigencia_segundos` (60, que
+tiene que ser mayor que `indicadores.intervalo_segundos`; lo exige `Ajustes`).
+
+**Que hace R-11 con el rasgo** (`_regla_red_mulas`, evaluador puro). Dispara si
+`monto_reenviado / monto_recibido >= umbral` y `saltos >= saltos_minimos`. Queda como no
+evaluada, con su motivo, si: no hay rasgos (D3 no corrio), el rasgo es de otra cuenta o de
+otra ventana que la regla, la transaccion es anterior a `desde`, o ya paso `corte +
+vigencia_segundos` (rasgo viejo). Nunca dispara a ciegas. `ContextoEvaluacion.rasgo_red` es
+opcional con `None` por omision, la unica excepcion al "todos obligatorios"; la consulta
+vive en `RepoRasgosGrafo.leer_rasgo` (una lectura por `_id` de dos documentos) y D1 solo
+la hace si hay una regla `red_mulas` activa.
+
+Limite que hay que decir: el rasgo es del momento del recalculo, no de la fecha de la
+transaccion. En linea (D1 evalua segundos despues de la insercion) es lo correcto; si D1
+reprocesa una transaccion vieja, el rasgo vigente ya no es el de entonces y por eso se
+exige que la fecha caiga en `[desde, corte + vigencia]`. Tampoco se ordena en el tiempo
+el recorrido de la cadena: `$graphLookup` aplica una condicion fija a todos los niveles.
+
+### Paso de la defensa: `python tareas.py demo-cadena-viva [--disparar]`
+
+Los datos del demo son de setiembre y el rasgo solo mira las ultimas 24 horas, asi que R-11
+no se ve con ellos. El comando (modulo `app/deteccion/demo_cadena.py`, respeta
+`CENTINELA_MONGO__URI`) pone la cadena del caso con fecha de AHORA y deja el rasgo listo:
+
+1. Con el demo cargado (`datos-demo`), la API y D1 corriendo y R-11 activa (viene activa de
+   `03-catalogos.js`).
+2. `python tareas.py demo-cadena-viva`: inserta una victima que envia 280.000 a 6033-9001 y, a
+   los +4, +9 y +11 minutos, 276.000, 185.000 y 90.000 por la cadena, con ids TXN-9NNNNN (desde TXN-900001, de seis digitos por el rezago de D1)
+   libres. Recalcula los rasgos con la misma funcion que D3 e imprime el de 6033-9001:
+   recibido 280000, reenviado 276000, 98,6 %, 4 minutos, 3 saltos.
+3. `python tareas.py demo-cadena-viva --disparar` (o el mismo comando con la bandera desde el
+   inicio): ademas inserta una transferencia nueva de CTA-002 hacia 6033-9001. D1 la evalua con
+   el rasgo vigente y levanta una alerta con R-11 y su explicacion; el comando imprime el id de
+   la transaccion para buscar su alerta en el panel.
+
+No borra ni modifica nada. Se corre una vez por ensayo: la transferencia de disparo es dinero
+recibido y no reenviado, y una segunda corrida dentro de las 24 horas baja la proporcion por
+debajo de 80 % (R-11 deja de disparar hasta que la cadena salga del horizonte). El rasgo vale
+60 segundos; D3 lo renueva mientras corre. Probado en
+`pruebas/integracion/prueba_rasgos_grafo_mongo.py`.
+
+### Indice y `explain`
+
+`idx_transacciones_fecha` (`{fecha: 1}`, en `02-indices.js`) es nuevo: sin el, el `$match`
+recorreria toda la coleccion en cada recalculo. El `$graphLookup` va por el existente
+`idx_transacciones_sinpe_origen_fecha`. Medido con 5.000 transacciones del generador,
+horizonte de 24 horas, `explain("executionStats")` de la etapa `$cursor`:
+
+| | Valor |
+|---|---|
+| Plan | `IXSCAN` sobre `idx_transacciones_fecha`, `FETCH`, `GROUP`; sin `COLLSCAN` |
+| `totalKeysExamined` / `totalDocsExamined` | 181 / 181 de 5.000 documentos en la coleccion |
+| `nReturned` | 128 (cuentas distintas que recibieron algo; el `$group` colapsa las 181) |
+| `$graphLookup` (`$indexStats`) | 128 busquedas por `idx_transacciones_sinpe_origen_fecha`, una por cuenta |
+
+Lo que se lee es solo el horizonte: `totalDocsExamined` es igual a las transferencias del
+rango y no crece con la historia. La prueba lo afirma
+(`pruebas/integracion/prueba_rasgos_grafo_mongo.py`).
+
+### Comparacion con un motor de grafos
+
+Un motor de grafos como Neptune Analytics trae el grafo en memoria y ofrece algoritmos
+nativos: grado de entrada y de salida por nodo, caminos y alcance a N saltos, y la
+posibilidad de escribir esas propiedades de vuelta al nodo, todo en lote sobre el grafo
+completo. Aqui no hay grafo en memoria: las aristas son documentos de `transacciones`,
+`$graphLookup` las recorre buscando por indice nivel a nivel, y lo calculado se
+materializa como propiedades del nodo con `$merge`. Equivalencias: fan-in y fan-out son
+`$group` y `$setUnion`; la cadena es `$graphLookup` con `maxDepth`; la propiedad de nodo
+persistida es el documento `rasgo_grafo`. Lo que se cede: el recorrido es por busquedas de
+indice (el costo crece con las aristas del horizonte, no es un recorrido de memoria), hay
+un tope de 100 MB por etapa de `$graphLookup`, y no hay algoritmos de comunidad ni de
+centralidad. Para el volumen de este proyecto (miles de transferencias por dia, cadenas de
+3 a 4 eslabones) alcanza y no agrega un segundo motor; con un grafo de millones de aristas
+y consultas de varios saltos por evento, el motor de grafos seria la herramienta correcta.
+
+### Calibracion
+
+Ver `docs/08-calibracion.md`, seccion "R-11 (T-63)".
 
 ## Busqueda forense (H-15) y su pantalla (H-19)
 
