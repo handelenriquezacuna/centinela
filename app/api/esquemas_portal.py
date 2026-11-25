@@ -35,6 +35,7 @@ class PaginaPermitida(BaseModel):
 
     ruta: str = Field(examples=["/panel"])
     rotulo: str = Field(examples=["Panel"])
+    area: str = Field(examples=["Alertas"], description="Grupo del menu: Alertas, Supervisión, Administración")
 
 
 class SesionActual(BaseModel):
@@ -46,7 +47,11 @@ class SesionActual(BaseModel):
     """
 
     agente_id: str = Field(examples=["AGT-001"])
+    nombre: str | None = Field(default=None, examples=["Jose Solis"], description="Nulo si el agente ya no existe")
     rol: RolAgente
+    inicio: str = Field(
+        examples=["/panel"], description="Pagina donde aterriza el rol al entrar (`/`)"
+    )
     expira: MarcaTiempoUTC
     permisos: list[str] = Field(examples=[["sesion", "panel", "detalle"]])
     navegacion: list[PaginaPermitida]

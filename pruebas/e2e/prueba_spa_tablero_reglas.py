@@ -30,7 +30,8 @@ def _entrar(page: Page, url: str, agente_id: str) -> None:
     page.get_by_label("Identificador").fill(agente_id)
     page.get_by_label(re.compile("Contrase")).fill(CONTRASENA)
     page.get_by_role("button", name="Entrar").click()
-    expect(page).to_have_url(re.compile(r"/panel$"))
+    # Cada rol aterriza en su inicio: el supervisor en el tablero, el agente en su cola.
+    expect(page).to_have_url(re.compile(r"/tablero$" if agente_id == SUPERVISOR else r"/panel$"))
 
 
 async def _foto(base: Any) -> dict[str, list[dict[str, Any]]]:

@@ -152,6 +152,31 @@ async def manejar_prohibido(peticion: Request, fallo: AccesoProhibido) -> Respon
     )
 
 
+def respuesta_pagina_desconocida(peticion: Request) -> Response | None:
+    """Una direccion de pagina que ninguna ruta reconoce, con la SPA como interfaz.
+
+    Con sesion: el `index.html` de la SPA con estado 404, y React dibuja "Pagina no
+    encontrada" dentro del marco normal (antes salia el JSON del error, sin portal). Sin
+    sesion: al login, igual que cualquier pagina. `None` si no aplica: no es un GET, es
+    la API o un estatico, o la interfaz no es la SPA; ahi el 404 JSON de siempre.
+    """
+    ruta = peticion.url.path
+    if (
+        peticion.method != "GET"
+        or es_superficie_api(ruta)
+        or ruta.startswith("/estaticos")
+        or getattr(peticion.app.state, "interfaz", "htmx") != "spa"
+        or peticion.scope.get("endpoint") is not None  # una ruta existe: el 404 es suyo
+    ):
+        return None
+    servicio = dep_servicio_sesion(peticion)
+    if servicio.leer(token_de(peticion, servicio)) is None:
+        return _a_login(peticion)
+    from app.api.rutas.spa import respuesta_spa
+
+    return respuesta_spa(status.HTTP_404_NOT_FOUND)
+
+
 def registrar_manejadores_sesion(aplicacion: FastAPI) -> None:
     aplicacion.add_exception_handler(SesionRequerida, manejar_sin_sesion)
     aplicacion.add_exception_handler(AccesoProhibido, manejar_prohibido)

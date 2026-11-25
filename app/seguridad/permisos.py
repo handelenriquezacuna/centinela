@@ -41,6 +41,7 @@ class Permiso(StrEnum):
     VER_REGLAS = "ver_reglas"
     EDITAR_REGLAS = "editar_reglas"
     GESTIONAR_LISTAS = "gestionar_listas"  # aprobar propuestas, marcar mulas y dar de baja
+    ADMINISTRACION = "administracion"  # area de Administracion: solo el administrador
 
 
 _PERMISOS_AGENTE = frozenset(
@@ -152,6 +153,11 @@ ACCESOS: tuple[Acceso, ...] = (
     _a("POST", "/api/v1/reglas/simular", Permiso.EDITAR_REGLAS),
     _a("PATCH", "/api/v1/reglas/{regla_id}", Permiso.EDITAR_REGLAS),
     _a("PATCH", "/api/v1/politica", Permiso.EDITAR_REGLAS),
+    # Administracion: solo el administrador (los respaldos traen su propio permiso)
+    _a("GET", "/administracion", Permiso.ADMINISTRACION),
+    _a("GET", "/administracion/salud", Permiso.ADMINISTRACION),
+    _a("GET", "/administracion/respaldos", Permiso.ADMINISTRACION),
+    _a("GET", "/administracion/usuarios", Permiso.ADMINISTRACION),
 )
 
 _PREFIJOS_API = ("/api/", "/estado", "/openapi.json", "/salud")

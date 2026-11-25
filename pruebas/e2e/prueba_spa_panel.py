@@ -34,7 +34,7 @@ def prueba_la_spa_entra_con_cookie_y_la_alerta_llega_sola_por_el_canal_json(
     # Vuelve a donde iba, sin recargar: es la SPA la que navega.
     expect(page).to_have_url(re.compile(r"/panel$"))
     expect(page.get_by_role("heading", name="Panel de alertas")).to_be_visible()
-    expect(page.locator("#sesion-quien")).to_contain_text(AGENTE)
+    expect(page.locator("#sesion-quien")).to_contain_text("Agente E2E")
 
     # La sesion es la cookie HttpOnly; la SPA no guarda el token en ningun lado.
     cookie = next(c for c in page.context.cookies() if c["name"] == "centinela_sesion")

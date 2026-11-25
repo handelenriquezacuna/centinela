@@ -34,7 +34,7 @@ export function RequiereSesion({ plantilla, children }: Propiedades) {
     return <Navigate to={rutaDeLogin(ubicacion.pathname + ubicacion.search)} replace />;
   }
   if (!puedeAbrir(sesion, plantilla)) {
-    return <Prohibido />;
+    return <Prohibido plantilla={plantilla} />;
   }
   return <>{children}</>;
 }

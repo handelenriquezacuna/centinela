@@ -10,10 +10,14 @@ import { Busqueda } from "./paginas/Busqueda";
 import { Login } from "./paginas/Login";
 import { NoEncontrada } from "./paginas/NoEncontrada";
 import { Detalle } from "./paginas/Detalle";
+import { Inicio } from "./paginas/Inicio";
 import { Panel } from "./paginas/Panel";
 import { RedMulas } from "./paginas/RedMulas";
+import { Respaldos } from "./paginas/Respaldos";
 import { Reglas } from "./paginas/Reglas";
+import { Salud } from "./paginas/Salud";
 import { Tablero } from "./paginas/Tablero";
+import { Usuarios } from "./paginas/Usuarios";
 
 /**
  * Cada pantalla declara la plantilla de su ruta tal como la tiene la tabla de permisos
@@ -28,7 +32,7 @@ export const RUTAS: RouteObject[] = [
   {
     element: <Marco />,
     children: [
-      { path: "/", element: <Navigate to="/panel" replace /> },
+      { path: "/", element: <Inicio /> },
       { path: "/login", element: <Login /> },
       { path: "/panel", element: protegida("/panel", <Panel />) },
       { path: "/detalle", element: <Navigate to="/panel" replace /> },
@@ -55,6 +59,19 @@ export const RUTAS: RouteObject[] = [
       {
         path: "/reglas",
         element: protegida("/reglas", <Reglas />),
+      },
+      { path: "/administracion", element: <Navigate to="/administracion/salud" replace /> },
+      {
+        path: "/administracion/salud",
+        element: protegida("/administracion/salud", <Salud />),
+      },
+      {
+        path: "/administracion/respaldos",
+        element: protegida("/administracion/respaldos", <Respaldos />),
+      },
+      {
+        path: "/administracion/usuarios",
+        element: protegida("/administracion/usuarios", <Usuarios />),
       },
       { path: "*", element: <NoEncontrada /> },
     ],

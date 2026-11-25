@@ -15,3 +15,6 @@
 .sankey-cuentas input[name="motivo"] { min-width: 18rem; }
 .sankey .sankey-nodo-victima rect { fill: #1d4ed8; stroke: #1e3a8a; }
 .sankey .sankey-nombre { font-size: 11px; font-weight: 600; }
+
+/* En telefono el diagrama se encoge al ancho disponible (tiene viewBox) en vez de ensanchar la pagina. */
+.sankey { max-width: 100%; height: auto; }
