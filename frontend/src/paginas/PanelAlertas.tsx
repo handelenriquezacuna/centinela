@@ -8,10 +8,27 @@ import type { Alerta, EventoAlerta, Pagina } from "../api/tipos";
 import { aplicarAlerta } from "../cola";
 import { AvisoRezago } from "../componentes/AvisoRezago";
 import { EncabezadoPanel } from "../componentes/EncabezadoPanel";
-import { colones, etiqueta, horaCostaRica } from "../formatos";
+import { MarcoPagina } from "../componentes/MarcoPagina";
+import { FechaCR } from "../componentes/FechaCR";
+import { Insignia } from "../componentes/Insignia";
+import { MontoColones } from "../componentes/MontoColones";
+import { TablaDatos, type Columna } from "../componentes/TablaDatos";
+import { VistaVacia } from "../componentes/VistaVacia";
+import { mensajeDeError } from "../reglas/errores";
 import { useEventosAlertas } from "../tiempo-real/eventosAlertas";
 
 export const CLAVE_COLA = ["alertas-cola"] as const;
+
+const COLUMNAS: Columna<Alerta>[] = [
+  { clave: "id", titulo: "Alerta", celda: (a) => <Link to={`/detalle/${a._id}`}>{a._id}</Link>, clase: "id-corto" },
+  { clave: "severidad", titulo: "Severidad", celda: (a) => <Insignia tipo="severidad" valor={a.severidad} /> },
+  { clave: "puntaje", titulo: "Puntaje", celda: (a) => a.puntaje },
+  { clave: "cliente", titulo: "Cliente", celda: (a) => a.cliente_nombre },
+  { clave: "cuentas", titulo: "Cuentas", celda: (a) => `${a.cuenta_origen} a ${a.cuenta_destino}`, clase: "id-corto" },
+  { clave: "monto", titulo: "Monto", celda: (a) => <MontoColones valor={a.monto_crc} /> },
+  { clave: "creada", titulo: "Creada (hora CR)", celda: (a) => <FechaCR valor={a.fecha_creacion} /> },
+  { clave: "estado", titulo: "Estado", celda: (a) => <Insignia tipo="estado" valor={a.estado} /> },
+];
 
 interface Propiedades {
   alAbrirAyuda: () => void;
@@ -47,7 +64,7 @@ export function PanelAlertas({ alAbrirAyuda }: Propiedades) {
 
   const alertas = consulta.data?.elementos ?? [];
   return (
-    <>
+    <MarcoPagina id="panel" ancho="ancho">
       <EncabezadoPanel
         vista="alertas"
         descripcion="Cola ordenada por puntaje (mayor primero) y luego por fecha."
@@ -61,76 +78,28 @@ export function PanelAlertas({ alAbrirAyuda }: Propiedades) {
       <AvisoRezago />
 
       <section className="tarjeta" aria-label="Cola de alertas">
-        {consulta.isPending ? <p role="status">Cargando la cola…</p> : null}
-        {consulta.isError ? (
-          <div className="mensaje mensaje-error" role="alert">
-            {consulta.error.message}
-          </div>
-        ) : null}
-        {consulta.data ? (
-          <div className="tabla-envoltura">
-          <div role="table" aria-label="Cola de alertas">
-            <div role="rowgroup">
-              <div className="cola-encabezado" role="row">
-                <span role="columnheader">Alerta</span>
-                <span role="columnheader">Severidad</span>
-                <span role="columnheader">Puntaje</span>
-                <span role="columnheader">Cliente</span>
-                <span role="columnheader">Cuentas</span>
-                <span role="columnheader">Monto</span>
-                <span role="columnheader">Creada (hora CR)</span>
-                <span role="columnheader">Estado</span>
-              </div>
-            </div>
-            <div id="cola" role="rowgroup">
-              {alertas.map((alerta) => (
-                <div
-                  key={alerta._id}
-                  id={`alerta-${alerta._id}`}
-                  role="row"
-                  data-fila-atajo
-                  className={`fila-alerta severidad-${alerta.severidad}`}
-                  data-estado={alerta.estado}
-                  data-destino={alerta.cuenta_destino}
-                  data-puntaje={alerta.puntaje}
-                  data-monto-crc={alerta.monto_crc}
-                >
-                  <span role="cell" className="alerta-id">
-                    <Link to={`/detalle/${alerta._id}`}>{alerta._id}</Link>
-                  </span>
-                  <span role="cell" className="alerta-severidad">
-                    {etiqueta(alerta.severidad)}
-                  </span>
-                  <span role="cell" className="alerta-puntaje">
-                    {alerta.puntaje}
-                  </span>
-                  <span role="cell" className="alerta-cliente">
-                    {alerta.cliente_nombre}
-                  </span>
-                  <span role="cell" className="alerta-cuentas">
-                    {alerta.cuenta_origen} a {alerta.cuenta_destino}
-                  </span>
-                  <span role="cell" className="alerta-monto">
-                    {colones(alerta.monto_crc)}
-                  </span>
-                  <span role="cell" className="alerta-fecha">
-                    {horaCostaRica(alerta.fecha_creacion)}
-                  </span>
-                  <span role="cell" className="alerta-estado">
-                    {etiqueta(alerta.estado)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-          </div>
-        ) : null}
-        {consulta.data && alertas.length === 0 ? (
-          <p id="cola-vacia" className="cola-vacia">
-            No hay alertas en la cola.
-          </p>
-        ) : null}
+        <TablaDatos
+          leyenda="Cola de alertas"
+          columnas={COLUMNAS}
+          filas={alertas}
+          clave={(alerta) => alerta._id}
+          estado={consulta.isPending ? "cargando" : consulta.isError ? "error" : "listo"}
+          textoCargando="Cargando la cola…"
+          error={consulta.isError ? mensajeDeError(consulta.error, "La cola") : undefined}
+          alReintentar={() => void consulta.refetch()}
+          idCuerpo="cola"
+          atributosFila={(alerta) => ({
+            id: `alerta-${alerta._id}`,
+            className: `fila-cola severidad-${alerta.severidad}`,
+            "data-fila-atajo": "",
+            "data-estado": alerta.estado,
+            "data-destino": alerta.cuenta_destino,
+            "data-puntaje": alerta.puntaje,
+            "data-monto-crc": alerta.monto_crc,
+          })}
+          vacia={<VistaVacia titulo="No hay alertas en la cola." texto="Cuando el detector genere una alerta aparecerá aquí sin recargar." />}
+        />
       </section>
-    </>
+    </MarcoPagina>
   );
 }

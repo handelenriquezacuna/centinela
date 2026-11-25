@@ -2,7 +2,10 @@ import { useState, type FormEvent } from "react";
 
 import { pedir } from "../api/cliente";
 import type { Evaluacion, Regla } from "../api/tipos";
-import { Aviso, type Resultado } from "./Aviso";
+import { TablaDatos, type Columna } from "../componentes/TablaDatos";
+import { VistaVacia } from "../componentes/VistaVacia";
+import { AvisoRegion, type ResultadoAviso } from "../componentes/AvisoRegion";
+import { FormularioCampo } from "../componentes/FormularioCampo";
 import { leerParametros, mensajeDeError, parametrosATexto } from "./errores";
 import ejemplo from "./simulacion.ejemplo.json";
 
@@ -19,7 +22,7 @@ export function Simulador({ reglas }: { reglas: Regla[] }) {
   const [peso, setPeso] = useState("");
   const [parametros, setParametros] = useState("");
   const [evaluacion, setEvaluacion] = useState<Evaluacion | null>(null);
-  const [resultado, setResultado] = useState<Resultado>(null);
+  const [resultado, setResultado] = useState<ResultadoAviso>(null);
   const [enviando, setEnviando] = useState(false);
 
   function elegirRegla(id: string) {
@@ -78,19 +81,17 @@ export function Simulador({ reglas }: { reglas: Regla[] }) {
       </h2>
       <p className="subtitulo">Prueba un umbral antes de aplicarlo. No escribe nada en la base.</p>
       <form noValidate onSubmit={(e) => void enviar(e)} aria-label="Simular una transacción">
-        <div className="campo">
-          <label htmlFor="simular-cuerpo">Transacción y contexto (JSON)</label>
-          <textarea id="simular-cuerpo" rows={8} spellCheck={false} value={cuerpo} onChange={(e) => setCuerpo(e.target.value)} style={{ width: "100%", fontFamily: "var(--fuente-mono)" }} />
-        </div>
+        <FormularioCampo etiqueta="Transacción y contexto (JSON)">
+          <textarea className="area-json" rows={8} spellCheck={false} value={cuerpo} onChange={(e) => setCuerpo(e.target.value)} />
+        </FormularioCampo>
         <p>
           <button type="button" className="boton boton-secundario" onClick={() => setCuerpo(JSON.stringify(ejemplo, null, 2))}>
             Cargar el ejemplo TXN-001
           </button>
         </p>
         <div className="form-regla">
-          <div className="campo">
-            <label htmlFor="simular-regla">Regla propuesta</label>
-            <select id="simular-regla" value={reglaId} onChange={(e) => elegirRegla(e.target.value)}>
+          <FormularioCampo etiqueta="Regla propuesta">
+            <select value={reglaId} onChange={(e) => elegirRegla(e.target.value)}>
               <option value="">Ninguna: usar el catálogo guardado</option>
               {reglas.map((r) => (
                 <option key={r._id} value={r._id}>
@@ -98,20 +99,19 @@ export function Simulador({ reglas }: { reglas: Regla[] }) {
                 </option>
               ))}
             </select>
-          </div>
+          </FormularioCampo>
           {reglaId !== "" ? (
             <>
-              <div className="campo">
-                <label htmlFor="simular-umbral">Umbral propuesto</label>
-                <input id="simular-umbral" type="number" step="any" min="0" value={umbral} onChange={(e) => setUmbral(e.target.value)} />
-              </div>
-              <div className="campo">
-                <label htmlFor="simular-peso">Peso propuesto</label>
-                <input id="simular-peso" type="number" step="1" min="0" max="100" value={peso} onChange={(e) => setPeso(e.target.value)} />
-              </div>
-              <div className="campo campo-parametros">
-                <label htmlFor="simular-parametros">Parámetros propuestos (JSON)</label>
-                <input id="simular-parametros" type="text" value={parametros} onChange={(e) => setParametros(e.target.value)} />
+              <FormularioCampo etiqueta="Umbral propuesto">
+                <input type="number" step="any" min="0" value={umbral} onChange={(e) => setUmbral(e.target.value)} />
+              </FormularioCampo>
+              <FormularioCampo etiqueta="Peso propuesto">
+                <input type="number" step="1" min="0" max="100" value={peso} onChange={(e) => setPeso(e.target.value)} />
+              </FormularioCampo>
+              <div className="campo-parametros">
+                <FormularioCampo etiqueta="Parámetros propuestos (JSON)">
+                  <input type="text" value={parametros} onChange={(e) => setParametros(e.target.value)} />
+                </FormularioCampo>
               </div>
             </>
           ) : null}
@@ -122,11 +122,18 @@ export function Simulador({ reglas }: { reglas: Regla[] }) {
           </div>
         </div>
       </form>
-      <Aviso resultado={resultado} />
+      <AvisoRegion resultado={resultado} />
       {evaluacion ? <ResultadoSimulacion evaluacion={evaluacion} /> : null}
     </section>
   );
 }
+
+const COLUMNAS_DISPARADAS: Columna<Evaluacion["reglas_disparadas"][number]>[] = [
+  { clave: "regla", titulo: "Regla", celda: (d) => <strong>{d.codigo}</strong> },
+  { clave: "version", titulo: "Versión", celda: (d) => d.version },
+  { clave: "aporte", titulo: "Aporte", celda: (d) => d.peso },
+  { clave: "explicacion", titulo: "Explicación", celda: (d) => d.explicacion },
+];
 
 export function ResultadoSimulacion({ evaluacion }: { evaluacion: Evaluacion }) {
   return (
@@ -137,33 +144,14 @@ export function ResultadoSimulacion({ evaluacion }: { evaluacion: Evaluacion }) 
         <strong id="simulacion-severidad">{evaluacion.severidad === null ? "SIN ALERTA" : evaluacion.severidad.toUpperCase()}</strong> ·{" "}
         {evaluacion.genera_alerta ? "genera alerta" : "no genera alerta"} · política {evaluacion.politica_id} versión {evaluacion.politica_version}
       </p>
-      <table className="tabla-simple">
-        <caption className="visualmente-oculto">Reglas disparadas</caption>
-        <thead>
-          <tr>
-            <th scope="col">Regla</th>
-            <th scope="col">Versión</th>
-            <th scope="col">Aporte</th>
-            <th scope="col">Explicación</th>
-          </tr>
-        </thead>
-        <tbody>
-          {evaluacion.reglas_disparadas.length === 0 ? (
-            <tr>
-              <td colSpan={4}>No se disparó ninguna regla.</td>
-            </tr>
-          ) : (
-            evaluacion.reglas_disparadas.map((d) => (
-              <tr key={d.regla_id}>
-                <th scope="row">{d.codigo}</th>
-                <td>{d.version}</td>
-                <td>{d.peso}</td>
-                <td>{d.explicacion}</td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+      <TablaDatos
+        leyenda="Reglas disparadas"
+        columnas={COLUMNAS_DISPARADAS}
+        filas={evaluacion.reglas_disparadas}
+        clave={(d) => d.regla_id}
+        estado="listo"
+        vacia={<VistaVacia titulo="No se disparó ninguna regla." />}
+      />
       {evaluacion.reglas_no_evaluadas.length > 0 ? (
         <>
           <h4>No evaluadas</h4>

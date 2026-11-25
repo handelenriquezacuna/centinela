@@ -1,12 +1,15 @@
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 
 import type { MensajeError } from "../reglas/errores";
+import { Cargando } from "./Cargando";
 import { VistaError } from "./VistaError";
 import { VistaVacia } from "./VistaVacia";
 
 export interface Columna<T> {
   clave: string;
   titulo: string;
+  /** Contenido del encabezado si no es solo texto (una casilla "seleccionar todas"). */
+  encabezado?: ReactNode;
   celda: (fila: T) => ReactNode;
   /** Si la columna se puede ordenar: el titulo pasa a ser un boton. */
   ordenable?: boolean;
@@ -39,6 +42,12 @@ interface Propiedades<T> {
   alOrdenar?: (orden: Orden) => void;
   paginacion?: Paginacion;
   alCambiarPagina?: (desplazamiento: number) => void;
+  /** `id` del `<tbody>`, para quien necesita anclar atajos o pruebas. */
+  idCuerpo?: string;
+  /** Atributos de cada fila (`id`, `className`, `data-*`). */
+  atributosFila?: (fila: T) => HTMLAttributes<HTMLTableRowElement> & Record<`data-${string}`, string | number | boolean | undefined>;
+  /** Texto del estado de carga; por omision "Cargando…". */
+  textoCargando?: string;
 }
 
 /**
@@ -58,9 +67,12 @@ export function TablaDatos<T>({
   alOrdenar,
   paginacion,
   alCambiarPagina,
+  idCuerpo,
+  atributosFila,
+  textoCargando = "Cargando…",
 }: Propiedades<T>) {
   if (estado === "cargando") {
-    return <p role="status">Cargando…</p>;
+    return <Cargando texto={textoCargando} />;
   }
   if (estado === "error") {
     return <VistaError error={error ?? { texto: "No se pudo cargar la tabla", detalles: [] }} alReintentar={alReintentar} />;
@@ -97,16 +109,16 @@ export function TablaDatos<T>({
                         <span aria-hidden="true">{activa ? (orden.sentido === "asc" ? " ▲" : " ▼") : ""}</span>
                       </button>
                     ) : (
-                      columna.titulo
+                      (columna.encabezado ?? columna.titulo)
                     )}
                   </th>
                 );
               })}
             </tr>
           </thead>
-          <tbody>
+          <tbody id={idCuerpo}>
             {filas.map((fila) => (
-              <tr key={clave(fila)}>
+              <tr key={clave(fila)} {...atributosFila?.(fila)}>
                 {columnas.map((columna) => (
                   <td key={columna.clave} data-etiqueta={columna.titulo} className={columna.clase}>
                     {columna.celda(fila)}

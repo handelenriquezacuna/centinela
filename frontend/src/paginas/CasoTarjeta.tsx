@@ -2,8 +2,12 @@ import { useRef, useState } from "react";
 import { Link } from "react-router";
 
 import { ErrorApi, pedir } from "../api/cliente";
-import type { AccionLote, CasoDestino, EstadoAlerta, ResultadoLote } from "../api/tipos";
-import { colones, etiqueta, horaCostaRica } from "../formatos";
+import type { AccionLote, AlertaDeCaso, CasoDestino, EstadoAlerta, ResultadoLote } from "../api/tipos";
+import { FechaCR } from "../componentes/FechaCR";
+import { Insignia } from "../componentes/Insignia";
+import { MontoColones } from "../componentes/MontoColones";
+import { TablaDatos, type Columna } from "../componentes/TablaDatos";
+import { etiqueta } from "../formatos";
 
 const TERMINALES: ReadonlySet<EstadoAlerta> = new Set(["confirmada", "descartada", "escalada"]);
 
@@ -109,6 +113,32 @@ export function CasoTarjeta({ caso, alTerminarLote }: Propiedades) {
     }
   }
 
+  const columnas: Columna<AlertaDeCaso>[] = [
+    {
+      clave: "marca",
+      titulo: "Seleccionar",
+      encabezado: (
+        <input
+          type="checkbox"
+          checked={todas}
+          onChange={() => setMarcadas(todas ? new Set() : new Set(ids))}
+          aria-label={`Seleccionar todas las alertas de la cuenta destino ${cuenta}`}
+        />
+      ),
+      celda: (alerta) => (
+        <input type="checkbox" checked={seleccion.includes(alerta._id)} onChange={() => alternar(alerta._id)} aria-label={`Seleccionar ${alerta._id}`} />
+      ),
+    },
+    { clave: "id", titulo: "Alerta", celda: (a) => <Link to={`/detalle/${a._id}`}>{a._id}</Link>, clase: "alerta-id" },
+    { clave: "severidad", titulo: "Severidad", celda: (a) => <Insignia tipo="severidad" valor={a.severidad} /> },
+    { clave: "puntaje", titulo: "Puntaje", celda: (a) => a.puntaje },
+    { clave: "cliente", titulo: "Cliente", celda: (a) => a.cliente_nombre },
+    { clave: "origen", titulo: "Origen", celda: (a) => a.cuenta_origen, clase: "alerta-cuentas" },
+    { clave: "monto", titulo: "Monto", celda: (a) => <MontoColones valor={a.monto_crc} /> },
+    { clave: "creada", titulo: "Creada (hora CR)", celda: (a) => <FechaCR valor={a.fecha_creacion} /> },
+    { clave: "estado", titulo: "Estado", celda: (a) => <Insignia tipo="estado" valor={a.estado} /> },
+  ];
+
   const tituloId = `caso-${cuenta}-titulo`;
   return (
     <section
@@ -141,7 +171,7 @@ export function CasoTarjeta({ caso, alTerminarLote }: Propiedades) {
                 <ul>
                   {resumen.rechazadas.map((r) => (
                     <li key={r.alerta_id}>
-                      <span className="id-corto">{r.alerta_id}</span> ({r.estado_http}): {r.motivo}
+                      <span className="id-corto">{r.alerta_id}</span>: {r.motivo}
                     </li>
                   ))}
                 </ul>
@@ -176,11 +206,15 @@ export function CasoTarjeta({ caso, alTerminarLote }: Propiedades) {
           </div>
           <div>
             <dt>Monto total</dt>
-            <dd className="caso-monto">{colones(caso.monto_total_crc)}</dd>
+            <dd className="caso-monto">
+              <MontoColones valor={caso.monto_total_crc} />
+            </dd>
           </div>
           <div>
             <dt>Severidad máxima</dt>
-            <dd className="caso-severidad">{etiqueta(caso.severidad_max)}</dd>
+            <dd className="caso-severidad">
+              <Insignia tipo="severidad" valor={caso.severidad_max} />
+            </dd>
           </div>
           <div>
             <dt>Puntaje máximo</dt>
@@ -188,7 +222,9 @@ export function CasoTarjeta({ caso, alTerminarLote }: Propiedades) {
           </div>
           <div>
             <dt>Más antigua (hora CR)</dt>
-            <dd>{horaCostaRica(caso.mas_antigua)}</dd>
+            <dd>
+              <FechaCR valor={caso.mas_antigua} />
+            </dd>
           </div>
           <div>
             <dt>Reglas que más se repiten</dt>
@@ -202,62 +238,22 @@ export function CasoTarjeta({ caso, alTerminarLote }: Propiedades) {
         ) : null}
       </header>
 
-      <table className="tabla-responsiva">
-        <caption className="visualmente-oculto">Alertas abiertas hacia la cuenta destino {cuenta}</caption>
-        <thead>
-          <tr>
-            <th scope="col">
-              <input
-                type="checkbox"
-                checked={todas}
-                onChange={() => setMarcadas(todas ? new Set() : new Set(ids))}
-                aria-label={`Seleccionar todas las alertas de la cuenta destino ${cuenta}`}
-              />
-            </th>
-            <th scope="col">Alerta</th>
-            <th scope="col">Severidad</th>
-            <th scope="col">Puntaje</th>
-            <th scope="col">Cliente</th>
-            <th scope="col">Origen</th>
-            <th scope="col">Monto</th>
-            <th scope="col">Creada (hora CR)</th>
-            <th scope="col">Estado</th>
-          </tr>
-        </thead>
-        <tbody>
-          {caso.alertas.map((alerta) => (
-            <tr
-              key={alerta._id}
-              id={`alerta-${alerta._id}`}
-              data-fila-atajo
-              className={`severidad-${alerta.severidad}`}
-              data-estado={alerta.estado}
-              data-puntaje={alerta.puntaje}
-              data-monto-crc={alerta.monto_crc}
-              data-destino={alerta.cuenta_destino}
-            >
-              <td>
-                <input
-                  type="checkbox"
-                  checked={seleccion.includes(alerta._id)}
-                  onChange={() => alternar(alerta._id)}
-                  aria-label={`Seleccionar ${alerta._id}`}
-                />
-              </td>
-              <td className="alerta-id">
-                <Link to={`/detalle/${alerta._id}`}>{alerta._id}</Link>
-              </td>
-              <td className="alerta-severidad">{etiqueta(alerta.severidad)}</td>
-              <td className="alerta-puntaje">{alerta.puntaje}</td>
-              <td className="alerta-cliente">{alerta.cliente_nombre}</td>
-              <td className="alerta-cuentas">{alerta.cuenta_origen}</td>
-              <td className="alerta-monto">{colones(alerta.monto_crc)}</td>
-              <td className="alerta-fecha">{horaCostaRica(alerta.fecha_creacion)}</td>
-              <td className="alerta-estado">{etiqueta(alerta.estado)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <TablaDatos
+        leyenda={`Alertas abiertas hacia la cuenta destino ${cuenta}`}
+        columnas={columnas}
+        filas={caso.alertas}
+        clave={(alerta) => alerta._id}
+        estado="listo"
+        atributosFila={(alerta) => ({
+          id: `alerta-${alerta._id}`,
+          className: `severidad-${alerta.severidad}`,
+          "data-fila-atajo": "",
+          "data-estado": alerta.estado,
+          "data-puntaje": alerta.puntaje,
+          "data-monto-crc": alerta.monto_crc,
+          "data-destino": alerta.cuenta_destino,
+        })}
+      />
       {caso.alertas_ocultas ? (
         <p className="nota-tecnica">
           Se muestran las {caso.alertas.length} alertas de mayor puntaje; hay {caso.alertas_ocultas} más hacia esta

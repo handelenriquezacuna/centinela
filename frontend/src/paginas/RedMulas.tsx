@@ -8,14 +8,34 @@ import type { EntradaListaRiesgo, ParametrosRed, RespuestaGrafo, ResultadoAproba
 import { DialogoConfirmacion } from "../componentes/DialogoConfirmacion";
 import { GrafoRed } from "../componentes/GrafoRed";
 import { CLAVE_RED, RecorridoDinero } from "../componentes/RecorridoDinero";
-import { colones, decimal, horaCostaRica } from "../formatos";
+import { AvisoRegion, type ResultadoAviso } from "../componentes/AvisoRegion";
+import { Cargando } from "../componentes/Cargando";
+import { EncabezadoPagina } from "../componentes/EncabezadoPagina";
+import { FechaCR } from "../componentes/FechaCR";
+import { FormularioCampo } from "../componentes/FormularioCampo";
+import { MarcoPagina } from "../componentes/MarcoPagina";
+import { MontoColones } from "../componentes/MontoColones";
+import { Permitido } from "../componentes/Permitido";
+import { TablaDatos, type Columna } from "../componentes/TablaDatos";
+import { VistaError } from "../componentes/VistaError";
+import { VistaVacia } from "../componentes/VistaVacia";
+import { decimal } from "../formatos";
+import { mensajeDeError } from "../reglas/errores";
 
 const PATRON_CUENTA = /^(CTA-\d{3,}|\d{4}-\d{4})$/;
 
-interface Aviso {
-  texto: string;
-  error: boolean;
-}
+const COLUMNAS_ARISTAS: Columna<RespuestaGrafo["red"]["aristas"][number]>[] = [
+  { clave: "salto", titulo: "Salto", celda: (a) => a.salto },
+  { clave: "origen", titulo: "Origen", celda: (a) => a.origen, clase: "id-corto" },
+  { clave: "destino", titulo: "Destino", celda: (a) => a.destino, clase: "id-corto" },
+  { clave: "monto", titulo: "Monto", celda: (a) => <MontoColones valor={a.monto_crc} /> },
+  { clave: "fecha", titulo: "Fecha (hora CR)", celda: (a) => <FechaCR valor={a.fecha} /> },
+  {
+    clave: "minutos",
+    titulo: "Minutos desde el eslabón anterior",
+    celda: (a) => (a.minutos_desde_anterior !== null ? decimal(a.minutos_desde_anterior) : "-"),
+  },
+];
 
 function parametrosDe(buscar: URLSearchParams): ParametrosRed {
   return {
@@ -53,38 +73,21 @@ export function RedMulas() {
   }
 
   return (
-    <>
+    <MarcoPagina id="red" ancho="ancho">
       <link rel="stylesheet" href="/estaticos/tablero.css" />
-      <div className="titulo-pantalla">
-        <div>
-          <h1>Red de cuentas mula</h1>
-          <p className="subtitulo">Hacia dónde se movió el dinero desde una cuenta, hasta 6 saltos.</p>
-        </div>
-      </div>
+      <EncabezadoPagina id="red" titulo="Red de cuentas mula" descripcion="Hacia dónde se movió el dinero desde una cuenta, hasta 6 saltos." />
 
       <form className="formulario-cuenta" onSubmit={ver} noValidate>
-        <label htmlFor="cuenta">Cuenta (SINPE 6033-9001 o CTA-001)</label>
-        <input
-          id="cuenta"
-          name="cuenta"
-          value={escrita}
-          required
-          aria-invalid={errorForm !== null}
-          aria-describedby={errorForm ? "cuenta-error" : undefined}
-          onChange={(e) => setEscrita(e.target.value)}
-        />
+        <FormularioCampo etiqueta="Cuenta (SINPE 6033-9001 o CTA-001)" error={errorForm}>
+          <input name="cuenta" value={escrita} required onChange={(e) => setEscrita(e.target.value)} />
+        </FormularioCampo>
         <button className="boton boton-primario" type="submit">
           Ver red
         </button>
       </form>
-      {errorForm ? (
-        <div className="mensaje mensaje-error" role="alert" id="cuenta-error">
-          {errorForm}
-        </div>
-      ) : null}
 
       {cuenta ? <Red key={cuenta} cuenta={cuenta} parametros={parametros} /> : null}
-    </>
+    </MarcoPagina>
   );
 }
 
@@ -92,7 +95,7 @@ function Red({ cuenta, parametros }: { cuenta: string; parametros: ParametrosRed
   const clienteConsultas = useQueryClient();
   const { data: sesion } = useSesion();
   const puedeGestionar = sesion?.permisos.includes("gestionar_listas") ?? false;
-  const [aviso, setAviso] = useState<Aviso | null>(null);
+  const [aviso, setAviso] = useState<ResultadoAviso>(null);
   const [baja, setBaja] = useState<EntradaListaRiesgo | null>(null);
 
   const consulta = {
@@ -112,15 +115,15 @@ function Red({ cuenta, parametros }: { cuenta: string; parametros: ParametrosRed
       }),
     onSuccess: (resultado, propuesta) => {
       setAviso({
+        tipo: "ok",
         texto: resultado.creada
           ? `La cuenta ${propuesta} se agregó a la lista de riesgo como ${resultado.entrada._id}.`
           : `La cuenta ${propuesta} ya estaba vigente como ${resultado.entrada._id}: no se duplicó.`,
-        error: false,
       });
       void clienteConsultas.invalidateQueries({ queryKey: CLAVE_RED });
     },
     onError: (fallo, propuesta) => {
-      setAviso({ texto: `No se agregó la cuenta ${propuesta}: ${fallo instanceof ErrorApi ? fallo.message : "falló la petición"}`, error: true });
+      setAviso({ tipo: "error", error: { texto: `No se agregó la cuenta ${propuesta}: ${fallo instanceof ErrorApi ? fallo.message : "falló la petición"}`, detalles: [] } });
     },
   });
 
@@ -128,11 +131,11 @@ function Red({ cuenta, parametros }: { cuenta: string; parametros: ParametrosRed
     mutationFn: (entrada: EntradaListaRiesgo) =>
       pedir<void>(`/api/v1/listas-riesgo/${encodeURIComponent(entrada._id)}`, { metodo: "DELETE" }),
     onSuccess: (_vacio, entrada) => {
-      setAviso({ texto: `Dada de baja: ${entrada._id} ya no está en la lista.`, error: false });
+      setAviso({ tipo: "ok", texto: `Dada de baja: ${entrada._id} ya no está en la lista.` });
       void clienteConsultas.invalidateQueries({ queryKey: CLAVE_RED });
     },
     onError: (fallo, entrada) => {
-      setAviso({ texto: `No se dio de baja ${entrada._id}: ${fallo instanceof ErrorApi ? fallo.message : "falló la petición"}`, error: true });
+      setAviso({ tipo: "error", error: { texto: `No se dio de baja ${entrada._id}: ${fallo instanceof ErrorApi ? fallo.message : "falló la petición"}`, detalles: [] } });
       void clienteConsultas.invalidateQueries({ queryKey: CLAVE_RED });
     },
   });
@@ -144,14 +147,10 @@ function Red({ cuenta, parametros }: { cuenta: string; parametros: ParametrosRed
   }
 
   if (grafo.isPending) {
-    return <p role="status">Cargando la red…</p>;
+    return <Cargando texto="Cargando la red…" />;
   }
   if (grafo.isError) {
-    return (
-      <div className="mensaje mensaje-error" role="alert" id="red-error">
-        {grafo.error.message}
-      </div>
-    );
+    return <VistaError error={mensajeDeError(grafo.error, "La red")} alReintentar={() => void grafo.refetch()} />;
   }
   const { red, entradas_lista: entradas } = grafo.data;
   const dibujo = grafo.data.grafo;
@@ -159,16 +158,12 @@ function Red({ cuenta, parametros }: { cuenta: string; parametros: ParametrosRed
     <>
       <p className="nota-tecnica" id="red-resumen">
         Partida: <span className="id-corto">{red.cuenta}</span>
-        {red.desde ? ` desde ${horaCostaRica(red.desde)} (hora CR)` : ""}; ventana entre eslabones: {red.ventana_minutos} min; saltos
+        {red.desde ? <> desde <FechaCR valor={red.desde} formato="con_zona" /></> : null}; ventana entre eslabones: {red.ventana_minutos} min; saltos
         recorridos: {red.saltos_recorridos} de {red.saltos_maximos}. {red.truncada ? "La red se truncó por tamaño." : ""}
       </p>
 
-      <div aria-live="polite">
-        {aviso ? (
-          <div className={`mensaje ${aviso.error ? "mensaje-error" : "mensaje-ok"}`} role={aviso.error ? "alert" : "status"} id="red-aviso">
-            {aviso.texto}
-          </div>
-        ) : null}
+      <div aria-live="polite" id="red-aviso">
+        <AvisoRegion resultado={aviso} />
       </div>
 
       {dibujo ? (
@@ -184,47 +179,35 @@ function Red({ cuenta, parametros }: { cuenta: string; parametros: ParametrosRed
 
           <section className="tarjeta" aria-label="Transferencias">
             <h2 className="seccion-titulo">Transferencias de la red</h2>
-            <table className="tabla-simple" id="tabla-aristas">
-              <thead>
-                <tr>
-                  <th scope="col">Salto</th>
-                  <th scope="col">Origen</th>
-                  <th scope="col">Destino</th>
-                  <th scope="col">Monto</th>
-                  <th scope="col">Fecha (hora CR)</th>
-                  <th scope="col">Minutos desde el eslabón anterior</th>
-                </tr>
-              </thead>
-              <tbody>
-                {red.aristas.map((a) => (
-                  <tr key={a.transaccion_id}>
-                    <td>{a.salto}</td>
-                    <td className="id-corto">{a.origen}</td>
-                    <td className="id-corto">{a.destino}</td>
-                    <td>{colones(a.monto_crc)}</td>
-                    <td>{horaCostaRica(a.fecha)}</td>
-                    <td>{a.minutos_desde_anterior !== null ? decimal(a.minutos_desde_anterior) : "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div id="tabla-aristas">
+              <TablaDatos
+                leyenda="Transferencias de la red, por salto"
+                columnas={COLUMNAS_ARISTAS}
+                filas={red.aristas}
+                clave={(a) => a.transaccion_id}
+                estado="listo"
+              />
+            </div>
           </section>
         </>
       ) : (
         <section className="tarjeta" id="red-sin-aristas">
-          <p>Esta cuenta no tiene salidas registradas en la ventana: no hay red que dibujar.</p>
+          <VistaVacia
+            titulo="Esta cuenta no tiene salidas registradas en la ventana."
+            texto="No hay red que dibujar. Pruebe con otra cuenta, o revise el detalle de la alerta para ver desde qué fecha se consultó."
+          />
         </section>
       )}
 
       <section className="tarjeta" aria-label="Propuestas">
-        <h2 className="seccion-titulo">Propuestas para listas_riesgo</h2>
+        <h2 className="seccion-titulo">Cuentas propuestas para la lista de riesgo</h2>
         {red.propuestas_lista_riesgo.length > 0 ? (
           <>
             <ul id="propuestas">
               {red.propuestas_lista_riesgo.map((sinpe) => (
                 <li className="id-corto" id={`propuesta-${sinpe}`} key={sinpe}>
                   {sinpe}{" "}
-                  {puedeGestionar ? (
+                  <Permitido permiso="gestionar_listas">
                     <button
                       type="button"
                       className="boton boton-primario"
@@ -237,7 +220,7 @@ function Red({ cuenta, parametros }: { cuenta: string; parametros: ParametrosRed
                     >
                       Agregar a lista de riesgo
                     </button>
-                  ) : null}
+                  </Permitido>
                 </li>
               ))}
             </ul>
@@ -249,7 +232,9 @@ function Red({ cuenta, parametros }: { cuenta: string; parametros: ParametrosRed
             </p>
           </>
         ) : (
-          <p id="propuestas-vacias">No hay cuentas por proponer.</p>
+          <div id="propuestas-vacias">
+            <VistaVacia titulo="No hay cuentas por proponer." texto="Ninguna cuenta de esta red cumple el patrón de mula todavía." />
+          </div>
         )}
       </section>
 
@@ -260,8 +245,8 @@ function Red({ cuenta, parametros }: { cuenta: string; parametros: ParametrosRed
             {entradas.map((entrada) => (
               <li id={`entrada-${entrada._id}`} key={entrada._id}>
                 <span className="id-corto">{entrada.cuenta}</span> &middot; {entrada._id}
-                {!entrada.vigente ? " (no vigente)" : ""}: {entrada.motivo}, reportada {horaCostaRica(entrada.fecha_reporte)} (hora CR){" "}
-                {puedeGestionar ? (
+                {!entrada.vigente ? " (no vigente)" : ""}: {entrada.motivo}, reportada <FechaCR valor={entrada.fecha_reporte} formato="con_zona" />{" "}
+                <Permitido permiso="gestionar_listas">
                   <button
                     type="button"
                     className="boton"
@@ -271,7 +256,7 @@ function Red({ cuenta, parametros }: { cuenta: string; parametros: ParametrosRed
                   >
                     Dar de baja
                   </button>
-                ) : null}
+                </Permitido>
               </li>
             ))}
           </ul>

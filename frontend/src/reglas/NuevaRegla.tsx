@@ -3,7 +3,8 @@ import { useState, type FormEvent } from "react";
 
 import { pedir } from "../api/cliente";
 import type { ListaReglas, NuevaRegla as CuerpoNuevaRegla, Regla, TipoSoportado } from "../api/tipos";
-import { Aviso, type Resultado } from "./Aviso";
+import { AvisoRegion, type ResultadoAviso } from "../componentes/AvisoRegion";
+import { FormularioCampo } from "../componentes/FormularioCampo";
 import { leerParametros, mensajeDeError, parametrosATexto } from "./errores";
 import { CLAVE_REGLAS } from "./ReglaTarjeta";
 
@@ -22,7 +23,7 @@ export function NuevaRegla({ tipos }: { tipos: TipoSoportado[] }) {
   const [peso, setPeso] = useState("10");
   const [activa, setActiva] = useState(true);
   const [parametros, setParametros] = useState(parametrosIniciales(evaluables[0]));
-  const [resultado, setResultado] = useState<Resultado>(null);
+  const [resultado, setResultado] = useState<ResultadoAviso>(null);
   const [enviando, setEnviando] = useState(false);
   const tipo = tipos.find((t) => t.tipo === tipoElegido);
 
@@ -78,41 +79,48 @@ export function NuevaRegla({ tipos }: { tipos: TipoSoportado[] }) {
         Crear una regla
       </h2>
       <p className="subtitulo">Solo de un tipo que el motor ya sabe evaluar. El servidor asigna el identificador y la deja en la versión 1.</p>
-      <Aviso resultado={resultado} />
+      <AvisoRegion resultado={resultado} />
       <form className="form-regla" noValidate onSubmit={(e) => void enviar(e)} aria-label="Crear una regla">
-        <div className="campo">
-          <label htmlFor="nueva-codigo">Código</label>
-          <input id="nueva-codigo" type="text" placeholder="R-13" value={codigo} onChange={(e) => setCodigo(e.target.value)} />
+        <FormularioCampo etiqueta="Código">
+          <input type="text" placeholder="R-13" value={codigo} onChange={(e) => setCodigo(e.target.value)} />
+        </FormularioCampo>
+        <div className="campo-parametros">
+          <FormularioCampo etiqueta="Descripción">
+            <input type="text" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
+          </FormularioCampo>
         </div>
-        <div className="campo campo-parametros">
-          <label htmlFor="nueva-descripcion">Descripción</label>
-          <input id="nueva-descripcion" type="text" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
-        </div>
-        <div className="campo">
-          <label htmlFor="nueva-tipo">Tipo</label>
-          <select id="nueva-tipo" value={tipoElegido} onChange={(e) => elegirTipo(e.target.value)}>
+        <FormularioCampo etiqueta="Tipo">
+          <select value={tipoElegido} onChange={(e) => elegirTipo(e.target.value)}>
             {evaluables.map((t) => (
               <option key={t.tipo} value={t.tipo}>
                 {t.tipo}
               </option>
             ))}
           </select>
+        </FormularioCampo>
+        <FormularioCampo etiqueta="Umbral">
+          <input type="number" step="any" min="0" value={umbral} onChange={(e) => setUmbral(e.target.value)} />
+        </FormularioCampo>
+        <FormularioCampo etiqueta="Peso (0-100)">
+          <input type="number" step="1" min="0" max="100" value={peso} onChange={(e) => setPeso(e.target.value)} />
+        </FormularioCampo>
+        <div className="campo-parametros">
+          <FormularioCampo
+            etiqueta="Parámetros (JSON)"
+            ayuda={
+              tipo
+                ? `Umbral: ${tipo.umbral}. Parámetros que lee: ${tipo.parametros.length > 0 ? tipo.parametros.map((p) => `${p.nombre} (${p.descripcion})`).join("; ") : "ninguno"}.`
+                : undefined
+            }
+          >
+            <input type="text" value={parametros} onChange={(e) => setParametros(e.target.value)} />
+          </FormularioCampo>
         </div>
-        <div className="campo">
-          <label htmlFor="nueva-umbral">Umbral</label>
-          <input id="nueva-umbral" type="number" step="any" min="0" value={umbral} onChange={(e) => setUmbral(e.target.value)} />
-        </div>
-        <div className="campo">
-          <label htmlFor="nueva-peso">Peso (0-100)</label>
-          <input id="nueva-peso" type="number" step="1" min="0" max="100" value={peso} onChange={(e) => setPeso(e.target.value)} />
-        </div>
-        <div className="campo campo-parametros">
-          <label htmlFor="nueva-parametros">Parámetros (JSON)</label>
-          <input id="nueva-parametros" type="text" value={parametros} onChange={(e) => setParametros(e.target.value)} aria-describedby="nueva-ayuda" />
-        </div>
-        <div className="campo">
-          <label htmlFor="nueva-activa">Activa</label>
-          <input id="nueva-activa" type="checkbox" checked={activa} onChange={(e) => setActiva(e.target.checked)} />
+        <div className="campo campo-casilla">
+          <label htmlFor="nueva-activa">
+            <input id="nueva-activa" type="checkbox" checked={activa} onChange={(e) => setActiva(e.target.checked)} />
+            Activa
+          </label>
         </div>
         <div className="campo campo-acciones">
           <button type="submit" className="boton boton-primario" disabled={enviando}>
@@ -120,13 +128,6 @@ export function NuevaRegla({ tipos }: { tipos: TipoSoportado[] }) {
           </button>
         </div>
       </form>
-      <p className="nota-tecnica" id="nueva-ayuda">
-        {tipo ? (
-          <>
-            Umbral: {tipo.umbral}. Parámetros que lee: {tipo.parametros.length > 0 ? tipo.parametros.map((p) => `${p.nombre} (${p.descripcion})`).join("; ") : "ninguno"}.
-          </>
-        ) : null}
-      </p>
     </section>
   );
 }

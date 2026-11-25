@@ -1468,3 +1468,256 @@ code {
     overflow-x: auto;
   }
 }
+
+/* ---------- Pantallas migradas a los modulos (T-74, rama 2) ---------- */
+
+.cargando {
+  color: var(--color-texto-tenue);
+  padding: var(--espacio-3) 0;
+}
+
+/* Barra de decision del detalle: fija arriba, visible sin desplazarse. */
+.barra-decision {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espacio-2) var(--espacio-4);
+  background: var(--color-superficie);
+  border: 1px solid var(--color-borde);
+  border-radius: var(--radio);
+  box-shadow: var(--sombra);
+  padding: var(--espacio-2) var(--espacio-3);
+  margin-bottom: var(--espacio-4);
+}
+
+.barra-estado,
+.barra-acciones,
+.barra-siguiente {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espacio-2);
+}
+
+.barra-acciones {
+  flex: 1 1 24rem;
+}
+
+.barra-nota {
+  flex: 1 1 14rem;
+}
+
+.barra-nota label {
+  font-size: 0.75rem;
+}
+
+.barra-nota input {
+  width: 100%;
+}
+
+.barra-siguiente {
+  margin-left: auto;
+}
+
+.barra-aviso {
+  flex: 1 1 100%;
+}
+
+.barra-aviso:empty {
+  display: none;
+}
+
+.barra-aviso .mensaje {
+  margin: 0;
+}
+
+.barra-cerrada {
+  flex: 1 1 14rem;
+  margin: 0;
+}
+
+.cortes-plegados > summary {
+  cursor: pointer;
+  margin: var(--espacio-2) 0;
+}
+
+/* Cola por alerta como tabla: franja de severidad a la izquierda de la fila. */
+.fila-cola {
+  border-left: 5px solid var(--color-borde);
+}
+
+.fila-cola.severidad-CRITICA {
+  border-left-color: var(--color-critica);
+}
+
+.fila-cola.severidad-ALTA {
+  border-left-color: var(--color-alta);
+}
+
+.fila-cola.severidad-MEDIA {
+  border-left-color: var(--color-media);
+}
+
+.fila-cola:hover {
+  background: var(--color-fondo-tenue, #f3f4f6);
+}
+
+.tabla-responsiva .insignia {
+  white-space: nowrap;
+}
+
+/* Filtros: cada campo ocupa lo que necesita y baja de fila antes de desbordar. */
+.filtro-campos > .campo {
+  flex: 1 1 11rem;
+}
+
+.filtro-campos > .campo input,
+.filtro-campos > .campo select {
+  width: 100%;
+}
+
+.campo-casilla {
+  flex: 1 1 11rem;
+  justify-content: flex-end;
+}
+
+.campo-casilla label {
+  display: flex;
+  align-items: center;
+  gap: var(--espacio-2);
+}
+
+.campo-casilla input {
+  width: auto;
+}
+
+.resultados-cabecera {
+  margin-bottom: var(--espacio-3);
+}
+
+.area-json {
+  width: 100%;
+  font-family: var(--fuente-mono);
+}
+
+/* Formulario de politica: umbral y maximo arriba, cortes en un solo bloque debajo. */
+.form-politica {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 14rem));
+  gap: var(--espacio-3);
+  align-items: start;
+}
+
+.form-politica .form-regla input[type="number"],
+.form-politica input[type="number"] {
+  width: 100%;
+}
+
+.cortes-severidad {
+  grid-column: 1 / -1;
+  border: 1px solid var(--color-borde);
+  border-radius: var(--radio-chico);
+  padding: var(--espacio-3);
+  min-width: 0;
+}
+
+.corte-fila {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 9rem) minmax(0, 9rem);
+  gap: var(--espacio-3);
+  align-items: end;
+  margin-bottom: var(--espacio-2);
+}
+
+.corte-fila input[type="number"] {
+  width: 100%;
+}
+
+.form-politica .campo-acciones {
+  grid-column: 1 / -1;
+}
+
+.tarjeta-acceso {
+  max-width: 28rem;
+}
+
+.form-acceso {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.formulario-cuenta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espacio-3);
+  align-items: flex-end;
+  margin-bottom: var(--espacio-4);
+}
+
+@media (max-width: 720px) {
+  .barra-decision {
+    padding: var(--espacio-2);
+  }
+
+  .barra-siguiente {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .barra-siguiente .boton {
+    width: 100%;
+    text-align: center;
+  }
+
+  .barra-acciones .grupo-botones {
+    width: 100%;
+  }
+
+  .barra-acciones .grupo-botones .boton {
+    flex: 1 1 auto;
+  }
+
+  .filtro-campos > .campo {
+    flex-basis: 100%;
+  }
+
+  .filtro-acciones {
+    width: 100%;
+  }
+
+  .filtro-acciones .boton {
+    flex: 1 1 auto;
+  }
+
+  .form-politica {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .corte-fila {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .corte-nombre {
+    grid-column: 1 / -1;
+  }
+
+  .form-regla .campo,
+  .form-regla .campo-parametros {
+    flex: 1 1 100%;
+  }
+
+  .form-regla input[type="number"],
+  .form-regla input[type="text"],
+  .form-regla select {
+    width: 100%;
+  }
+
+  /* Las tablas de la pantalla de reglas pasan a tarjetas; el resto no se desborda. */
+  .formulario-cuenta .campo,
+  .formulario-cuenta input {
+    width: 100%;
+  }
+}

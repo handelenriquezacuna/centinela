@@ -152,4 +152,22 @@ describe("Red de mulas", () => {
     await usuario.click(screen.getByRole("button", { name: "Ver red" }));
     await waitFor(() => expect(screen.getByTestId("ruta")).toHaveTextContent("/red-mulas/6033-9001"));
   });
+
+  it("una cuenta sin salidas dice que no hay red y no deja un hueco", async () => {
+    const sin = respuestaGrafo();
+    instalarApiFalsa({
+      ...BASE,
+      "GET /api/v1/sesion": { cuerpo: SESION_AGENTE },
+      "GET /api/v1/red-mulas/6033-9001/grafo": { cuerpo: { ...sin.cuerpo, grafo: null } },
+    });
+    montar();
+    expect(await screen.findByText("Esta cuenta no tiene salidas registradas en la ventana.")).toBeInTheDocument();
+  });
+
+  it("si la red no carga ofrece reintentar", async () => {
+    instalarApiFalsa({ ...BASE, "GET /api/v1/sesion": { cuerpo: SESION_AGENTE }, "GET /api/v1/red-mulas/6033-9001/grafo": errorApi(500, "interno", "La base no respondio") });
+    montar();
+    expect(await screen.findByRole("alert")).toHaveTextContent("La base no respondio");
+    expect(screen.getByRole("button", { name: "Reintentar" })).toBeInTheDocument();
+  });
 });

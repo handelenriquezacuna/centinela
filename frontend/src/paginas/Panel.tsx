@@ -9,7 +9,12 @@ import { aplicarCaso } from "../casos";
 import { useAtajosDelPanel } from "../atajos";
 import { AvisoRezago } from "../componentes/AvisoRezago";
 import { AyudaAtajos } from "../componentes/AyudaAtajos";
+import { Cargando } from "../componentes/Cargando";
 import { EncabezadoPanel, type VistaPanel } from "../componentes/EncabezadoPanel";
+import { MarcoPagina } from "../componentes/MarcoPagina";
+import { VistaError } from "../componentes/VistaError";
+import { VistaVacia } from "../componentes/VistaVacia";
+import { mensajeDeError } from "../reglas/errores";
 import { useEventosAlertas } from "../tiempo-real/eventosAlertas";
 import { CasoTarjeta } from "./CasoTarjeta";
 import { PanelAlertas } from "./PanelAlertas";
@@ -143,7 +148,7 @@ function PanelCasos({ alAbrirAyuda }: { alAbrirAyuda: () => void }) {
 
   const pagina = consulta.data;
   return (
-    <>
+    <MarcoPagina id="panel" ancho="ancho">
       <EncabezadoPanel
         vista="casos"
         descripcion="Por cuenta destino: alertas abiertas agrupadas por la cuenta que las recibe, de mayor a menor severidad."
@@ -157,30 +162,27 @@ function PanelCasos({ alAbrirAyuda }: { alAbrirAyuda: () => void }) {
       <AvisoRezago />
 
       <section className="tarjeta" aria-label="Alertas agrupadas por cuenta destino">
-        {consulta.isPending ? <p role="status">Cargando cuentas destino…</p> : null}
-        {consulta.isError ? (
-          <div className="mensaje mensaje-error" role="alert">
-            {consulta.error.message}
-          </div>
-        ) : null}
+        {consulta.isPending ? <Cargando texto="Cargando cuentas destino…" /> : null}
+        {consulta.isError ? <VistaError error={mensajeDeError(consulta.error, "Las cuentas")} alReintentar={() => void consulta.refetch()} /> : null}
         {pagina ? (
-          <>
-            <p className="subtitulo" id="resumen-casos">
-              {pagina.elementos.length} de {pagina.total} cuentas destino con alertas abiertas.
-            </p>
-            <div id="casos">
-              {pagina.elementos.map((caso) => (
-                <CasoTarjeta key={caso.cuenta_destino} caso={caso} alTerminarLote={refrescarCaso} />
-              ))}
+          pagina.elementos.length === 0 ? (
+            <div id="casos-vacio">
+              <VistaVacia titulo="No hay cuentas destino con alertas abiertas." texto="Cuando una cuenta reciba alertas aparecerá aquí agrupada." />
             </div>
-            {pagina.elementos.length === 0 ? (
-              <p id="casos-vacio" className="cola-vacia">
-                No hay cuentas destino con alertas abiertas.
+          ) : (
+            <>
+              <p className="subtitulo" id="resumen-casos">
+                {pagina.elementos.length} de {pagina.total} cuentas destino con alertas abiertas.
               </p>
-            ) : null}
-          </>
+              <div id="casos">
+                {pagina.elementos.map((caso) => (
+                  <CasoTarjeta key={caso.cuenta_destino} caso={caso} alTerminarLote={refrescarCaso} />
+                ))}
+              </div>
+            </>
+          )
         ) : null}
       </section>
-    </>
+    </MarcoPagina>
   );
 }

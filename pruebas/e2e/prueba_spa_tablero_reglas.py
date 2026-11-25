@@ -121,9 +121,9 @@ def prueba_el_supervisor_ve_el_tablero_con_kpis_graficos_y_marca_de_calculo(
         expect(page.locator("#marca-calculo")).to_contain_text("(hora CR)")
         # Los numeros son los del rollup: la SPA no recalcula.
         expect(page.locator("#total-actual")).to_have_text("5")
-        expect(page.locator("#kpi-monto .cifra-grande")).to_have_text("₡1.250.000")
-        expect(page.locator("#kpi-tiempo .cifra-grande")).to_have_text("45 min 0 s")
-        expect(page.locator("#kpi-pendientes .cifra-grande")).to_have_text("3")
+        expect(page.locator("#kpi-monto .metrica-valor")).to_have_text("₡1.250.000")
+        expect(page.locator("#kpi-tiempo .metrica-valor")).to_have_text("45 min 0 s")
+        expect(page.locator("#kpi-pendientes .metrica-valor")).to_have_text("3")
         expect(page.locator("#kpi-tiempo")).to_contain_text("Tiempo hasta la decisión")
         expect(page.locator("#kpi-tasa")).to_contain_text("Tasa de confirmación")
         expect(page.locator("#kpi-pendientes")).to_contain_text("Pendientes")
@@ -163,7 +163,7 @@ def prueba_editar_el_umbral_de_una_regla_sube_la_version_y_conserva_la_anterior(
     assert [v["version"] for v in guardada["versiones_anteriores"]] == [1]
 
 
-def prueba_dos_supervisores_con_la_misma_pantalla_el_segundo_recibe_409_claro(
+def prueba_dos_supervisores_con_la_misma_pantalla_el_segundo_recibe_un_aviso_claro(
     page: Page, servidor_e2e: str, catalogo_intacto: None
 ) -> None:
     _entrar(page, servidor_e2e, SUPERVISOR)

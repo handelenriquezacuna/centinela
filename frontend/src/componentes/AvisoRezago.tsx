@@ -29,12 +29,12 @@ export function AvisoRezago() {
             <>
               {pendientes.toLocaleString("es-CR")} transacciones por evaluar
               {data.estimado ? `, unos ${data.estimado} para ponerse al día` : "; todavía sin ritmo medido"}. Las
-              alertas de esas transacciones aparecerán cuando D1 se ponga al día.
+              alertas de esas transacciones aparecerán cuando el detector se ponga al día.
             </>
           ) : (
             <>
               va unos {data.atraso_legible} detrás de la ingesta. Las alertas de las transacciones recientes
-              aparecerán cuando D1 se ponga al día.
+              aparecerán cuando el detector se ponga al día.
             </>
           )}
         </div>

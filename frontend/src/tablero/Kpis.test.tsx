@@ -41,10 +41,12 @@ describe("KPIs del supervisor", () => {
     expect(document.getElementById("kpi-monto")).toBeNull();
   });
 
-  it("sin alertas resueltas dice 'sin resueltas', no cero", () => {
+  it("sin alertas resueltas muestra un guion y una frase corta, no un titular ni un cero", () => {
     const nulo = { actual: null, previo: null, delta: null, porcentaje: null };
     const sin: ResumenTablero = { ...RESUMEN, kpi: { ...RESUMEN.kpi, tiempo_decision_s: nulo, tasa_confirmacion: nulo } };
     render(<Kpis resumen={sin} comando="x" />);
-    expect(screen.getAllByText("sin resueltas")).toHaveLength(2);
+    expect(screen.getAllByText("Todavía no hay alertas resueltas en el periodo.")).toHaveLength(2);
+    expect(screen.queryByText("sin resueltas")).toBeNull();
+    expect(within(document.getElementById("kpi-tiempo") as HTMLElement).getByText("—")).toHaveClass("metrica-valor");
   });
 });

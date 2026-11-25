@@ -59,7 +59,7 @@ def prueba_la_spa_entra_con_cookie_y_la_alerta_llega_sola_por_el_canal_json(
     assert fila.get_attribute("data-monto-crc") == "600000"
     assert fila.get_attribute("data-destino") == DESTINO_NUEVO
     expect(cuenta.locator(".caso-monto")).to_have_text("₡600.000")
-    expect(fila.locator(".alerta-fecha")).to_have_text(re.compile(r"^\d{2}/\d{2}/\d{4} \d{2}:\d{2}$"))
+    expect(fila.locator("time.hora")).to_have_text(re.compile(r"^\d{2}/\d{2}/\d{4} \d{2}:\d{2}$"))
     expect(page.locator("#aviso-nuevas")).to_contain_text(DESTINO_NUEVO)
     assert page.evaluate("window.__sinRecargar") is True
 

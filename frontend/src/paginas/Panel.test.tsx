@@ -158,7 +158,7 @@ describe("Panel por cuenta destino", () => {
     await usuario.click(within(dialogo).getByRole("button", { name: "Confirmar", hidden: true }));
 
     const resultado = await within(cuenta).findByText(/Pasaron 1 de 2/);
-    expect(resultado.closest("[data-resultado-lote]")).toHaveTextContent("ALR-002 (409): la tomó o resolvió otro agente");
+    expect(resultado.closest("[data-resultado-lote]")).toHaveTextContent("ALR-002: la tomó o resolvió otro agente");
     const lote = api.pedidos.find((p) => p.metodo === "POST");
     expect(lote?.cuerpo).toEqual({ alertas: ["ALR-001", "ALR-002"], destino: "en_revision", nota: "[lote en 6033-9001] misma mula" });
   });
@@ -171,5 +171,28 @@ describe("Panel por cuenta destino", () => {
     montar();
     const aviso = await screen.findByText(/Detección atrasada/);
     expect(aviso.closest("[role=status]")).toHaveTextContent("unos 2 min para ponerse al día");
+  });
+
+  it("sin cuentas abiertas muestra la vista vacia, no un hueco", async () => {
+    instalarApiFalsa({ "GET /api/v1/casos-destino": pagina(), "GET /api/v1/deteccion/rezago": { cuerpo: SIN_REZAGO } });
+    montar();
+    expect(await screen.findByText("No hay cuentas destino con alertas abiertas.")).toBeInTheDocument();
+  });
+
+  it("si la lista falla lo dice y reintenta", async () => {
+    const usuario = userEvent.setup();
+    let intentos = 0;
+    instalarApiFalsa({
+      "GET /api/v1/casos-destino": () => {
+        intentos += 1;
+        return intentos === 1 ? { estado: 500, cuerpo: { error: { codigo: "interno", mensaje: "La base no respondio", detalles: [] } } } : pagina(MULA);
+      },
+      "GET /api/v1/deteccion/rezago": { cuerpo: SIN_REZAGO },
+    });
+    montar();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("La base no respondio");
+    await usuario.click(screen.getByRole("button", { name: "Reintentar" }));
+    expect(await screen.findByRole("region", { name: /Cuenta 6033-9001/ })).toBeInTheDocument();
   });
 });

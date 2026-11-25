@@ -14,7 +14,8 @@ interface Propiedades {
 export function Variacion({ valor, hayPrevio, unidad = "", comoColones = false, breve = false }: Propiedades) {
   const cambio = sentido(valor, hayPrevio);
   if (cambio === "sin_dato" || valor.delta === null) {
-    return <>{breve ? "-" : "sin periodo anterior con que comparar"}</>;
+    // Sin periodo anterior el tablero lo dice una sola vez, arriba; aqui no se repite.
+    return <>{breve ? "-" : null}</>;
   }
   if (cambio === "igual") {
     return <>{breve ? "sin cambio" : "sin cambio contra el periodo anterior"}</>;

@@ -4,6 +4,10 @@ import { Navigate, useNavigate, useSearchParams } from "react-router";
 
 import { ErrorApi } from "../api/cliente";
 import { CLAVE_SESION, iniciarSesion, useSesion } from "../api/sesion";
+import { AvisoRegion } from "../componentes/AvisoRegion";
+import { EncabezadoPagina } from "../componentes/EncabezadoPagina";
+import { FormularioCampo } from "../componentes/FormularioCampo";
+import { MarcoPagina } from "../componentes/MarcoPagina";
 import { destinoSeguro } from "../destino";
 
 /**
@@ -45,48 +49,40 @@ export function Login() {
   }
 
   return (
-    <section className="tarjeta" aria-labelledby="titulo-login">
-      <h1 id="titulo-login" className="seccion-titulo">
-        Iniciar sesión
-      </h1>
-      {mensaje ? (
-        <div className="mensaje mensaje-error" role="alert">
-          {mensaje}
-        </div>
-      ) : null}
-      <form className="form-regla" onSubmit={(e) => void entrar(e)}>
-        <div className="campo">
-          <label htmlFor="agente-id">Identificador</label>
-          <input
-            type="text"
-            id="agente-id"
-            name="agente_id"
-            value={agenteId}
-            onChange={(e) => setAgenteId(e.target.value)}
-            placeholder="AGT-001"
-            autoComplete="username"
-            required
-            autoFocus
-          />
-        </div>
-        <div className="campo">
-          <label htmlFor="contrasena">Contraseña</label>
-          <input
-            type="password"
-            id="contrasena"
-            name="contrasena"
-            value={contrasena}
-            onChange={(e) => setContrasena(e.target.value)}
-            autoComplete="current-password"
-            required
-          />
-        </div>
-        <div className="grupo-botones">
-          <button type="submit" className="boton" disabled={enviando}>
-            Entrar
-          </button>
-        </div>
-      </form>
-    </section>
+    <MarcoPagina id="login">
+      <EncabezadoPagina id="login" titulo="Iniciar sesión" descripcion="Entre con su identificador y su contraseña para ver las alertas." />
+      <section className="tarjeta tarjeta-acceso">
+        <AvisoRegion resultado={mensaje ? { tipo: "error", error: { texto: mensaje, detalles: [] } } : null} />
+        <form className="form-regla form-acceso" onSubmit={(e) => void entrar(e)}>
+          <FormularioCampo etiqueta="Identificador">
+            <input
+              type="text"
+              name="agente_id"
+              value={agenteId}
+              onChange={(e) => setAgenteId(e.target.value)}
+              placeholder="AGT-001"
+              autoComplete="username"
+              required
+              autoFocus
+            />
+          </FormularioCampo>
+          <FormularioCampo etiqueta="Contraseña">
+            <input
+              type="password"
+              name="contrasena"
+              value={contrasena}
+              onChange={(e) => setContrasena(e.target.value)}
+              autoComplete="current-password"
+              required
+            />
+          </FormularioCampo>
+          <div className="grupo-botones">
+            <button type="submit" className="boton boton-primario" disabled={enviando}>
+              Entrar
+            </button>
+          </div>
+        </form>
+      </section>
+    </MarcoPagina>
   );
 }
