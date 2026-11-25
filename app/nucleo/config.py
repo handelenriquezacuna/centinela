@@ -213,6 +213,27 @@ class AjustesRasgosGrafo(BaseModel):
     vigencia_segundos: int = Field(default=60, ge=1)
 
 
+class AjustesPerfiles(BaseModel):
+    """Recalculo automatico de `perfiles_comportamiento` (H-21, T-76). Tecnico, no de negocio.
+
+    Los perfiles los leen R-01 y R-05, asi que recalcularlos cambia la deteccion: por eso
+    `activo` es false por omision y el recalculo es una decision, no un efecto de arrancar
+    la app. A mano siempre se puede: `python tareas.py perfiles`.
+
+    - `intervalo_segundos`: cada cuanto lo repite D3 cuando esta activo. Un perfil mira 90
+      dias; en una hora cambia en menos del 0,05 % de su historia, asi que mas seguido no
+      mueve el resultado y si cuesta: el pipeline lee todo el rango de `transacciones` y hace
+      dos `$lookup` por transaccion. Por eso no usa el ritmo de 10 segundos de los indicadores.
+    - `dias`: cuantos dias hacia atras mira el perfil.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    activo: bool = False
+    intervalo_segundos: int = Field(default=3600, ge=60)
+    dias: int = Field(default=90, ge=1, le=365)
+
+
 class AjustesSesion(BaseModel):
     """Sesion del portal y la API (H-25). Tecnico: duracion y forma de la cookie.
 
@@ -356,6 +377,7 @@ class Ajustes(BaseSettings):
     deteccion: AjustesDeteccion = AjustesDeteccion()
     indicadores: AjustesIndicadores = AjustesIndicadores()
     rasgos_grafo: AjustesRasgosGrafo = AjustesRasgosGrafo()
+    perfiles: AjustesPerfiles = AjustesPerfiles()
     sesion: AjustesSesion = AjustesSesion()
     portal: AjustesPortal = AjustesPortal()
     registro: AjustesRegistro = AjustesRegistro()

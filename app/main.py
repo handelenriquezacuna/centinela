@@ -46,6 +46,7 @@ from app.nucleo.config import Ajustes, obtener_ajustes
 from app.nucleo.db import crear_cliente, obtener_base
 from app.repos.deteccion import RepoDeteccion
 from app.repos.indicadores import RepoIndicadores
+from app.repos.perfiles import RepoPerfiles
 from app.repos.rasgos_grafo import RepoRasgosGrafo
 from app.repos.salud import exigir_conexion
 from app.seguridad.servicio import ServicioSesion
@@ -132,6 +133,9 @@ async def ciclo_vida(aplicacion: FastAPI) -> AsyncIterator[None]:
             supervisor,
             ajustes=ajustes.indicadores,
             repo_rasgos=RepoRasgosGrafo(base, ajustes.rasgos_grafo),
+            # T-76: perfiles solo si `perfiles.activo` (cambia lo que deciden R-01 y R-05).
+            repo_perfiles=RepoPerfiles(base) if ajustes.perfiles.activo else None,
+            ajustes_perfiles=ajustes.perfiles,
         ),
     )
 
