@@ -119,15 +119,167 @@ sequenceDiagram
 ```mermaid
 erDiagram
     CLIENTES ||--o{ CUENTAS : "posee"
-    CUENTAS ||--o{ TRANSACCIONES : "origina"
-    TRANSACCIONES ||--o| ALERTAS : "puede generar"
-    ALERTAS }o--|| AGENTES : "asignada a"
-    ALERTAS }o--o| CASOS : "escala a"
-    REGLAS_DETECCION ||--o{ ALERTAS : "justifica"
-    CLIENTES ||--|| PERFILES_COMPORTAMIENTO : "materializa"
-    LISTAS_RIESGO ||--o{ ALERTAS : "alimenta"
-    ALERTAS ||--o{ NOTIFICACIONES : "dispara"
+    CLIENTES ||--o| PERFILES_COMPORTAMIENTO : "materializa (_id = cliente_id)"
+    CUENTAS ||--o{ TRANSACCIONES : "origina (cuenta_origen)"
+    TRANSACCIONES ||--o| ALERTAS : "puede generar (transaccion_id)"
+    AGENTES |o--o{ ALERTAS : "asignada a (agente_id, opcional)"
+    CASOS |o--o{ ALERTAS : "agrupa (casos.alertas)"
+    REGLAS_DETECCION }o--o{ ALERTAS : "justifica (copia embebida)"
+    POLITICA_DETECCION |o--o{ ALERTAS : "rige (politica.politica_id)"
+    ALERTAS ||--o{ NOTIFICACIONES : "dispara (alerta_id)"
+    LISTAS_RIESGO |o--o{ TRANSACCIONES : "marca cuenta destino (numero SINPE)"
+    TRANSACCIONES |o..o{ DETECCION_ESTADO : "descarte (transaccion_id) o rasgo_grafo (cuenta)"
+    INDICADORES_DIARIOS ||..o{ ALERTAS : "resume por dia"
+
+    CLIENTES {
+        string _id PK "CLI-001"
+        string nombre
+        string cedula "unica"
+        date fecha_registro
+        int esquema_version
+    }
+    CUENTAS {
+        string _id PK "CTA-001"
+        string cuenta_sinpe "unica"
+        string cliente_id FK "CLI-001"
+        string entidad "opcional"
+        int esquema_version
+    }
+    PERFILES_COMPORTAMIENTO {
+        string _id PK "igual a cliente_id"
+        long promedio_crc
+        long maximo_crc
+        int num_transferencias
+        object horario_habitual "embebido: inicio y fin HH:MM"
+        array destinos_frecuentes "embebido: numeros SINPE"
+        int esquema_version
+    }
+    REGLAS_DETECCION {
+        string _id PK "REG-001"
+        string codigo "R-01, unica"
+        string descripcion
+        string tipo
+        long umbral "int, long o double"
+        object parametros "opcional"
+        int peso
+        bool activa
+        int version
+        array versiones_anteriores "embebido con historia"
+        int esquema_version
+    }
+    LISTAS_RIESGO {
+        string _id PK "RSK-001"
+        string cuenta "numero SINPE, unica"
+        string motivo
+        date fecha_reporte
+        bool vigente
+        int esquema_version
+    }
+    TRANSACCIONES {
+        string _id PK "TXN-001"
+        string cuenta_origen FK "CTA-001"
+        string cuenta_destino "numero SINPE"
+        string sinpe_origen "numero SINPE"
+        long monto_crc "colones enteros, 64 bits"
+        string moneda "CRC"
+        string canal "sinpe_movil"
+        date fecha "UTC"
+        object simulacion "solo generador, etiqueta oculta"
+        int esquema_version
+    }
+    AGENTES {
+        string _id PK "AGT-001"
+        string nombre
+        string rol "agente, supervisor o administrador"
+        bool activo
+        object credencial "embebida, opcional"
+        int esquema_version
+    }
+    ALERTAS {
+        string _id PK "ALR-001"
+        string transaccion_id FK "unica: idempotencia"
+        string cuenta_origen "numero SINPE, copia"
+        string cuenta_destino "numero SINPE, copia"
+        long monto_crc "copia"
+        string moneda "copia"
+        string cliente_nombre "copia"
+        array reglas_disparadas "embebido con version"
+        object politica "embebido, solo v2"
+        int puntaje
+        string severidad "MEDIA, ALTA o CRITICA"
+        string estado "maquina de estados"
+        string agente_id FK "opcional"
+        date fecha_creacion
+        array historial "embebido"
+        int esquema_version
+    }
+    CASOS {
+        string _id PK "CAS-001"
+        array alertas FK "ALR-001, referencias"
+        string estado "investigacion o cerrado"
+        date fecha_apertura "opcional"
+        string cuenta_destino "numero SINPE, opcional"
+        string agente_id FK "opcional"
+        int esquema_version
+    }
+    NOTIFICACIONES {
+        string _id PK "NOT-001"
+        string alerta_id FK "ALR-001"
+        string canal "correo o sms"
+        string estado_envio "pendiente, enviado o fallido"
+        date fecha
+        string detalle_error "opcional"
+        int esquema_version
+    }
+    INDICADORES_DIARIOS {
+        string _id PK "fecha YYYY-MM-DD"
+        string fecha "texto YYYY-MM-DD"
+        int total_alertas
+        object por_severidad "embebido"
+        object por_estado "embebido"
+        object por_agente "embebido"
+        object por_hora "embebido"
+        long decision_segundos_total
+        long monto_protegido_crc
+        long pendientes
+        date pendiente_mas_antigua
+        date calculado_en
+        int esquema_version
+    }
+    POLITICA_DETECCION {
+        string _id PK "POL-001"
+        string descripcion
+        bool vigente "unica con true"
+        int version
+        int umbral_alerta
+        int puntaje_maximo
+        array cortes_severidad "embebido"
+        object notificacion "embebido"
+        date vigente_desde
+        array versiones_anteriores "embebido, opcional"
+        int esquema_version
+    }
+    DETECCION_ESTADO {
+        string _id PK "disparador, disparador:TXN o disparador:cuenta"
+        string clase "reanudacion, descarte, rasgo_grafo o rasgo_grafo_corrida"
+        string disparador
+        object token_reanudacion "solo reanudacion"
+        string transaccion_id FK "solo descarte"
+        string cuenta "solo rasgo_grafo"
+        int fan_in "solo rasgo_grafo"
+        long monto_recibido_crc "solo rasgo_grafo"
+        date actualizado_en "reanudacion, descarte y corrida"
+        int esquema_version
+    }
 ```
+
+`deteccion_estado` no es una coleccion de dominio: guarda cuatro clases de documento,
+distinguidas por `clase`. `reanudacion` tiene `_id` = nombre del disparador
+(`d1_deteccion`) y guarda el token del change stream. `descarte` tiene `_id` =
+`disparador:TXN-NNN` y es un evento que agoto los reintentos. `rasgo_grafo` tiene
+`_id` = `d3_rasgos_grafo:<cuenta SINPE>` y guarda los rasgos de grafo de una cuenta
+destino. `rasgo_grafo_corrida` tiene `_id` = `d3_rasgos_grafo` y dice de que rango son
+esos rasgos.
 
 | Decisión | Elección | Por qué |
 |---|---|---|
@@ -136,6 +288,27 @@ erDiagram
 | Reglas disparadas dentro de la alerta | **Copia embebida con versión** | La alerta debe poder explicarse dentro de un año, aunque la regla haya cambiado |
 | Perfil de comportamiento | **Colección materializada** | Se calcula caro y se lee en cada transacción |
 | Indicadores | **Colección materializada** | El tablero abre al instante; nada se agrega dentro de la petición |
+
+### Las 13 colecciones
+
+Once de dominio (Práctica 1) y dos de operación. Índices tomados de
+`scripts/semilla/02-indices.js`; `_id` es el índice por defecto cuando no hay otro.
+
+| Colección | Para qué sirve | Embebe o referencia | Índice principal |
+|---|---|---|---|
+| `clientes` | Titulares de cuentas; búsqueda por cédula en atención al cliente | Referenciada por `cuentas.cliente_id` | `idx_clientes_cedula` (único) |
+| `cuentas` | Cuentas SINPE Móvil de cada cliente | Referencia a `clientes`; `cuenta_sinpe` es el número SINPE | `idx_cuentas_sinpe` (único); también `idx_cuentas_cliente` |
+| `perfiles_comportamiento` | Hábitos de cada cliente, leídos en cada transacción | Embebe `horario_habitual` y `destinos_frecuentes`; `_id` = `cliente_id` | `_id` (sin índice adicional) |
+| `reglas_deteccion` | Catálogo de reglas R-xx con umbral, peso y versión | Embebe `versiones_anteriores` (historia de la regla) | `idx_reglas_codigo` (único) |
+| `listas_riesgo` | Cuentas marcadas como mula (regla R-07) | Referencia por número SINPE a `transacciones.cuenta_destino` | `idx_listas_riesgo_cuenta` (único) |
+| `transacciones` | Transferencias SINPE Móvil: el hecho original | Referencia a `cuentas` (`cuenta_origen`); embebe `simulacion` (solo generador) | `idx_transacciones_cuenta_origen_fecha` |
+| `agentes` | Quién atiende las alertas y con qué rol | Embebe `credencial` (hash y sal) | `idx_agentes_rol` |
+| `alertas` | Una alerta por transacción: puntaje, severidad, estado e historial | Embebe `historial`, `reglas_disparadas` (copia con versión) y `politica`; referencia `transaccion_id` y `agente_id` | `idx_alertas_estado_severidad_fecha` (panel); `idx_alertas_transaccion_id` (único, idempotencia) |
+| `casos` | Agrupa alertas escaladas, por cuenta destino | Referencia alertas por `_id` (arreglo `alertas`) y al agente | `idx_casos_estado` |
+| `notificaciones` | Correo o SMS enviado por una alerta | Referencia a `alertas` por `alerta_id` | `idx_notificaciones_alerta` |
+| `indicadores_diarios` | Resumen del día para el tablero | Embebe los contadores (`por_severidad`, `por_estado`, `por_agente`, `por_hora`) | `_id` = fecha (sin índice adicional) |
+| `politica_deteccion` (operación) | Cortes de severidad y umbral de alerta, con historia | Embebe `cortes_severidad`, `notificacion` y `versiones_anteriores` | `idx_politica_vigente` (único parcial sobre `vigente: true`) |
+| `deteccion_estado` (operación) | Token de reanudación del motor, descartes y rasgos de grafo | Referencia `transaccion_id` (descarte) y cuenta SINPE (rasgo) | `_id` natural (sin índice adicional) |
 
 ## 6. Evolución: cómo llegamos ahí
 
