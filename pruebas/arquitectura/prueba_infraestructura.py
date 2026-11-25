@@ -71,7 +71,7 @@ def prueba_los_nodos_y_la_api_se_reinician_solos(compose: dict) -> None:
     y el replica set se cae hasta que alguien corre `up` a mano."""
     servicios = compose["services"]
 
-    for nodo in (*NODOS, "app"):
+    for nodo in (*NODOS, "api", "web"):
         assert servicios[nodo].get("restart") == "unless-stopped", (
             f"{nodo} no declara restart: unless-stopped"
         )
@@ -82,7 +82,8 @@ def prueba_los_tres_nodos_declaran_su_volumen(compose: dict) -> None:
     `down` normal se los lleva."""
     declarados = set(compose.get("volumes") or {})
 
-    assert declarados == {f"{nodo}data" for nodo in NODOS}
+    # Los tres de los nodos y el de los respaldos de la API (D-74).
+    assert declarados == {*(f"{nodo}data" for nodo in NODOS), "respaldos"}
 
 
 def prueba_el_proyecto_tiene_nombre_explicito(compose: dict) -> None:
@@ -108,38 +109,40 @@ def prueba_los_nodos_comparten_el_espacio_de_red_del_primero(compose: dict) -> N
         assert f"127.0.0.1:{puerto}" in publicados, f"mongo1 no publica {puerto} en 127.0.0.1"
 
 
-def prueba_el_servicio_app_comparte_el_espacio_de_red_de_mongo1(compose: dict) -> None:
-    """La segunda modalidad de arranque (H-00B): `app` entra al espacio de red de
-    mongo1 igual que mongo2 y mongo3, y NO publica su propio puerto.
+def prueba_la_api_y_el_portal_comparten_el_espacio_de_red_de_mongo1(compose: dict) -> None:
+    """La segunda modalidad de arranque (H-00B, D-73): `api` y `web` entran al espacio de
+    red de mongo1 igual que mongo2 y mongo3, y NO publican su propio puerto.
 
     Un servicio con `network_mode: service:X` no tiene pila de red propia, asi que no
-    puede declarar `ports`: el puerto 8000 tiene que estar en la lista de mongo1, el
-    dueno del espacio de red. Es lo mismo que ya hace 27019 y 27020 por mongo2 y
-    mongo3, aplicado a la API.
+    puede declarar `ports`: el del portal tiene que estar en la lista de mongo1, el dueno
+    del espacio de red. nginx escucha en 8080 y mongo1 lo publica como el 8000 de siempre.
     """
     servicios = compose["services"]
 
-    assert "app" in servicios, "falta el servicio app en infra/docker-compose.yml"
-    assert servicios["app"]["network_mode"] == "service:mongo1"
-    assert "ports" not in servicios["app"], (
-        "el puerto de la API se publica en mongo1, no en app: un servicio con "
-        "network_mode: service:X no puede declarar sus propios ports"
+    for servicio in ("api", "web"):
+        assert servicio in servicios, f"falta el servicio {servicio} en infra/docker-compose.yml"
+        assert servicios[servicio]["network_mode"] == "service:mongo1"
+        assert "ports" not in servicios[servicio], (
+            f"{servicio}: el puerto se publica en mongo1, no en el servicio"
+        )
+
+    assert "127.0.0.1:8000:8080" in servicios["mongo1"]["ports"], (
+        "mongo1 tiene que publicar el portal (nginx, 8080) como 127.0.0.1:8000"
+    )
+    assert not any(str(p).endswith(":8000") for p in servicios["mongo1"]["ports"]), (
+        "la API (8000 dentro de la red compartida) no se publica: solo la alcanza web"
     )
 
-    assert "127.0.0.1:8000:8000" in servicios["mongo1"]["ports"], (
-        "mongo1 tiene que publicar tambien el 8000 de la API"
-    )
 
-
-def prueba_el_servicio_app_no_arranca_con_un_up_sin_argumentos(compose: dict) -> None:
-    """`app` lleva un perfil explicito para no sorprender a quien solo quiere Mongo.
+def prueba_la_api_y_el_portal_no_arrancan_con_un_up_sin_argumentos(compose: dict) -> None:
+    """`api` y `web` llevan un perfil explicito para no sorprender a quien solo quiere Mongo.
 
     La modalidad A (Mongo en Compose, Python en el host) es la que el equipo usa a
     diario y es la que un `docker compose up` sin mas tiene que seguir levantando.
-    Sin `profiles`, agregar `app` habria convertido ese comando en otra cosa para
-    todo el mundo.
+    Sin `profiles`, agregarlos habria convertido ese comando en otra cosa para todo el mundo.
     """
-    assert compose["services"]["app"].get("profiles") == ["app"]
+    for servicio in ("api", "web"):
+        assert compose["services"][servicio].get("profiles") == ["app"]
 
 
 def prueba_el_replica_set_se_llama_rsfraude(compose: dict) -> None:

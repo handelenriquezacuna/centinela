@@ -19,6 +19,7 @@ from app.api.rutas import (
     lecturas,
     listas_riesgo,
     reglas,
+    respaldos,
     sse,
     transacciones,
 )
@@ -37,5 +38,6 @@ enrutador_v1.include_router(inteligencia.enrutador)
 enrutador_v1.include_router(lecturas.enrutador)
 enrutador_v1.include_router(listas_riesgo.enrutador)
 enrutador_v1.include_router(transacciones.enrutador)
+enrutador_v1.include_router(respaldos.enrutador)
 
 __all__ = ["enrutador_v1"]

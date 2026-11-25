@@ -428,31 +428,75 @@ python tareas.py datos-demo
 Para la demo y la defensa. El navegador entra por el puerto publicado, igual que en la
 modalidad A, y **la URI del YAML no cambia ni una letra** entre las dos.
 
-La imagen (`infra/Dockerfile`, T-67) se construye en dos etapas. La primera es
-`node:26.8.1-slim` (la versión de `frontend/.nvmrc`; con `engine-strict` otra haría fallar
-`npm ci`): instala el lock con `npm ci` y corre `npm run build`. La segunda es la de
-siempre, `python:3.13-slim` con uv, y solo copia de la primera `app/estaticos/spa/`: la
-imagen que corre no lleva Node ni npm y no usa la red. `.dockerignore` deja afuera
-`frontend/node_modules/` y cualquier build del host, así que la imagen lleva siempre el
-build de las fuentes versionadas. Corre como el usuario `centinela` (uid 10001, sin
-privilegios) y declara `HEALTHCHECK` sobre `/salud` con Python de la propia imagen (no
-trae curl), así que `docker compose up --wait` espera a que la API conteste. Si cambia el
-`.nvmrc`, cambia la línea `FROM node:` del Dockerfile.
+Son **dos servidores** (D-73), cada uno en su contenedor, construidos del mismo
+`infra/Dockerfile` con `target: web` y `target: api`:
 
-Eso último no sale gratis, y conviene entender por qué funciona. El servicio `app` entra
-al espacio de red de `mongo1` con `network_mode: service:mongo1`, exactamente como ya
-hacen `mongo2` y `mongo3`. Por eso **el puerto 8000 se publica en la lista `ports` de
-`mongo1`, no en la de `app`**: un servicio que toma prestada la pila de red de otro no
-puede declarar puertos propios, porque no tiene pila propia. El resultado es que
-`localhost:27018` y `localhost:8000` significan lo mismo desde el host, desde `mongo1` y
-desde el contenedor de la API.
+| Servicio | Imagen | Qué hace | Puerto |
+|---|---|---|---|
+| `web` | `nginxinc/nginx-unprivileged:1.29.8-alpine` fijada por tag exacto **y digest** | Sirve la SPA construida y reenvía `/api`, `/estado`, `/salud` y `/openapi.json` a `api`. Sin Python, sin Node, sin driver de Mongo, sin variables de entorno | 8080 dentro; el host lo ve en `127.0.0.1:8000` |
+| `api` | `python:3.13-slim` con uv | `uvicorn app.main:app`, un worker, usuario `centinela` (uid 10001). **Sin la SPA** y con `mongodump` y `mongorestore` | 8000 dentro; **no se publica** |
 
-La alternativa —reiniciar el replica set anunciando nombres de Docker— rompería el acceso
-desde el host y obligaría a editar el archivo `hosts` en Windows, que es justo lo que esta
-topología existe para evitar.
+El Dockerfile tiene cuatro etapas: `spa` (`node:26.8.1-slim`, la versión de
+`frontend/.nvmrc`; instala el lock con `npm ci` y corre `npm run build`), `herramientas`
+(baja las MongoDB Database Tools con versión y sha256 fijos), `web` y `api`. La imagen que
+corre no lleva Node ni usa la red. `.dockerignore` deja afuera `frontend/node_modules/` y
+cualquier build del host.
 
-`app` lleva `profiles: ["app"]`, así que un `docker compose up` sin argumentos sigue
-levantando solo el replica set. Nadie se encuentra un contenedor nuevo sin pedirlo.
+**Por qué la API no lleva la SPA.** La SPA se sirve completa desde `web`; copiarla a la
+API sumaría peso y una segunda copia que mantener. Lo que se pierde es que las rutas de
+página ya no pasan por el guardia de la API: `/panel` devuelve el mismo `index.html` a
+cualquiera, sin datos (igual que `/estaticos`, público por construcción). La sesión y los
+permisos se siguen decidiendo en cada endpoint de la API, y la SPA pregunta
+`GET /api/v1/sesion` para dibujar o negar una pantalla. Esto vale solo en Compose; en la
+modalidad A (`uvicorn` en el host) FastAPI sigue sirviendo la SPA y el guardia de páginas
+sigue igual.
+
+**La red.** Los dos servicios entran al espacio de red de `mongo1` con
+`network_mode: service:mongo1`, exactamente como ya hacen `mongo2` y `mongo3`. El motivo
+es el de siempre: los miembros del replica set se anuncian como `localhost:27018-27020`
+(`scripts/init-replicaset.js`) y el driver, al descubrir el conjunto, reconecta a esos
+nombres; solo en el espacio de red de `mongo1` `localhost:27018` es el nodo. Cualquier
+otra red obligaría a anunciar los miembros con otros nombres y rompería la modalidad A,
+que usa los mismos nombres desde el host. A cambio, `web` alcanza a `api` en
+`127.0.0.1:8000` sin que la API se publique, y **el puerto del portal se publica en la
+lista `ports` de `mongo1`, no en la de `web`**: un servicio que toma prestada la pila de
+red de otro no puede declarar puertos propios. `mongo1` publica `127.0.0.1:8000:8080`
+(nginx), de modo que `http://localhost:8000` sigue siendo el portal en las dos
+modalidades. La misma URI del YAML sirve en las dos.
+
+"`web` no tiene acceso a Mongo" se cumple por contenido y no por aislamiento de red
+(comparte el de `mongo1`): no recibe URI, claves ni volúmenes, no lleva driver, y su
+configuración solo conoce a la API. Lo fija `pruebas/arquitectura/prueba_dos_servidores.py`.
+La alternativa, reiniciar el replica set anunciando nombres de Docker, rompería el acceso
+desde el host y obligaría a editar el archivo `hosts` en Windows.
+
+**Lo que hace nginx** (`infra/nginx/`):
+
+- **Mismo origen.** El navegador habla con un solo servidor: la cookie HttpOnly
+  SameSite=Strict de la sesión y la tabla de permisos no cambian.
+- **SSE.** `/api/v1/alertas/eventos` (y `/flujo`, el canal HTML de HTMX) salen con
+  `proxy_buffering off`, `proxy_cache off`, `gzip off`, `X-Accel-Buffering: no` y
+  `proxy_read_timeout 24h`. Sin eso nginx acumula la respuesta y el panel no ve nada.
+- **SPA.** Toda ruta de página (`/`, `/login`, `/panel`, `/detalle/...`, `/busqueda`,
+  `/red-mulas/...`, `/tablero`, `/reglas`, `/administracion/...` y las que vengan) recibe
+  `index.html` sin caché. Un archivo con extensión que no existe es 404, no HTML.
+- **Caché.** `/estaticos/spa/assets/` (con hash en el nombre) un año, `immutable`;
+  `centinela.css` y el resto se revalidan.
+- **Seguridad.** `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`,
+  `Permissions-Policy` y una CSP sin CDN: `default-src 'self'`, `script-src 'self'`,
+  `style-src 'self' 'unsafe-inline'` (React escribe atributos `style`), `frame-ancestors
+  'none'`. Verificado con Chromium contra el nginx real: sin violaciones de la CSP.
+- **Respaldos.** `/api/v1/respaldos` tiene un `proxy_read_timeout` de 1900 s: crear y
+  verificar corren `mongodump` y `mongorestore` dentro de la petición.
+
+Cada servicio declara `HEALTHCHECK` (el de `web` es `/nginx-salud`, propio de nginx; el de
+`api` es `/salud`), `restart: unless-stopped`, sistema de archivos de solo lectura (`/tmp`
+en tmpfs), `cap_drop: ALL` y `no-new-privileges`. `docker compose up --wait` espera a que
+los dos estén sanos.
+
+`api` y `web` llevan `profiles: ["app"]`, así que un `docker compose up` sin argumentos
+sigue levantando solo el replica set. Nadie se encuentra contenedores nuevos sin pedirlos.
+`python tareas.py abajo` los baja también.
 
 ---
 
@@ -462,7 +506,7 @@ levantando solo el replica set. Nadie se encuentra un contenedor nuevo sin pedir
 |---|---|
 | `python tareas.py instalar` | `uv sync` con las versiones exactas del lock |
 | `python tareas.py arriba` | Levanta el replica set, lo inicializa y espera al primario. Con la SPA por omisión, si falta su build lo construye (T-67) |
-| `python tareas.py arriba --con-app` | Lo mismo, más la API dentro de Compose (modalidad B) |
+| `python tareas.py arriba --con-app` | Lo mismo, más `api` y `web` (nginx con la SPA) dentro de Compose (modalidad B) |
 | `python tareas.py abajo [--borrar-datos]` | Lo apaga. Con la bandera, borra también los volúmenes |
 | `python tareas.py estado` | Estado de los tres nodos |
 | `python tareas.py dev` | La API en el host, con recarga. Si falta el build de la SPA lo construye antes (`npm ci` + build); si es más viejo que `frontend/`, avisa (T-67) |
@@ -470,6 +514,7 @@ levantando solo el replica set. Nadie se encuentra un contenedor nuevo sin pedir
 | `python tareas.py front` | `npm ci` y `npm run build` de `frontend/`: deja la SPA en `app/estaticos/spa/` (T-61) |
 | `python tareas.py datos-demo` | Siembra y carga el conjunto de demo |
 | `python tareas.py demo-reiniciar --si` | Deja la base en el estado de la defensa, conservando las credenciales de login |
+| `python tareas.py restaurar --archivo <x> --si [--base b]` | Restaura un respaldo sobre la base viva, con respaldo previo automático y conteos antes y después (D-74). Sin `--si` no hace nada |
 | `python tareas.py pruebas [--tipo ...] [--sin-mongo]` | Las pruebas, por tipo |
 | `python tareas.py verificar` | Instala y prueba: lo que se corre antes de pedir revisión |
 
@@ -876,7 +921,7 @@ CENTINELA_PORTAL__INTERFAZ=htmx python tareas.py dev          # macOS y Linux
 $env:CENTINELA_PORTAL__INTERFAZ="htmx"; python tareas.py dev   # Windows (PowerShell)
 ```
 
-Con la API en Compose (modalidad B), la misma variable en el servicio `app`. Para que
+Con la API en Compose (modalidad B), la misma variable en el servicio `api` (el portal HTMX no existe detrás de `web`: nginx solo sirve la SPA). Para que
 quede fijo en una máquina, `portal: {interfaz: htmx}` en `config/centinela.local.yml`.
 Las mismas URLs, la misma sesión (la cookie es la misma) y los mismos datos: solo cambia
 quién dibuja. Para volver a la SPA, quitar la variable.
@@ -1990,3 +2035,93 @@ probado y es la razon de dejarlo apagado: si el recalculo corre cuando TXN-001 y
 alerta todavia no (D1 sin procesarla, o la demo reiniciada sin alertas), TXN-001 entra al perfil, el
 promedio de Maria pasa a 280.000 y R-01 deja de dispararse. Ademas, los clientes que no tenian perfil
 (CLI-002 a CLI-004 del demo) lo reciben, y R-01 y R-05 pasan de "no evaluada" a evaluar.
+
+---
+
+## Respaldos de la base (D-74, Unidad 8.6)
+
+Un administrador puede crear un respaldo, verificarlo, y ver el comando para restaurarlo,
+desde Administracion > Respaldos (`/administracion/respaldos`) en el portal. Restaurar sobre la base viva **no** es una ruta ni un botón.
+
+### Endpoints (solo `administrador`, permiso `respaldos`)
+
+| Método y ruta | Qué hace | Respuestas |
+|---|---|---|
+| `GET /api/v1/respaldos` | Lista los respaldos del directorio, el más reciente primero, con su manifiesto y `en_curso` | 200 |
+| `POST /api/v1/respaldos` | `mongodump --archive=<id>.gz --gzip --db <base>` y su manifiesto | 201, 409 (otra operación en curso), 500 (la herramienta falló) |
+| `POST /api/v1/respaldos/{respaldo_id}/verificar` | Restaura en una base temporal, compara conteos, la borra y guarda el resultado | 200 (el resultado va en `verificacion`, también si es `fallida`), 404, 409, 422 |
+
+La pagina `/administracion/respaldos` es del permiso `administracion` (area de Administracion) y la API del permiso `respaldos`. Agente y supervisor reciben 403 (`prueba_permisos.py` lo recorre desde la tabla y
+`prueba_respaldos_api.py` lo afirma). El identificador es `RSP-20261124T153012Z` y la ruta
+lo valida con ese patrón, así que no hay forma de salirse del directorio.
+
+### Qué guarda cada respaldo
+
+Dos archivos en `respaldos.directorio` (por omisión `respaldos/` en la raíz del repo,
+ignorada por git; en Compose, el volumen `respaldos` montado en `/respaldos`):
+`<id>.gz` (el archivo de `mongodump`, permisos 600) y `<id>.json` (el manifiesto).
+**No hay colección nueva**: el contrato fija 13.
+
+El manifiesto lleva `creado_utc` (UTC), `creado_por` (el agente de la sesión),
+`base`, `archivo`, `tamano_bytes`, `sha256`, la versión de `mongodump`, `esquema_version`
+del manifiesto, y los documentos por colección **antes y después** del dump
+(`documentos_por_coleccion`, `documentos_al_terminar`): la base viva sigue recibiendo
+transacciones mientras `mongodump` lee, así que la verificación acepta lo restaurado entre
+los dos conteos. En una base en reposo son iguales y se exige igualdad exacta. Después de
+verificar, `verificacion` lleva el resultado, las diferencias por colección y si la base
+temporal quedó borrada.
+
+### Cómo verifica
+
+1. Comprueba el sha256 y el tamaño del archivo contra el manifiesto.
+2. Borra restos de una verificación anterior y corre
+   `mongorestore --nsFrom '<base>.*' --nsTo '<base>_verificacion.*'`.
+3. Cuenta los documentos restaurados y los compara con el manifiesto.
+4. **Borra la base temporal siempre** (también si algo falla) y comprueba que quedó vacía.
+5. Guarda el resultado en el manifiesto y lo anota en `centinela.auditoria`.
+
+La base temporal es `<base>_verificacion` y no una por respaldo: el usuario de respaldo solo
+tiene permisos sobre esa base, y una operación a la vez es además la regla.
+
+### Reglas del servicio
+
+- **Una operación a la vez** por proceso: la segunda es 409 `conflicto`.
+- **No bloquea el bucle de eventos**: `mongodump` y `mongorestore` corren como subprocesos
+  asincrónicos (D1 y el canal SSE siguen latiendo; una prueba lo mide). Tope de tiempo:
+  `respaldos.tiempo_maximo_segundos`; vencido, se mata el grupo de procesos.
+- **La URI no va en la línea de comandos** (se vería en `ps`): se escribe en un archivo
+  temporal de permisos 600 que se pasa con `--config` y se borra al terminar.
+- **Auditoría**: cada respaldo y cada verificación quedan en el log `centinela.auditoria`
+  con el agente.
+
+### Quién respalda: el usuario `centinela_respaldo`
+
+`centinela_app` no alcanza: puede leer pero no crear colecciones ni borrar bases, y la
+verificación necesita las dos cosas en la base temporal. `04-usuarios.js` crea
+`centinela_respaldo` con el rol `read` sobre `antifraude` y `dbOwner` sobre
+`antifraude_verificacion` (nada más; no escribe en `antifraude`). Su contraseña es
+`MONGO_CLAVE_RESPALDO` en `.env`; `tareas.py` la agrega sola a un `.env` existente y arma
+`CENTINELA_RESPALDOS__URI`. Sin ella, los respaldos usan el cliente de la app (sirve en un
+nodo sin autenticación: dump sí, verificación no). Es un segundo cliente de Mongo, creado
+en el lifespan junto al primero y solo si `respaldos.uri` está puesta.
+
+**Una base asegurada antes de este cambio** necesita correr una vez `python tareas.py
+asegurar`: detecta que falta el usuario y vuelve a asegurar (idempotente, sin tocar los
+volúmenes), porque dar roles sobre otra base pide la autenticación apagada un momento.
+
+### Restaurar: `python tareas.py restaurar --archivo <x> --si`
+
+Es lo único que reemplaza datos reales, por eso es un comando. Entra con `centinela_admin`
+y: (1) cuenta los documentos, (2) hace un **respaldo previo automático**
+(`respaldos/previo-restauracion-<fecha>.gz`), (3) `mongorestore --drop`, (4) vuelve a
+contar y compara con el manifiesto si existe. Sin `--si` no hace nada. La vuelta atrás es
+restaurar el respaldo previo con el mismo comando. `--archivo` acepta una ruta, un nombre
+dentro de `respaldos/` o un `RSP-...`. Un respaldo hecho con la API en Compose vive en el
+volumen: `docker compose -f infra/docker-compose.yml cp api:/respaldos/<id>.gz respaldos/`.
+
+### Imágenes
+
+`mongodump` y `mongorestore` son las MongoDB Database Tools 100.20.1, el binario oficial
+verificado por sha256 (en `infra/Dockerfile` y en el CI, los mismos valores). Agregan unos
+**44 MB** a la imagen `api` (los dos binarios, 40,7 MB, y `libgssapi-krb5-2`, 2,9 MB, que
+piden y la imagen slim no trae). La imagen `web` pesa unos 82 MB (nginx alpine más la SPA).

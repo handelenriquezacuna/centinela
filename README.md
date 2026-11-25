@@ -41,8 +41,8 @@ es la SPA React servida por el mismo proceso (panel, detalle, red de mulas, bús
 tablero y reglas). `dev` vuelve a construirla si falta y avisa si quedó más vieja que
 `frontend/`.
 
-Todo dentro de Docker (la imagen construye la SPA en su propia etapa de Node):
-`python tareas.py arriba --con-app`, y la misma URL.
+Todo dentro de Docker (nginx sirve la SPA, construida en una etapa de Node, y reenvia a la
+API; son dos contenedores, `web` y `api`): `python tareas.py arriba --con-app`, y la misma URL.
 
 **Respaldo HTMX** (hasta el 2 de diciembre, T-68): el portal anterior, Jinja + HTMX,
 sigue disponible en un paso y sin tocar archivos:

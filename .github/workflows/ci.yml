@@ -199,6 +199,20 @@ jobs:
       - name: Instalar mongosh en el runner
         run: npm install -g mongosh@2.9.2 && mongosh --version
 
+      # D-74: los respaldos corren mongodump y mongorestore de verdad (integracion y e2e). Son
+      # las MongoDB Database Tools con version y sha256 fijos, los mismos de infra/Dockerfile
+      # (la imagen de la API instala exactamente estos binarios).
+      - name: Instalar mongodump y mongorestore en el runner
+        run: |
+          set -euo pipefail
+          version=100.20.1
+          nombre="mongodb-database-tools-ubuntu2404-x86_64-$version"
+          curl -fsSL "https://fastdl.mongodb.org/tools/db/$nombre.tgz" -o /tmp/herramientas.tgz
+          echo "20f43dcaa37f5a4841ac5a91da685a488a5ebbd81113c018e25a6b544cc350ea  /tmp/herramientas.tgz" | sha256sum -c -
+          sudo tar -xzf /tmp/herramientas.tgz -C /usr/local/bin --strip-components=2 \
+            "$nombre/bin/mongodump" "$nombre/bin/mongorestore"
+          mongodump --version | head -1
+
       - name: Compuerta -- pruebas de integracion (Mongo real, change streams)
         env:
           CENTINELA_MONGO__URI: "mongodb://localhost:27018/?replicaSet=rsfraude"
@@ -232,6 +246,14 @@ jobs:
           CENTINELA_MONGO__URI: "mongodb://localhost:27018/?replicaSet=rsfraude"
           CENTINELA_EXIGIR_MONGO: "1"
         run: uv run pytest -m e2e -rs
+
+      # D-73: las dos imagenes (web con nginx y la SPA, api con mongodump) tienen que
+      # construirse. Es la unica compuerta que prueba el Dockerfile.
+      - name: Compuerta -- construir las imagenes web y api
+        run: |
+          set -euo pipefail
+          docker build -f infra/Dockerfile --target web -t centinela-web:ci .
+          docker build -f infra/Dockerfile --target api -t centinela-api:ci .
 
       - name: Subir las trazas de Playwright si algo fallo
         if: failure()

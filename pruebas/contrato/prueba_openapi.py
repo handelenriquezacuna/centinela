@@ -53,6 +53,8 @@ def prueba_estan_publicadas_las_rutas_decididas() -> None:
         "/api/v1/red-mulas/{cuenta}/propuestas/{propuesta}",
         "/api/v1/listas-riesgo",
         "/api/v1/listas-riesgo/{riesgo_id}",
+        "/api/v1/respaldos",
+        "/api/v1/respaldos/{respaldo_id}/verificar",
     }
 
 

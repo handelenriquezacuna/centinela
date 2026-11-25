@@ -468,3 +468,46 @@ export interface EstadoFuncional {
   tareas: TareaSupervisada[];
   advertencias: string[];
 }
+
+// ---- Respaldos (D-74), solo administrador ----
+
+export interface DiferenciaRespaldo {
+  coleccion: string;
+  esperados_desde: number;
+  esperados_hasta: number;
+  restaurados: number;
+}
+
+export interface VerificacionRespaldo {
+  verificado_utc: string;
+  verificado_por: string;
+  resultado: "correcta" | "fallida";
+  base_temporal: string;
+  base_temporal_borrada: boolean;
+  duracion_segundos: number;
+  documentos_restaurados: Record<string, number>;
+  diferencias: DiferenciaRespaldo[];
+  detalle: string | null;
+}
+
+/** El manifiesto de un respaldo: lo que `mongodump` dejo junto al archivo. */
+export interface Respaldo {
+  esquema_version: number;
+  respaldo_id: string;
+  creado_utc: string;
+  creado_por: string;
+  base: string;
+  archivo: string;
+  tamano_bytes: number;
+  sha256: string;
+  herramienta: string;
+  documentos_por_coleccion: Record<string, number>;
+  documentos_al_terminar: Record<string, number>;
+  verificacion: VerificacionRespaldo | null;
+}
+
+export interface ListaRespaldos {
+  elementos: Respaldo[];
+  total: number;
+  en_curso: boolean;
+}

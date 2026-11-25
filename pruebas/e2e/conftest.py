@@ -173,8 +173,11 @@ def _esperar_d1(segundos: int = 30) -> None:
 def _uvicorn(uri: str, *, interfaz: str) -> Iterator[str]:
     """Un `uvicorn` real en un puerto libre, con la base de la prueba y la interfaz pedida."""
     puerto = _puerto_libre()
+    # Los respaldos (D-74) de la e2e caen en un directorio temporal, no en el repo.
+    respaldos = tempfile.mkdtemp(prefix="centinela-e2e-respaldos-")
     entorno = {
         **os.environ,
+        "CENTINELA_RESPALDOS__DIRECTORIO": respaldos,
         "CENTINELA_MONGO__URI": uri,
         "CENTINELA_MONGO__BASE": BASE_E2E,
         "CENTINELA_SESION__CLAVE": CLAVE_DE_PRUEBAS,
@@ -206,6 +209,7 @@ def _uvicorn(uri: str, *, interfaz: str) -> Iterator[str]:
                 proceso.wait(timeout=15)
             except subprocess.TimeoutExpired:
                 proceso.kill()
+            shutil.rmtree(respaldos, ignore_errors=True)
 
 
 INDICE_SPA = RUTA_RAIZ / "app" / "estaticos" / "spa" / "index.html"

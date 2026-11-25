@@ -51,6 +51,7 @@ VARIABLES = {
     "centinela_analista": "MONGO_CLAVE_ANALISTA",
     "centinela_admin": "MONGO_CLAVE_ADMIN",
     "centinela_pruebas": "MONGO_CLAVE_PRUEBAS",
+    "centinela_respaldo": "MONGO_CLAVE_RESPALDO",
 }
 CLAVES = {usuario: secrets.token_urlsafe(16) for usuario in VARIABLES}
 PUERTO_INTENTOS = 3
@@ -339,6 +340,29 @@ def prueba_el_admin_administra_esquema_y_usuarios(nodo: int) -> None:
         admin[BASE].drop_collection("hecha_por_el_admin")
         # el admin tampoco sale de su base
         _denegado(lambda: admin["otra_base"]["cosas"].insert_one({"x": 1}))
+
+
+def prueba_el_usuario_de_respaldo_lee_antifraude_y_solo_escribe_su_base_temporal(
+    nodo: int,
+) -> None:
+    """D-74: lo que `mongodump` y la verificacion (`mongorestore` a una base temporal) piden,
+    y nada mas. No escribe en antifraude, no la borra y no sale de sus dos bases."""
+    temporal = f"{BASE}_verificacion"
+    with _cliente("centinela_respaldo", nodo) as respaldo:
+        assert respaldo[BASE]["prueba_roles"].find_one({"_id": "base"}) is not None
+        _denegado(lambda: respaldo[BASE]["prueba_roles"].insert_one({"_id": "x"}))
+        _denegado(lambda: respaldo[BASE]["prueba_roles"].delete_one({"_id": "base"}))
+        _denegado(lambda: respaldo[BASE]["prueba_roles"].create_index("valor"))
+        _denegado(lambda: respaldo.drop_database(BASE))
+        # la base temporal si es suya: crea, restaura y borra
+        respaldo[temporal]["coleccion"].insert_one({"_id": 1})
+        respaldo[temporal].create_collection("otra")
+        respaldo.drop_database(temporal)
+        assert respaldo[temporal].list_collection_names() == []
+        _denegado(lambda: respaldo["otra_base"]["cosas"].insert_one({"x": 1}))
+    # y la app, que NO es la del respaldo, no puede tocar esa base
+    with _cliente("centinela_app", nodo) as app:
+        _denegado(lambda: app[temporal]["coleccion"].insert_one({"_id": 1}))
 
 
 def prueba_el_admin_puede_borrar_la_base(nodo: int) -> None:

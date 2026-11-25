@@ -12,6 +12,7 @@
 //   MONGO_CLAVE_ANALISTA   usuario centinela_analista
 //   MONGO_CLAVE_ADMIN      usuario centinela_admin
 //   MONGO_CLAVE_PRUEBAS    usuario centinela_pruebas (opcional, ver abajo)
+//   MONGO_CLAVE_RESPALDO   usuario centinela_respaldo (opcional, D-74, ver abajo)
 //
 // Los usuarios viven en `antifraude`: se autentican con authSource=antifraude.
 //
@@ -28,8 +29,16 @@
 //     userAdmin + readWrite. readWrite hace falta porque las semillas (03) insertan y
 //     las migraciones actualizan; dbAdmin y userAdmin son los de esquema y usuarios.
 //
-// Fuera de antifraude, nada: ningun usuario ve otras bases. Dos excepciones deliberadas,
-// ambas sobre bases desechables:
+//   centinela_respaldo (D-74): los respaldos del portal. El rol integrado `read` sobre
+//     antifraude (lo que mongodump necesita) y dbOwner de BASE_VERIFICACION, la base
+//     temporal donde `mongorestore` restaura un respaldo para verificarlo y que se borra
+//     al terminar. Por eso no es centinela_app: la app no puede crear colecciones ni
+//     borrar bases, y no debe poder. NO puede escribir en antifraude. Es opcional: si
+//     falta MONGO_CLAVE_RESPALDO no se crea y los respaldos usan al usuario de la app
+//     (dump si, verificacion no).
+//
+// Fuera de antifraude, nada: ningun usuario ve otras bases. Excepciones deliberadas,
+// todas sobre bases desechables (la de verificacion del respaldo es una de ellas):
 //   - centinela_admin tambien es dbOwner de antifraude_validadores_tmp, la base
 //     temporal que usa `python tareas.py validadores` (T-24).
 //   - centinela_pruebas: dbOwner de BASES_PRUEBAS, las bases que la suite borra y
@@ -43,6 +52,8 @@
 
 const BASE = "antifraude";
 const BASE_TEMPORAL_VALIDADORES = "antifraude_validadores_tmp";
+// Base temporal de la verificacion de respaldos: `<base>_verificacion` (app/respaldos).
+const BASE_VERIFICACION = BASE + "_verificacion";
 const BASES_PRUEBAS = [
   "antifraude_pruebas",
   "antifraude_pruebas_busqueda",
@@ -52,6 +63,7 @@ const BASES_PRUEBAS = [
   "antifraude_pruebas_d1",
   "antifraude_pruebas_detalle",
   "antifraude_pruebas_e2e",
+  "antifraude_pruebas_e2e_verificacion", // la verificacion de respaldos de la e2e (D-74)
   "antifraude_pruebas_efectividad",
   "antifraude_pruebas_explain",
   "antifraude_pruebas_h14",
@@ -60,6 +72,8 @@ const BASES_PRUEBAS = [
   "antifraude_pruebas_migracion_002",
   "antifraude_pruebas_procedimientos",
   "antifraude_pruebas_red_mulas",
+  "antifraude_pruebas_respaldos", // la base que respalda la prueba de integracion (D-74)
+  "antifraude_pruebas_respaldos_verificacion", // y su base temporal de verificacion
   "antifraude_pruebas_rasgos",
   "antifraude_pruebas_listas_riesgo",
   "antifraude_pruebas_rezago_volumen",
@@ -114,6 +128,7 @@ const claveApp = clave("MONGO_CLAVE_APP", true);
 const claveAnalista = clave("MONGO_CLAVE_ANALISTA", true);
 const claveAdmin = clave("MONGO_CLAVE_ADMIN", true);
 const clavePruebas = clave("MONGO_CLAVE_PRUEBAS", false);
+const claveRespaldo = clave("MONGO_CLAVE_RESPALDO", false);
 
 // `collection: ""` = todas las colecciones de la base.
 asegurarRol(
@@ -138,6 +153,18 @@ asegurarUsuario(BASE, "centinela_admin", claveAdmin, [
   { role: "dbOwner", db: BASE },
   { role: "dbOwner", db: BASE_TEMPORAL_VALIDADORES },
 ]);
+
+if (claveRespaldo) {
+  try {
+    asegurarUsuario(BASE, "centinela_respaldo", claveRespaldo, [
+      { role: "read", db: BASE },
+      { role: "dbOwner", db: BASE_VERIFICACION },
+    ]);
+  } catch (e) {
+    if (e.codeName !== "Unauthorized") throw e;
+    print("usuario centinela_respaldo: omitido (hace falta la auth apagada para tocarlo)");
+  }
+}
 
 if (clavePruebas) {
   try {
