@@ -32,10 +32,12 @@
 # docs/06-plataforma.md seccion 4.
 name: centinela
 
+# restart: unless-stopped en cada servicio: tras reiniciar Docker Desktop los nodos vuelven solos y no quedan Exited (137).
 services:
   mongo1:
     image: mongo:8
     container_name: fraude-mongo1
+    restart: unless-stopped
     entrypoint: ["bash","/entrada/mongo-entrada.sh"]
     command: ["mongod","--replSet","rsfraude","--port","27018","--bind_ip_all","--wiredTigerCacheSizeGB","0.5"]
     environment:
@@ -72,6 +74,7 @@ services:
   mongo2:
     image: mongo:8
     container_name: fraude-mongo2
+    restart: unless-stopped
     network_mode: "service:mongo1"
     entrypoint: ["bash","/entrada/mongo-entrada.sh"]
     command: ["mongod","--replSet","rsfraude","--port","27019","--bind_ip_all","--wiredTigerCacheSizeGB","0.5"]
@@ -88,6 +91,7 @@ services:
   mongo3:
     image: mongo:8
     container_name: fraude-mongo3
+    restart: unless-stopped
     network_mode: "service:mongo1"
     entrypoint: ["bash","/entrada/mongo-entrada.sh"]
     command: ["mongod","--replSet","rsfraude","--port","27020","--bind_ip_all","--wiredTigerCacheSizeGB","0.5"]
@@ -110,6 +114,7 @@ services:
       context: ..
       dockerfile: infra/Dockerfile
     container_name: fraude-app
+    restart: unless-stopped
     profiles: ["app"]
     network_mode: "service:mongo1"
     environment:

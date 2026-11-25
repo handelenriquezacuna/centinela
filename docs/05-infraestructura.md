@@ -129,6 +129,8 @@ Debe listar un `PRIMARY` y dos `SECONDARY`.
 
 ## Apagar y reiniciar
 
+Los servicios llevan `restart: unless-stopped`: al reiniciar Docker Desktop los nodos vuelven solos y no quedan en `Exited (137)`. Un `down` explícito sí los deja apagados.
+
 ```
 docker compose -f infra/docker-compose.yml down
 ```
