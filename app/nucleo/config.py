@@ -299,6 +299,13 @@ class AjustesSesion(BaseModel):
     cookie_segura: bool = False
     nombre_cookie: str = Field(default="centinela_sesion", min_length=1)
     clave: str | None = Field(default=None, min_length=32, repr=False)
+    # Limite de intentos de login (T-83). Por cuenta: tras `intentos_maximos` fallos
+    # seguidos la cuenta queda bloqueada `bloqueo_minutos`. Por IP: `intentos_por_ip`
+    # fallos dentro de `ventana_ip_segundos` frenan a esa IP (en memoria, un proceso).
+    intentos_maximos: int = Field(default=5, ge=1, le=100)
+    bloqueo_minutos: int = Field(default=15, ge=1, le=24 * 60)
+    intentos_por_ip: int = Field(default=20, ge=1, le=10_000)
+    ventana_ip_segundos: int = Field(default=600, ge=1, le=24 * 3600)
 
 
 class AjustesPortal(BaseModel):

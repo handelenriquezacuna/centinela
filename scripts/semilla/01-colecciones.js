@@ -584,6 +584,15 @@ recrearColeccion("agentes", {
         }
       }
     },
+    intentos_fallidos: {
+      bsonType: ["int", "long"],
+      minimum: 0,
+      description: "Intentos de login fallidos seguidos (T-83). Opcional: ausente sin fallos; un acierto lo borra"
+    },
+    bloqueado_hasta: {
+      bsonType: "date",
+      description: "UTC. Mientras sea futura, la cuenta no puede iniciar sesion (T-83). Opcional"
+    },
     esquema_version: {
       bsonType: "int",
       minimum: 1,

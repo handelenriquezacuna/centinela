@@ -1721,3 +1721,18 @@ code {
     width: 100%;
   }
 }
+
+/* Aviso de sesion por vencer (T-83): alertdialog fijo abajo a la derecha, sin tapar el contenido. */
+.aviso-sesion {
+  position: fixed;
+  right: var(--espacio-4);
+  bottom: var(--espacio-4);
+  z-index: 50;
+  max-width: 24rem;
+  background: var(--color-superficie, #fff);
+  border: 2px solid var(--color-acento);
+  border-radius: var(--radio);
+  padding: var(--espacio-4);
+  box-shadow: 0 6px 24px rgba(15, 23, 42, 0.25);
+}
+.aviso-sesion h2 { margin-top: 0; font-size: 1.1rem; }

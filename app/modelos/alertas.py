@@ -66,6 +66,9 @@ class Agente(DocumentoBase):
     rol: RolAgente = RolAgente.AGENTE
     activo: bool = True
     credencial: Credencial | None = None
+    # Limite de intentos de login (T-83). Opcionales: ausentes en una cuenta sin fallos.
+    intentos_fallidos: int | None = Field(default=None, ge=0)
+    bloqueado_hasta: MarcaTiempoUTC | None = None
 
 
 class AccionHistorial(ModeloCentinela):

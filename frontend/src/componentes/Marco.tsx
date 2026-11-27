@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router";
 
 import { cerrarSesion, useSesion } from "../api/sesion";
+import { AvisoSesion } from "./AvisoSesion";
 import { MenuPrincipal } from "./MenuPrincipal";
 
 /**
@@ -62,6 +63,7 @@ export function Marco() {
           </>
         ) : null}
       </header>
+      {sesion ? <AvisoSesion sesion={sesion} /> : null}
       <main id="contenido" className="contenedor" tabIndex={-1} ref={principal}>
         <Outlet />
       </main>

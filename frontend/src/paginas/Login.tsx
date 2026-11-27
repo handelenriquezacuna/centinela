@@ -20,6 +20,7 @@ export function Login() {
   const pedido = parametros.get("siguiente");
   // Con `?siguiente=` se vuelve ahi; sin el, `/` manda a cada rol a su pantalla de inicio.
   const destino = pedido ? destinoSeguro(pedido) : "/";
+  const vencida = parametros.get("motivo") === "vencida";
   const navegar = useNavigate();
   const clienteConsultas = useQueryClient();
   const { data: sesion } = useSesion();
@@ -52,7 +53,15 @@ export function Login() {
     <MarcoPagina id="login">
       <EncabezadoPagina id="login" titulo="Iniciar sesión" descripcion="Entre con su identificador y su contraseña para ver las alertas." />
       <section className="tarjeta tarjeta-acceso">
-        <AvisoRegion resultado={mensaje ? { tipo: "error", error: { texto: mensaje, detalles: [] } } : null} />
+        <AvisoRegion
+          resultado={
+            mensaje
+              ? { tipo: "error", error: { texto: mensaje, detalles: [] } }
+              : vencida
+                ? { tipo: "error", error: { texto: "Tu sesión venció. Entra de nuevo para seguir donde estabas.", detalles: [] } }
+                : null
+          }
+        />
         <form className="form-regla form-acceso" onSubmit={(e) => void entrar(e)}>
           <FormularioCampo etiqueta="Identificador">
             <input

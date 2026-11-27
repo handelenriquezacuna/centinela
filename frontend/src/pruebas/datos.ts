@@ -5,7 +5,7 @@ export const SESION_AGENTE: SesionActual = {
   nombre: "Agente E2E",
   rol: "agente",
   inicio: "/panel",
-  expira: "2026-11-23T20:00:00Z",
+  expira: "2099-01-01T00:00:00Z",
   permisos: ["buscar", "detalle", "panel", "red_mulas", "resolver", "sesion"],
   navegacion: [
     { ruta: "/panel", rotulo: "Panel", area: "Alertas" },

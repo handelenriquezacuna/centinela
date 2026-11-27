@@ -14,6 +14,7 @@ from datetime import datetime
 from app.modelos.alertas import RolAgente
 from app.nucleo.config import Ajustes
 from app.seguridad import tokens
+from app.seguridad.bloqueo import LimitadorIp
 from app.seguridad.tokens import Sesion, TokenInvalido
 
 ADVERTENCIA_CLAVE_EFIMERA = (
@@ -29,6 +30,11 @@ class ServicioSesion:
     nombre_cookie: str
     cookie_segura: bool
     advertencias: tuple[str, ...] = ()
+    # Limite de intentos de login (T-83). El limitador por IP es mutable y vive con el
+    # proceso: un servicio por aplicacion, un limitador por servicio.
+    intentos_maximos: int = 5
+    bloqueo_minutos: int = 15
+    limitador: LimitadorIp = field(default_factory=lambda: LimitadorIp(20, 600), repr=False)
 
     @classmethod
     def desde_ajustes(cls, ajustes: Ajustes) -> ServicioSesion:
@@ -41,6 +47,11 @@ class ServicioSesion:
             nombre_cookie=ajustes.sesion.nombre_cookie,
             cookie_segura=ajustes.sesion.cookie_segura,
             advertencias=() if configurada else (ADVERTENCIA_CLAVE_EFIMERA,),
+            intentos_maximos=ajustes.sesion.intentos_maximos,
+            bloqueo_minutos=ajustes.sesion.bloqueo_minutos,
+            limitador=LimitadorIp(
+                ajustes.sesion.intentos_por_ip, ajustes.sesion.ventana_ip_segundos
+            ),
         )
 
     def emitir(self, agente_id: str, rol: RolAgente) -> tuple[str, datetime]:

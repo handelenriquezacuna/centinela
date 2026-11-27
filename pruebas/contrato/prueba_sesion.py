@@ -16,7 +16,10 @@ from app.seguridad import tokens
 from pruebas.dobles.repo_agentes_falso import CONTRASENA, RepoAgentesFalso
 from pruebas.sesiones import CLAVE_DE_PRUEBAS, encabezados_de
 
-MENSAJE = "Identificador o contraseña incorrectos"
+MENSAJE = (
+    "Identificador o contraseña incorrectos, o demasiados intentos. "
+    "Intenta de nuevo en unos minutos."
+)
 
 
 @pytest.fixture

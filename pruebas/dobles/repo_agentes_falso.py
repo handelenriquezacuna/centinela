@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import copy
+from datetime import datetime
 from typing import Any
 
 from app.seguridad import contrasenas
+from app.seguridad.bloqueo import ResultadoFallo, calcular_fallo
 
 # Costo bajo: las pruebas verifican el mecanismo y hacen muchos inicios de sesion.
 PARAMETROS_BARATOS = {"algoritmo": "scrypt", "n": 2**10, "r": 8, "p": 1, "dklen": 32}
@@ -45,3 +47,42 @@ class RepoAgentesFalso:
         if rol is not None:
             self.agentes[agente_id]["rol"] = rol
         return True
+
+    async def registrar_fallo(
+        self, agente_id: str, *, maximo: int, bloqueo_minutos: int, ahora: datetime
+    ) -> ResultadoFallo | None:
+        agente = self.agentes.get(agente_id)
+        if agente is None:
+            return None
+        resultado = calcular_fallo(
+            agente, maximo=maximo, bloqueo_minutos=bloqueo_minutos, ahora=ahora
+        )
+        agente["intentos_fallidos"] = resultado.intentos_fallidos
+        if resultado.bloqueado_hasta is not None:
+            agente["bloqueado_hasta"] = resultado.bloqueado_hasta
+        else:
+            agente.pop("bloqueado_hasta", None)
+        return resultado
+
+    async def reiniciar_intentos(self, agente_id: str) -> bool:
+        agente = self.agentes.get(agente_id)
+        if agente is None or not ({"intentos_fallidos", "bloqueado_hasta"} & agente.keys()):
+            return False
+        agente.pop("intentos_fallidos", None)
+        agente.pop("bloqueado_hasta", None)
+        return True
+
+    async def desbloquear(self, agente_id: str) -> bool:
+        if agente_id not in self.agentes:
+            return False
+        await self.reiniciar_intentos(agente_id)
+        return True
+
+    async def listar(self) -> list[dict[str, Any]]:
+        return [
+            {
+                **{k: v for k, v in agente.items() if k != "credencial"},
+                "tiene_credencial": "credencial" in agente,
+            }
+            for _, agente in sorted(self.agentes.items())
+        ]

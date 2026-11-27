@@ -528,3 +528,29 @@ export interface ElementoNotificacion {
   monto_crc: number | null;
   cliente_nombre: string | null;
 }
+
+/** Una cuenta del portal (GET /api/v1/usuarios, solo administrador). */
+export interface UsuarioPortal {
+  agente_id: string;
+  nombre: string;
+  rol: Rol;
+  activo: boolean;
+  tiene_credencial: boolean;
+  intentos_fallidos: number;
+  bloqueado: boolean;
+  /** UTC; solo mientras el bloqueo esta vigente. */
+  bloqueado_hasta: string | null;
+}
+
+export interface ListaUsuarios {
+  elementos: UsuarioPortal[];
+  total: number;
+  bloqueados: number;
+}
+
+/** La respuesta de POST /api/v1/sesion/renovar: la SPA solo usa `expira`. */
+export interface SesionRenovada {
+  agente_id: string;
+  rol: Rol;
+  expira: string;
+}

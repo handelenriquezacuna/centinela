@@ -25,6 +25,14 @@ beforeEach(() => {
 });
 
 describe("Login y sesion", () => {
+  it("con motivo=vencida avisa que la sesion vencio y conserva el destino", async () => {
+    instalarApiFalsa({ "GET /api/v1/sesion": errorApi(401, "no_autenticado", "x") });
+    const enrutador = montar("/login?siguiente=%2Fbusqueda&motivo=vencida");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Tu sesión venció");
+    expect(new URLSearchParams(enrutador.state.location.search).get("siguiente")).toBe("/busqueda");
+  });
+
   it("sin sesion, una pantalla protegida lleva al login conservando el destino", async () => {
     instalarApiFalsa({ "GET /api/v1/sesion": errorApi(401, "no_autenticado", "Hace falta iniciar sesion") });
     const enrutador = montar("/detalle/ALR-001");
@@ -89,7 +97,7 @@ describe("Login y sesion", () => {
     const usuario = userEvent.setup();
     instalarApiFalsa({
       "GET /api/v1/sesion": errorApi(401, "no_autenticado", "x"),
-      "POST /api/v1/sesion": errorApi(401, "no_autenticado", "Identificador o contraseña incorrectos"),
+      "POST /api/v1/sesion": errorApi(401, "no_autenticado", "Identificador o contraseña incorrectos, o demasiados intentos. Intenta de nuevo en unos minutos."),
     });
     montar("/login");
 
@@ -97,7 +105,7 @@ describe("Login y sesion", () => {
     await usuario.type(screen.getByLabelText("Contraseña"), "mala");
     await usuario.click(screen.getByRole("button", { name: "Entrar" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Identificador o contraseña incorrectos");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Identificador o contraseña incorrectos, o demasiados intentos. Intenta de nuevo en unos minutos.");
     expect(screen.getByLabelText("Contraseña")).toHaveValue("");
   });
 
