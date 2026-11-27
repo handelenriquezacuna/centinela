@@ -1995,7 +1995,7 @@ latencia de la alerta (p50/p95) de 34,9 s / 69,8 s a 0,7 s / 1,3 s: era espera e
 
 Rubro 9 de la rubrica ("uso de procedimientos almacenados"): MongoDB no tiene procedimientos
 almacenados como los motores relacionales, y el profesor acepto en clase que un script `.js`
-corrido con `mongosh --file` cuenta como procedimiento. Los cinco viven en
+corrido con `mongosh --file` cuenta como procedimiento. Los seis viven en
 `scripts/procedimientos/`. Cada uno es idempotente, trae un encabezado (que hace, entradas por
 variables globales, que escribe, como verificarlo) y recibe sus entradas con `--eval`
 (`BASE_CENTINELA`, `DESDE`, `HASTA`, `CORTE`, `DIAS`...), igual que `03-catalogos.js`.
@@ -2007,10 +2007,11 @@ variables globales, que escribe, como verificarlo) y recibe sus entradas con `--
 | `03-recalcular-perfiles.js` | Perfil de cada cliente con sus ultimas N transferencias (H-21), con `$merge` | `perfiles_comportamiento` | `python tareas.py procedimientos 03` (o `python tareas.py perfiles`, que corre el equivalente en Python) |
 | `04-reporte-efectividad.js` | Exhaustividad, precision y F1 contra la etiqueta oculta `simulacion` (H-10), como tabla | ninguna (solo lee) | `python tareas.py procedimientos 04` |
 | `05-map-reduce-comparativo.js` | Monto y cantidad por cuenta destino de las alertas, con `mapReduce` (`out: {inline: 1}`) y con `$group`; compara e imprime la nota | ninguna (solo lee) | `python tareas.py procedimientos 05` |
+| `06-bitacora.js` | La bitacora de auditoria (T-84): el pipeline con `$unionWith` que arma `GET /api/v1/bitacora`, con filtros por variables (`ACTOR`, `ACCION`, `OBJETO`, `DESDE`, `HASTA`, `LIMITE`, `FORMATO`) | ninguna (solo lee) | `python tareas.py procedimientos 06` |
 
-`python tareas.py procedimientos` sin nombre corre los cinco en orden. Entra con el usuario
+`python tareas.py procedimientos` sin nombre corre los seis en orden. Entra con el usuario
 `centinela_app` y la URI de `entorno_app` (respeta `CENTINELA_MONGO__URI`, T-53): sus permisos
-(`find`, `insert`, `update`, `remove`) alcanzan para los cinco, incluido `$merge`, asi que
+(`find`, `insert`, `update`, `remove`) alcanzan para los seis, incluido `$merge`, asi que
 `04-usuarios.js` no cambia (solo agrega la base de pruebas `antifraude_pruebas_procedimientos`).
 
 **No hay dos pipelines distintos.** 01, 02 y 03 son el mismo pipeline que ya corre el motor en
@@ -2274,3 +2275,141 @@ misma pagina mientras exista.
   127.0.0.1:8125:8025 axllent/mailpit:v1.29.1`. El CI lo levanta como paso (`docker run` con tag
   y digest, igual que Mongo) y, con `CENTINELA_EXIGIR_MONGO=1`, su ausencia es una falla. El resto
   de las pruebas de D2 y la e2e no necesitan Docker de correo: usan el SMTP en proceso.
+
+## Bitacora de auditoria (T-84)
+
+El administrador necesita ver quien hizo que y cuando. La respuesta NO es una coleccion nueva (el
+contrato fija 13): cada coleccion ya registra lo suyo, y la bitacora es una consulta que lo une.
+Es `GET /api/v1/bitacora` (y `/exportar.csv`), permiso `administracion` (solo administrador; agente
+y supervisor reciben 403), pantalla `/administracion/bitacora` y el procedimiento
+`scripts/procedimientos/06-bitacora.js` para mostrar el mismo pipeline en Compass.
+
+### Por que `$unionWith` y no una coleccion `bitacora`
+
+- Una coleccion aparte duplicaria cada transicion, edicion y envio: dos escrituras por accion,
+  sin transaccion que las ate en el camino de la cola, y dos fuentes de verdad que pueden
+  discrepar. Hoy la historia de una alerta, una regla o un caso vive junto a su documento (es el
+  criterio de embeber de docs/04) y no puede quedar desfasada.
+- Se leen pocas veces (una consulta de administracion), asi que el costo de unir al leer es
+  aceptable y el de escribir en dos lugares no lo es.
+- Cambiar el contrato de 13 colecciones es una decision de Handel; con `$unionWith` no hace falta.
+- Costo aceptado: lo que no se guarda en ninguna coleccion no esta (ver "Lo que falta").
+
+### Forma comun y fuentes
+
+Cada fila es `{fecha, actor, accion, objeto, detalle, origen}`. `fecha` es ISODate UTC (la SPA la
+presenta en hora de Costa Rica), `actor` es el agente o nulo, `objeto` es lo que se toco.
+
+| origen | de donde sale | accion | actor | objeto |
+|---|---|---|---|---|
+| `alertas` | `alertas.historial`, un `$unwind` | `alerta_en_revision`, `alerta_confirmada`, `alerta_descartada`, `alerta_escalada`; si la accion no es un estado (`respuesta_cliente`, T-82) pasa cruda | `historial.agente_id` | `ALR-...` |
+| `reglas_deteccion` | `versiones_anteriores`: cada par vN a vN+1 | `regla_editada` | no se guarda | `REG-...` |
+| `politica_deteccion` | idem | `politica_editada` | no se guarda | `POL-...` |
+| `listas_riesgo` | `fecha_reporte` | `lista_riesgo_alta` | no se guarda | la cuenta |
+| `casos` | `fecha_apertura` | `caso_abierto` | `agente_id`, solo en la escalacion en lote | `CAS-...` |
+| `notificaciones` | `fecha` | `notificacion_pendiente`, `_enviado`, `_fallido` | el sistema (nulo) | la alerta |
+| `respaldos` | manifiestos JSON en disco | `respaldo_creado`, `respaldo_verificado` | `creado_por`, `verificado_por` | `RSP-...` |
+
+El `detalle` dice lo que cambio: en una transicion, `en_revision -> confirmada: <nota>`; en una
+edicion, `regla v1 -> v2: peso 35 -> 30` (los campos escalares con su valor, los estructurados
+solo con el nombre: `parametros cambio`).
+
+Los respaldos no estan en Mongo: la API los agrega en Python despues del pipeline
+(`eventos_de_manifiesto`), con los mismos filtros (`coincide`) y el mismo orden (`fusionar`).
+El procedimiento de mongosh no los ve y lo dice al final de su salida.
+
+### Lo que falta, y por que
+
+- **Quien edito una regla o la politica.** `versiones_anteriores` guarda lo que rigio y cuando
+  dejo de regir, pero no quien lo cambio. La fila sale con actor nulo (la pantalla dice "No
+  registrado"). El pipeline lee `versiones_anteriores.agente_id` si algun dia existe.
+- **Quien dio de alta una cuenta en `listas_riesgo`.** El documento no guarda `agente_id`; el
+  repositorio solo lo escribe en el log `centinela.auditoria`.
+- **Las bajas de `listas_riesgo`** (`delete_one` real, D-41): el documento ya no existe, solo
+  queda el log.
+- **Las credenciales de `agentes`**: `credencial` no guarda fecha, no hay cuando.
+- **La creacion de la alerta por el motor** (historial con `nueva` y sin agente) se omite a
+  proposito: es una fila por alerta, ahogaria la bitacora, y la alerta ya lo dice.
+- Guardar el actor y la fecha en esos documentos es un cambio de contrato (validadores): queda
+  como decision para Handel, no se hizo aqui.
+
+Las ramas paralelas no rompen nada: T-82 (`respuesta_cliente` en el historial, `canal: sms` en
+notificaciones) y T-83 (campos de login en `agentes`) se toleran sin depender de ellos; la
+primera aparece, la segunda no se lee.
+
+### El pipeline
+
+Parte de `alertas` y une las otras cinco colecciones. Cada rama normaliza a la forma comun y
+aplica los filtros ANTES de unir; al final un `$facet` calcula, en una sola pasada, el total y la
+pagina (`$sort` con `$limit`, que MongoDB resuelve como top-k acotado).
+
+```
+alertas:  $match(poda) -> $set(historial_completo) -> $unwind(historial) -> $match(exacto)
+          -> $set(anterior) -> $project(forma comun) -> $match(accion)
+$unionWith reglas_deteccion / politica_deteccion:
+          $match(poda) -> $set(lineas, pares) -> $unwind(pares) -> $match -> $project
+$unionWith listas_riesgo, casos, notificaciones: $match -> $project -> $match(accion)
+$facet { pagina: [$sort, $limit(desplazamiento + limite)], total: [$count] }
+```
+
+- **Poda antes del `$unwind`**: en `alertas`, `{historial: {$elemMatch: {fecha, agente_id}}}`
+  (fecha y agente sobre la MISMA accion, con limites ajustados en el indice multillave) y el
+  prefijo de `_id`; despues del `$unwind`, el filtro exacto. Sin `$elemMatch`, `$gte` y `$lte`
+  sobre un indice multillave se resuelven por separado y examinan mucho mas.
+- **Objeto** es un prefijo (`^ALR-0001`, `^6033-99`), solo `[A-Za-z0-9-]` (la API lo valida, asi
+  que no hay expresiones regulares del cliente). Usa el indice de `_id`, de `alerta_id` o de
+  `cuenta` segun la rama.
+- **Orden**: fecha descendente y, en el mismo instante, objeto descendente, accion, actor y
+  detalle: total y estable, de modo que dos paginas nunca repiten ni pierden una fila.
+- **Paginacion acotada**: `limite` se acota a `app.pagina_maxima`; `desplazamiento` llega a
+  10.000. La API pide a Mongo las primeras `desplazamiento + limite` filas, las mezcla con los
+  respaldos y corta la pagina.
+- **CSV**: los mismos filtros, hasta 10.000 filas, fecha en hora de Costa Rica, y una celda que
+  empieza con `=`, `+`, `-` o `@` se antepone con una comilla (una hoja de calculo no la lee como
+  formula).
+
+### Indices (`02-indices.js`) y explain
+
+Dos indices multillave nuevos en `alertas`: `idx_alertas_historial_fecha` (`historial.fecha`) y
+`idx_alertas_historial_agente_fecha` (`historial.agente_id`, `historial.fecha`). Costo: dos
+entradas de indice por cada accion que se agrega al historial. La bitacora funciona igual sin
+ellos (recorre `alertas`); si pesaran en la escritura, se pueden quitar. Los demas indices ya
+existian: `idx_notificaciones_fecha`, `idx_notificaciones_alerta_canal`, `idx_listas_riesgo_cuenta`
+y el de `_id`. `casos`, `listas_riesgo` y las dos de catalogo se recorren enteras: son colecciones
+de cientos de documentos y no justifican un indice.
+
+Medido con `explain` (executionStats) sobre 3.000 alertas con su historial, 1.500 notificaciones,
+300 listas y 200 casos (el volumen de `pruebas/integracion/apoyo_bitacora.py`), en un nodo de
+prueba. Documentos examinados en `alertas`:
+
+| consulta | sin los dos indices | con los dos indices | devueltos |
+|---|---|---|---|
+| sin filtro | 3.002 | 3.002 | 3.002 |
+| un dia | 3.002 | 40 (88 claves) | 40 |
+| un agente con pocas acciones | 3.002 | 1 | 1 |
+| un agente con 450 alertas | 3.002 | 450 (750 claves) | 450 |
+| prefijo `ALR-0012` | 100 | 100 (por `_id`) | 100 |
+
+Con un dia, la rama de notificaciones examina 19 de 1.502 (por `idx_notificaciones_fecha`). La
+consulta completa, con total y pagina, tarda unos 20 ms sin filtro y 3 a 7 ms con ellos en esta
+escala. Es una consulta de administracion, no de la cola: sin filtro recorre todas las fuentes y
+crece con ellas; por eso la pantalla pide una pagina de 50 y filtra por fecha o agente. La prueba
+`prueba_bitacora_mongo.py` sostiene los numeros (un dia no recorre todas las alertas; un agente
+entra por su indice).
+
+### Pruebas
+
+- Unitarias (`prueba_bitacora.py`): la forma del pipeline (cada rama poda antes del `$unwind`, sin
+  `$lookup`, `$facet` con tope), los filtros incoherentes, la normalizacion de los manifiestos de
+  respaldos, `coincide`, `fusionar` y el CSV.
+- Contrato (`prueba_bitacora_api.py` y `prueba_openapi.py`): agente y supervisor 403 sin tocar el
+  repositorio, sin sesion 401, forma de la pagina, paginacion, filtros que llegan al repositorio,
+  422 con su campo, respaldos mezclados y CSV.
+- Integracion con Mongo real (`prueba_bitacora_mongo.py`): cada fuente aparece con su actor, accion
+  y detalle; filtros solos y combinados; el total del relleno contra un conteo hecho a mano; la
+  paginacion; la tolerancia a T-82 y T-83; el explain; y la equivalencia de `06-bitacora.js` con
+  la version de Python para ocho filtros.
+- e2e (`prueba_spa_bitacora.py`): el agente toma y confirma una alerta, el administrador filtra por
+  ese agente y ve exactamente esas dos transiciones (y el CSV); el supervisor no ve la entrada y la
+  API le responde 403.
+

@@ -43,6 +43,7 @@ PAGINAS_SPA: tuple[str, ...] = (
     "/administracion/salud",
     "/administracion/respaldos",
     "/administracion/usuarios",
+    "/administracion/bitacora",
     "/notificaciones",
 )
 
@@ -58,6 +59,7 @@ NAVEGACION_SPA: tuple[tuple[str, str, str], ...] = (
     ("/administracion/salud", "Salud del sistema", "Administración"),
     ("/administracion/respaldos", "Respaldos", "Administración"),
     ("/administracion/usuarios", "Usuarios del portal", "Administración"),
+    ("/administracion/bitacora", "Bitácora de auditoría", "Administración"),
 )
 
 # Donde aterriza cada rol al entrar: la agente en su cola, el supervisor en lo pendiente,

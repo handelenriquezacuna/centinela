@@ -56,6 +56,7 @@ const BASE_TEMPORAL_VALIDADORES = "antifraude_validadores_tmp";
 const BASE_VERIFICACION = BASE + "_verificacion";
 const BASES_PRUEBAS = [
   "antifraude_pruebas",
+  "antifraude_pruebas_bitacora",
   "antifraude_pruebas_busqueda",
   "antifraude_pruebas_busqueda_volumen",
   "antifraude_pruebas_carga",
