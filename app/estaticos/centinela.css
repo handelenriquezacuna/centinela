@@ -1373,6 +1373,25 @@ code {
   color: #ffffff;
 }
 
+/* Bitacora de auditoria (T-84): ediciones, listas, casos y respaldos. Texto blanco sobre
+   colores ya usados con texto blanco en las otras insignias de estado. */
+.insignia-estado.es-accion-regla {
+  background: var(--color-en-revision);
+  color: #ffffff;
+}
+
+.insignia-estado.es-accion-lista,
+.insignia-estado.es-accion-caso {
+  background: var(--color-escalada);
+  color: #ffffff;
+}
+
+.insignia-estado.es-accion-respaldo,
+.insignia-estado.es-accion-cliente {
+  background: var(--color-nueva);
+  color: #ffffff;
+}
+
 .comando {
   background: var(--color-primario);
   color: #f8fafc;

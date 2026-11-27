@@ -6,6 +6,7 @@ import { alPerderSesion, ErrorApi } from "./api/cliente";
 import { CLAVE_SESION } from "./api/sesion";
 import { Marco } from "./componentes/Marco";
 import { RequiereSesion } from "./componentes/RequiereSesion";
+import { Bitacora } from "./paginas/Bitacora";
 import { Busqueda } from "./paginas/Busqueda";
 import { Login } from "./paginas/Login";
 import { NoEncontrada } from "./paginas/NoEncontrada";
@@ -73,6 +74,10 @@ export const RUTAS: RouteObject[] = [
       {
         path: "/administracion/usuarios",
         element: protegida("/administracion/usuarios", <Usuarios />),
+      },
+      {
+        path: "/administracion/bitacora",
+        element: protegida("/administracion/bitacora", <Bitacora />),
       },
       {
         path: "/notificaciones",

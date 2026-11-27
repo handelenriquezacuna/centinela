@@ -519,7 +519,7 @@ async def prueba_05_map_reduce_y_aggregate_coinciden(base_proc: Any, ajustes: Aj
     assert not [n for n in await base_proc.list_collection_names() if "map" in n.lower()]
 
 
-def prueba_los_cinco_scripts_traen_encabezado_y_no_tienen_contrasenas() -> None:
+def prueba_los_seis_scripts_traen_encabezado_y_no_tienen_contrasenas() -> None:
     nombres = sorted(p.name for p in Path(PROCEDIMIENTOS).glob("*.js"))
     assert nombres == [
         "01-recalcular-indicadores.js",
@@ -527,6 +527,7 @@ def prueba_los_cinco_scripts_traen_encabezado_y_no_tienen_contrasenas() -> None:
         "03-recalcular-perfiles.js",
         "04-reporte-efectividad.js",
         "05-map-reduce-comparativo.js",
+        "06-bitacora.js",
     ]
     for nombre in nombres:
         texto = (PROCEDIMIENTOS / nombre).read_text(encoding="utf-8")

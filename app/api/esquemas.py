@@ -76,6 +76,25 @@ class PaginaNotificaciones(Pagina):
     elementos: list[ElementoNotificacion]
 
 
+class ElementoBitacora(BaseModel):
+    """Una fila de la bitacora de auditoria (T-84): quien hizo que, sobre que y cuando.
+
+    `actor` es nulo cuando la fuente no guarda quien (ediciones de reglas, altas de listas)
+    o cuando fue el sistema (D2); `origen` dice de que coleccion sale la fila.
+    """
+
+    fecha: MarcaTiempoUTC
+    actor: str | None = Field(default=None, description="AGT-001, o nulo si no se registra")
+    accion: str = Field(description="Tipo de accion: alerta_confirmada, regla_editada, ...")
+    objeto: str = Field(description="ALR-001, REG-001, POL-001, una cuenta, CAS-001, RSP-...")
+    detalle: str
+    origen: str = Field(description="alertas, reglas_deteccion, politica_deteccion, ...")
+
+
+class PaginaBitacora(Pagina):
+    elementos: list[ElementoBitacora]
+
+
 class ElementoTransaccion(BaseModel):
     """Una transaccion del historico con su alerta asociada (H-15).
 

@@ -235,6 +235,7 @@ async def prueba_credenciales_malas_no_dejan_cookie_y_dan_401_en_la_forma_del_er
                 "/administracion/salud",
                 "/administracion/respaldos",
                 "/administracion/usuarios",
+                "/administracion/bitacora",
             ],
             {"administracion", "tablero"},
         ),
@@ -302,7 +303,7 @@ async def prueba_un_agente_que_ya_no_existe_conserva_la_sesion_sin_nombre(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("ruta", ["/administracion", "/administracion/salud", "/administracion/respaldos", "/administracion/usuarios"])
+@pytest.mark.parametrize("ruta", ["/administracion", "/administracion/salud", "/administracion/respaldos", "/administracion/usuarios", "/administracion/bitacora"])
 async def prueba_administracion_es_solo_del_administrador(http_spa: AsyncClient, ruta: str) -> None:
     sin_sesion = await http_spa.get(ruta, follow_redirects=False)
     assert sin_sesion.status_code == 303 and sin_sesion.headers["location"].startswith("/login")

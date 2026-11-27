@@ -19,6 +19,7 @@ from pymongo.asynchronous.database import AsyncDatabase
 from app.nucleo.config import Ajustes, obtener_ajustes
 from app.nucleo.db import obtener_base as _base_del_cliente
 from app.repos.alertas import ProtocoloRepoAlertas, RepoAlertas
+from app.repos.bitacora import ProtocoloRepoBitacora, RepoBitacora
 from app.repos.busqueda import ProtocoloRepoBusqueda, RepoBusqueda
 from app.repos.casos_destino import ProtocoloRepoCasosDestino, RepoCasosDestino
 from app.repos.detalle import ProtocoloRepoDetalle, RepoDetalle
@@ -147,6 +148,12 @@ def dep_supervisor(peticion: Request) -> Supervisor:
 
 
 AjustesDep = Annotated[Ajustes, Depends(dep_ajustes)]
+def dep_repo_bitacora(
+    base: Annotated[AsyncDatabase, Depends(dep_base)],
+) -> ProtocoloRepoBitacora:
+    return RepoBitacora(base)
+
+
 BaseDep = Annotated[AsyncDatabase, Depends(dep_base)]
 RepoAlertasDep = Annotated[ProtocoloRepoAlertas, Depends(dep_repo_alertas)]
 RepoCasosDestinoDep = Annotated[ProtocoloRepoCasosDestino, Depends(dep_repo_casos_destino)]
@@ -159,5 +166,6 @@ RepoTableroDep = Annotated[ProtocoloRepoTablero, Depends(dep_repo_tablero)]
 RepoNotificacionesDep = Annotated[
     ProtocoloRepoLecturaNotificaciones, Depends(dep_repo_notificaciones)
 ]
+RepoBitacoraDep = Annotated[ProtocoloRepoBitacora, Depends(dep_repo_bitacora)]
 RepoRedMulasPortalDep = Annotated[RepoRedMulas, Depends(dep_repo_red_mulas_portal)]
 ServicioRespaldosDep = Annotated[ServicioRespaldos, Depends(dep_servicio_respaldos)]
