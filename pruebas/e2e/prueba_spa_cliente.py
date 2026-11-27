@@ -144,7 +144,11 @@ def prueba_el_supervisor_abre_el_sms_el_cliente_responde_y_el_agente_lo_ve_arrib
         otra.close()
 
         # El agente decide y el cliente ve cambiar su estado SOLO (sondeo de la pagina).
-        page.get_by_role("button", name="Tomar").click()
+        tomar = page.get_by_role("button", name="Tomar")
+        expect(tomar).to_be_enabled()
+        tomar.click()
+        # Primero el lado del agente: la transicion quedo hecha antes de mirar al cliente.
+        expect(page.locator("#insignia-estado")).to_have_text("En revisión", timeout=10_000)
         expect(cliente.locator("#cliente-caso")).to_contain_text("Un agente revisa tu caso", timeout=15_000)
         page.get_by_role("button", name="Confirmar fraude").click()
         page.get_by_role("button", name="Confirmar fraude").last.click()
