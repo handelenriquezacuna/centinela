@@ -997,6 +997,34 @@ reglas/                tarjeta de regla con 409, politica, alta de regla y simul
 | `POST /api/v1/sesion` | Igual que antes (devuelve el token para `Authorization: Bearer`) y **además** deja la cookie de `/login`: HttpOnly, SameSite=Strict, `Secure` según `sesion.cookie_segura`. La SPA descarta el cuerpo; nunca guarda el token (ni `localStorage` ni memoria) |
 | `GET /api/v1/sesion` | `{agente_id, rol, expira, permisos, navegacion, paginas}`. `paginas` son las plantillas de página que el rol puede abrir, sacadas de la tabla de permisos: la SPA guarda cada pantalla con esa lista y no copia la tabla |
 | `DELETE /api/v1/sesion` | Borra la cookie, 204. Pública e idempotente, como `/salir` |
+| `POST /api/v1/sesion/renovar` | T-83. Con una sesión válida emite un token nuevo con nueva expiración y deja la misma cookie (HttpOnly, SameSite=Strict). Una sesión vencida no se renueva (401). Vuelve a mirar la cuenta: si está inactiva o bloqueada, 401; el rol sale de la cuenta, no del token viejo |
+| `GET /api/v1/usuarios` | T-83. Solo administrador, solo lectura: cuentas con rol, estado, `intentos_fallidos`, `bloqueado` y `bloqueado_hasta`. Nunca trae la credencial |
+
+#### Límite de intentos de login (T-83)
+
+- **Por cuenta**: tras `sesion.intentos_maximos` (5) fallos seguidos la cuenta queda bloqueada
+  `sesion.bloqueo_minutos` (15). Campos opcionales del agente: `intentos_fallidos` y
+  `bloqueado_hasta` (UTC). El contador es una sola operación atómica (`find_one_and_update`
+  con pipeline en `app/repos/agentes.py`); la regla en Python es `bloqueo.calcular_fallo`.
+  Durante el bloqueo, intentar más no lo alarga; vencido el plazo el conteo vuelve a 1; un
+  acierto borra ambos campos. Se desbloquea antes con
+  `python tareas.py usuarios --agente AGT-x --desbloquear`.
+- **Por IP**: `sesion.intentos_por_ip` (20) fallos en `sesion.ventana_ip_segundos` (600),
+  en memoria del proceso (un solo proceso). Cuenta también la cuenta inexistente. No se
+  confía en `X-Forwarded-For`: detrás de un proxy la IP vista es la del proxy.
+- **Un solo mensaje** para clave mala, cuenta inexistente, inactiva, bloqueada e IP frenada
+  (401): "Identificador o contraseña incorrectos, o demasiados intentos. Intenta de nuevo en
+  unos minutos." El hash se calcula siempre, así que el tiempo tampoco lo delata.
+- **Auditoría** (`centinela.auditoria`): `login_fallido`, `bloqueo`, `login_en_cuenta_bloqueada`,
+  `login_rechazado_por_ip` y `desbloqueo` (por vencimiento o por el administrador).
+
+#### Aviso de sesión por vencer (T-83)
+
+`AvisoSesion` (en el `Marco`) lee `expira` de `GET /api/v1/sesion`. Un minuto antes muestra un
+`alertdialog` "Tu sesión vence en 1 minuto" con "Seguir trabajando" (renueva) y "Salir"; el foco
+entra al aviso, no sale con Tab y vuelve a donde estaba. Si hay texto escrito en un formulario
+sin enviar (`cambiosSinGuardar.ts`), el aviso lo dice. Al vencer lleva a
+`/login?siguiente=<ruta>&motivo=vencida` y el login muestra "Tu sesión venció".
 
 Un 401 de cualquier petición deja la sesión en nulo y la SPA vuelve a
 `/login?siguiente=<ruta>`; al entrar, `destinoSeguro` (`frontend/src/destino.ts`) aplica la

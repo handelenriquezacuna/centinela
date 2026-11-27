@@ -105,6 +105,7 @@ ACCESOS: tuple[Acceso, ...] = (
     _a("DELETE", "/api/v1/sesion", None),
     # Cualquier sesion
     _a("GET", "/api/v1/sesion", Permiso.SESION),
+    _a("POST", "/api/v1/sesion/renovar", Permiso.SESION),
     _a("GET", "/estado", Permiso.SESION),
     _a("GET", "/openapi.json", Permiso.SESION),
     # Panel y alertas
@@ -169,6 +170,7 @@ ACCESOS: tuple[Acceso, ...] = (
     _a("GET", "/administracion/salud", Permiso.ADMINISTRACION),
     _a("GET", "/administracion/respaldos", Permiso.ADMINISTRACION),
     _a("GET", "/administracion/usuarios", Permiso.ADMINISTRACION),
+    _a("GET", "/api/v1/usuarios", Permiso.ADMINISTRACION),
     # Respaldos (D-74): la API es solo del administrador. Restaurar sobre la base viva NO es
     # una ruta: es `python tareas.py restaurar`.
     _a("GET", "/api/v1/respaldos", Permiso.RESPALDOS),

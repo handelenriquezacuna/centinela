@@ -133,11 +133,27 @@ describe("area de Administracion", () => {
     expect(await screen.findByText("Todavía no hay respaldos.")).toBeInTheDocument();
   });
 
-  it("Usuarios del portal muestra el comando de tareas.py, sin API", async () => {
-    const api = instalarApiFalsa({ "GET /api/v1/sesion": { cuerpo: SESION_ADMINISTRADOR } });
+  it("Usuarios del portal lista las cuentas, marca las bloqueadas y muestra los comandos", async () => {
+    const api = instalarApiFalsa({
+      "GET /api/v1/sesion": { cuerpo: SESION_ADMINISTRADOR },
+      "GET /api/v1/usuarios": {
+        cuerpo: {
+          total: 2,
+          bloqueados: 1,
+          elementos: [
+            { agente_id: "AGT-001", nombre: "Jose Solis", rol: "agente", activo: true, tiene_credencial: true, intentos_fallidos: 0, bloqueado: false, bloqueado_hasta: null },
+            { agente_id: "AGT-002", nombre: "Laura Mendez", rol: "supervisor", activo: true, tiene_credencial: true, intentos_fallidos: 5, bloqueado: true, bloqueado_hasta: "2099-01-01T00:15:00Z" },
+          ],
+        },
+      },
+    });
     montar("/administracion/usuarios");
     expect(await screen.findByText("python tareas.py usuarios --help")).toBeInTheDocument();
-    expect(api.pedidos.map((p) => p.ruta)).toEqual(["/api/v1/sesion"]);
+    expect(screen.getByText("python tareas.py usuarios --agente AGT-001 --desbloquear")).toBeInTheDocument();
+    expect(await screen.findByText("Laura Mendez")).toBeInTheDocument();
+    expect(screen.getByText("Bloqueado")).toBeInTheDocument();
+    expect(screen.getByText("Cuentas bloqueadas: 1.")).toBeInTheDocument();
+    expect(api.pedidos.map((p) => p.ruta)).toEqual(["/api/v1/sesion", "/api/v1/usuarios"]);
   });
 
   it("un agente no abre Salud", async () => {

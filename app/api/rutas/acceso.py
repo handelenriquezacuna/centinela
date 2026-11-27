@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -34,14 +34,14 @@ from app.api.sesion import ServicioSesionDep, SesionDep
 from app.modelos.alertas import RolAgente
 from app.modelos.base import AgenteId
 from app.repos.agentes import ProtocoloRepoAgentes, RepoAgentes
-from app.seguridad.autenticacion import autenticar
+from app.seguridad.autenticacion import autenticar_con_limites
+from app.seguridad.bloqueo import MENSAJE_CREDENCIALES, esta_bloqueada
 from app.seguridad.permisos import PERMISOS_POR_ROL, permite
 from app.seguridad.servicio import ServicioSesion
 
 enrutador = APIRouter(include_in_schema=False)
 enrutador_api = APIRouter(tags=["sesion"])
 
-MENSAJE_CREDENCIALES = "Identificador o contraseña incorrectos"
 DESTINO_POR_OMISION = "/panel"
 
 
@@ -50,6 +50,30 @@ def dep_repo_agentes(base: BaseDep) -> ProtocoloRepoAgentes:
 
 
 RepoAgentesDep = Annotated[ProtocoloRepoAgentes, Depends(dep_repo_agentes)]
+
+
+def _ip_de(peticion: Request) -> str:
+    """La IP del cliente tal como la ve el servidor. No se confia en `X-Forwarded-For`:
+    cualquiera puede escribirla. Detras de un proxy el limite por IP ve la del proxy."""
+    return peticion.client.host if peticion.client else "desconocida"
+
+
+async def _autenticar(
+    peticion: Request,
+    repo: ProtocoloRepoAgentes,
+    servicio: ServicioSesion,
+    agente_id: str,
+    contrasena: str,
+) -> dict[str, Any] | None:
+    return await autenticar_con_limites(
+        repo,
+        servicio.limitador,
+        _ip_de(peticion),
+        agente_id,
+        contrasena,
+        maximo=servicio.intentos_maximos,
+        bloqueo_minutos=servicio.bloqueo_minutos,
+    )
 
 
 def destino_seguro(siguiente: str | None) -> str:
@@ -101,7 +125,7 @@ async def iniciar_sesion_portal(
         return cuerpo.get(nombre, [""])[0]
 
     agente_id = campo("agente_id").strip()
-    agente = await autenticar(repo, agente_id, campo("contrasena"))
+    agente = await _autenticar(peticion, repo, servicio, agente_id, campo("contrasena"))
     if agente is None:
         return _pagina_login(
             peticion,
@@ -179,13 +203,14 @@ class RespuestaSesion(BaseModel):
     ),
 )
 async def iniciar_sesion_api(
+    peticion: Request,
     solicitud: SolicitudSesion,
     repo: RepoAgentesDep,
     servicio: ServicioSesionDep,
     respuesta: Response,
 ) -> RespuestaSesion:
-    agente: dict[str, Any] | None = await autenticar(
-        repo, solicitud.agente_id, solicitud.contrasena
+    agente = await _autenticar(
+        peticion, repo, servicio, solicitud.agente_id, solicitud.contrasena
     )
     if agente is None:
         raise ErrorCentinela(
@@ -195,6 +220,36 @@ async def iniciar_sesion_api(
     token, expira = servicio.emitir(agente["_id"], rol)
     poner_cookie(respuesta, servicio, token)
     return RespuestaSesion(token=token, agente_id=agente["_id"], rol=rol, expira=expira)
+
+
+@enrutador_api.post(
+    "/sesion/renovar",
+    response_model=RespuestaSesion,
+    summary="Renueva la sesion vigente: token nuevo, nueva expiracion, la misma cookie",
+    responses=respuestas_documentadas(status.HTTP_401_UNAUTHORIZED),
+)
+async def renovar_sesion(
+    sesion: SesionDep,
+    agentes: RepoAgentesDep,
+    servicio: ServicioSesionDep,
+    respuesta: Response,
+) -> RespuestaSesion:
+    """Solo con una sesion que todavia vale: una vencida no se renueva (401, el guardia).
+
+    Tambien se vuelve a mirar a la persona: si la cuenta se dio de baja o se bloqueo
+    despues de entrar, la sesion no se extiende. Con la base caida no se renueva (503):
+    mejor un aviso que una extension a ciegas.
+    """
+    agente = await agentes.obtener(sesion.agente_id)
+    if agente is None or not agente.get("activo", True) or esta_bloqueada(agente, datetime.now(UTC)):
+        raise ErrorCentinela(
+            CodigoError.NO_AUTENTICADO, "La sesion ya no se puede renovar", status.HTTP_401_UNAUTHORIZED
+        )
+    # El rol se toma de la cuenta, no del token viejo: un cambio de rol se aplica aqui.
+    rol = RolAgente(agente["rol"])
+    token, expira = servicio.emitir(sesion.agente_id, rol)
+    poner_cookie(respuesta, servicio, token)
+    return RespuestaSesion(token=token, agente_id=sesion.agente_id, rol=rol, expira=expira)
 
 
 async def _nombre_de(agentes: ProtocoloRepoAgentes, agente_id: str) -> str | None:

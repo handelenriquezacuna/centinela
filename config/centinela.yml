@@ -142,6 +142,14 @@ sesion:
   # true = la cookie solo viaja por HTTPS. Encender detras de TLS.
   cookie_segura: false
   nombre_cookie: centinela_sesion
+  # Limite de intentos de login (T-83). Por cuenta: tras `intentos_maximos` fallos seguidos
+  # la cuenta se bloquea `bloqueo_minutos` (un login correcto reinicia la cuenta; el
+  # administrador desbloquea con `python tareas.py usuarios --agente AGT-x --desbloquear`).
+  intentos_maximos: 5
+  bloqueo_minutos: 15
+  # Por IP, en memoria del proceso: `intentos_por_ip` fallos en `ventana_ip_segundos`.
+  intentos_por_ip: 20
+  ventana_ip_segundos: 600
 
 # Interfaz de las rutas de pagina (T-61, T-67). `spa` (por omision): el index.html de la
 # SPA React construida en app/estaticos/spa/ (`python tareas.py front`; `arriba` y `dev`

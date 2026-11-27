@@ -6,7 +6,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { ErrorApi, pedir } from "./cliente";
-import type { SesionActual } from "./tipos";
+import type { SesionActual, SesionRenovada } from "./tipos";
 
 export const CLAVE_SESION = ["sesion"] as const;
 
@@ -37,6 +37,14 @@ export async function iniciarSesion(agenteId: string, contrasena: string): Promi
 
 export async function cerrarSesion(): Promise<void> {
   await pedir<void>("/api/v1/sesion", { metodo: "DELETE", sinAvisoDeSesion: true });
+}
+
+/**
+ * Renueva la sesion vigente (T-83): el servidor deja una cookie nueva con nueva expiracion.
+ * El token del cuerpo se descarta, como en el login. Con una sesion vencida es un 401.
+ */
+export async function renovarSesion(): Promise<SesionRenovada> {
+  return pedir<SesionRenovada>("/api/v1/sesion/renovar", { metodo: "POST", sinAvisoDeSesion: true });
 }
 
 /** Si la plantilla de una pantalla (`/detalle/{alerta_id}`) esta permitida a la sesion. */

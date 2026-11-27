@@ -107,6 +107,19 @@ def _uri() -> str:
 
 
 def _puerto_libre() -> int:
+    """Un puerto libre. Con `CENTINELA_E2E_PUERTOS=8210-8219` solo se prueba ese rango
+    (varias personas y agentes comparten la maquina); sin ella, uno efimero."""
+    rango = os.environ.get("CENTINELA_E2E_PUERTOS", "")
+    if rango:
+        desde, _, hasta = rango.partition("-")
+        for candidato in range(int(desde), int(hasta) + 1):
+            with socket.socket() as sonda:
+                try:
+                    sonda.bind(("127.0.0.1", candidato))
+                except OSError:
+                    continue
+                return candidato
+        raise RuntimeError(f"no hay puerto libre en {rango}")
     with socket.socket() as sonda:
         sonda.bind(("127.0.0.1", 0))
         return int(sonda.getsockname()[1])
@@ -175,7 +188,9 @@ def _esperar_disparadores(segundos: int = 30) -> None:
 
 
 @contextmanager
-def _uvicorn(uri: str, *, interfaz: str, smtp_puerto: int) -> Iterator[str]:
+def _uvicorn(
+    uri: str, *, interfaz: str, smtp_puerto: int, entorno_extra: dict[str, str] | None = None
+) -> Iterator[str]:
     """Un `uvicorn` real en un puerto libre, con la base de la prueba y la interfaz pedida."""
     puerto = _puerto_libre()
     # Los respaldos (D-74) de la e2e caen en un directorio temporal, no en el repo.
@@ -190,6 +205,10 @@ def _uvicorn(uri: str, *, interfaz: str, smtp_puerto: int) -> Iterator[str]:
         # D2 (H-11) manda su correo al SMTP en proceso de la prueba, no al 1025 de nadie.
         "CENTINELA_NOTIFICACIONES__SMTP_HOST": "127.0.0.1",
         "CENTINELA_NOTIFICACIONES__SMTP_PUERTO": str(smtp_puerto),
+        # Todas las pruebas entran desde 127.0.0.1: el limite por IP (T-83) no debe frenar a
+        # las que fallan a proposito. Su comportamiento se prueba en contrato.
+        "CENTINELA_SESION__INTENTOS_POR_IP": "1000",
+        **(entorno_extra or {}),
     }
     with tempfile.TemporaryFile() as registro:
         proceso = subprocess.Popen(
@@ -260,6 +279,21 @@ def servidor_htmx(servidor_e2e: str, servidor_smtp: ServidorSmtp) -> Iterator[st
     escriba cualquiera de los dos: lee el change stream, no un bus en memoria.
     """
     with _uvicorn(_uri(), interfaz="htmx", smtp_puerto=servidor_smtp.puerto) as url:
+        yield url
+
+
+@pytest.fixture(scope="session")
+def servidor_sesion_corta(servidor_e2e: str, servidor_smtp: ServidorSmtp) -> Iterator[str]:
+    """Otro `uvicorn` sobre la MISMA base con la sesion en 2 minutos (T-83).
+
+    Con 2 minutos el aviso de "tu sesion vence" sale a los 60 s; con el servidor normal
+    (60 minutos) no se podria probar sin esperar una hora. Aparte para que las demas
+    pruebas no vean el aviso a mitad de un recorrido.
+    """
+    with _uvicorn(
+        _uri(), interfaz="spa", smtp_puerto=servidor_smtp.puerto,
+        entorno_extra={"CENTINELA_SESION__MINUTOS": "2"},
+    ) as url:
         yield url
 
 

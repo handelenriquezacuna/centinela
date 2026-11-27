@@ -29,6 +29,8 @@ def prueba_estan_publicadas_las_rutas_decididas() -> None:
         "/salud",
         "/estado",
         "/api/v1/sesion",
+        "/api/v1/sesion/renovar",
+        "/api/v1/usuarios",
         "/api/v1/alertas",
         "/api/v1/alertas/flujo",
         "/api/v1/alertas/eventos",
