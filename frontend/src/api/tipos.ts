@@ -528,3 +528,13 @@ export interface ElementoNotificacion {
   monto_crc: number | null;
   cliente_nombre: string | null;
 }
+
+/** Una fila de la bitacora de auditoria (GET /api/v1/bitacora, T-84). `actor` nulo: la fuente no guarda quien, o fue el sistema. */
+export interface ElementoBitacora {
+  fecha: string;
+  actor: string | null;
+  accion: string;
+  objeto: string;
+  detalle: string;
+  origen: string;
+}

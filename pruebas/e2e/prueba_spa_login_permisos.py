@@ -92,6 +92,7 @@ ENLACES = {
         "Salud del sistema",
         "Respaldos",
         "Usuarios del portal",
+        "Bitácora de auditoría",
     ],
 }
 

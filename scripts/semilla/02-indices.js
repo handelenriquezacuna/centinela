@@ -173,6 +173,19 @@ db.alertas.createIndex(
   { cuenta_destino: 1, estado: 1 },
   { name: "idx_alertas_destino_estado" }
 );
+// Bitacora de auditoria (T-84): la consulta del administrador filtra las acciones del
+// historial por fecha y por quien las hizo. Indices multillave, usados con $elemMatch para que
+// la fecha y el agente se apliquen a la MISMA accion. Costo: dos entradas de indice por cada
+// accion que se agrega al historial. Medido en docs/06-plataforma.md; si pesara, la bitacora
+// funciona igual sin ellos (recorre `alertas`).
+db.alertas.createIndex(
+  { "historial.fecha": -1 },
+  { name: "idx_alertas_historial_fecha" }
+);
+db.alertas.createIndex(
+  { "historial.agente_id": 1, "historial.fecha": -1 },
+  { name: "idx_alertas_historial_agente_fecha" }
+);
 
 // ------------------------------------------------------------
 // casos

@@ -169,6 +169,10 @@ ACCESOS: tuple[Acceso, ...] = (
     _a("GET", "/administracion/salud", Permiso.ADMINISTRACION),
     _a("GET", "/administracion/respaldos", Permiso.ADMINISTRACION),
     _a("GET", "/administracion/usuarios", Permiso.ADMINISTRACION),
+    # Bitacora de auditoria (T-84): una consulta de administracion
+    _a("GET", "/administracion/bitacora", Permiso.ADMINISTRACION),
+    _a("GET", "/api/v1/bitacora", Permiso.ADMINISTRACION),
+    _a("GET", "/api/v1/bitacora/exportar.csv", Permiso.ADMINISTRACION),
     # Respaldos (D-74): la API es solo del administrador. Restaurar sobre la base viva NO es
     # una ruta: es `python tareas.py restaurar`.
     _a("GET", "/api/v1/respaldos", Permiso.RESPALDOS),

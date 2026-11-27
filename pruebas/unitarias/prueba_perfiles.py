@@ -228,7 +228,7 @@ def tareas(monkeypatch: pytest.MonkeyPatch):
     sys.modules.pop("tareas_t76", None)
 
 
-def prueba_procedimientos_sin_nombre_corre_los_cinco_en_orden(tareas, capsys) -> None:
+def prueba_procedimientos_sin_nombre_corre_los_seis_en_orden(tareas, capsys) -> None:
     assert tareas.main(["--dry-run", "procedimientos"]) == 0
     lineas = [x for x in capsys.readouterr().out.splitlines() if x.startswith("$ ")]
     assert [Path(linea.split("--file ")[1]).name for linea in lineas] == [
@@ -237,6 +237,7 @@ def prueba_procedimientos_sin_nombre_corre_los_cinco_en_orden(tareas, capsys) ->
         "03-recalcular-perfiles.js",
         "04-reporte-efectividad.js",
         "05-map-reduce-comparativo.js",
+        "06-bitacora.js",
     ]
     assert all("27372" in linea and "27018" not in linea for linea in lineas)
 

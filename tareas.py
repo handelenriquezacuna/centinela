@@ -1104,7 +1104,7 @@ def tarea_procedimientos(args: argparse.Namespace) -> None:
     """Corre procedimientos de mongosh (T-76): uno por nombre o todos, con la URI de la app.
 
     Ejemplos:
-      python tareas.py procedimientos                       corre los 5, en orden
+      python tareas.py procedimientos                       corre los 6, en orden
       python tareas.py procedimientos 01                    solo el 01 (nombre o numero)
       python tareas.py procedimientos 01-recalcular-indicadores --desde 2026-11-01 --hasta 2026-11-22
     --desde y --hasta (YYYY-MM-DD, dia de Costa Rica) los usa el 01; los demas los ignoran.

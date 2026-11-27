@@ -56,6 +56,8 @@ def prueba_estan_publicadas_las_rutas_decididas() -> None:
         "/api/v1/respaldos",
         "/api/v1/respaldos/{respaldo_id}/verificar",
         "/api/v1/notificaciones",
+        "/api/v1/bitacora",
+        "/api/v1/bitacora/exportar.csv",
     }
 
 
@@ -413,3 +415,21 @@ async def prueba_la_documentacion_interactiva_se_retiro(cliente: AsyncClient) ->
     El documento sigue en /openapi.json, detras de sesion."""
     assert (await cliente.get("/docs")).status_code == status.HTTP_404_NOT_FOUND
     assert (await cliente.get("/redoc")).status_code == status.HTTP_404_NOT_FOUND
+
+
+def prueba_la_bitacora_publica_su_pagina_sus_filtros_y_sus_errores() -> None:
+    """T-84: la bitacora y su CSV son solo lectura, con la forma de pagina de siempre."""
+    lectura = ESQUEMA["paths"]["/api/v1/bitacora"]
+    assert set(lectura) == {"get"}
+    respuestas = lectura["get"]["responses"]
+    ok = respuestas["200"]["content"]["application/json"]["schema"]["$ref"]
+    assert ok.endswith("/PaginaBitacora")
+    for codigo in ("401", "403", "422"):
+        referencia = respuestas[codigo]["content"]["application/json"]["schema"]["$ref"]
+        assert referencia.endswith("/RespuestaError"), codigo
+    parametros = {p["name"] for p in lectura["get"]["parameters"]}
+    assert parametros == {"desde", "hasta", "actor", "accion", "objeto", "limite", "desplazamiento"}
+    elemento = ESQUEMA["components"]["schemas"]["ElementoBitacora"]
+    assert set(elemento["properties"]) == {"fecha", "actor", "accion", "objeto", "detalle", "origen"}
+    exportar = ESQUEMA["paths"]["/api/v1/bitacora/exportar.csv"]["get"]["responses"]
+    assert "text/csv" in exportar["200"]["content"]
