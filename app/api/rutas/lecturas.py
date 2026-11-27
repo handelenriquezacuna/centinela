@@ -42,6 +42,8 @@ from app.api.detalle import (
     cortes_de,
     es_v2,
     explicacion_puntaje,
+    propuesta_de_mula,
+    sugerencia_del_cliente,
 )
 from app.api.errores import CodigoError, ErrorCentinela, respuestas_documentadas
 from app.api.esquemas_portal import (
@@ -67,6 +69,7 @@ from app.api.sesion import SesionDep
 from app.deteccion.d1 import NOMBRE_D1
 from app.modelos import Alerta
 from app.modelos.base import asumir_utc
+from app.nucleo.enmascarar import telefono as telefono_enmascarado
 from app.repos.casos_destino import CasoDestino
 from app.repos.red_mulas import (
     SALTOS_MAXIMOS,
@@ -142,7 +145,14 @@ async def detalle_alerta(
             else None
         ),
         cliente=(
-            {"cliente_id": cliente["_id"], "nombre": cliente["nombre"], "cedula": cliente.get("cedula")}
+            {
+                "cliente_id": cliente["_id"],
+                "nombre": cliente["nombre"],
+                "cedula": cliente.get("cedula"),
+                # T-82: el telefono nunca sale completo por una pantalla del banco.
+                "telefono": telefono_enmascarado(cliente.get("telefono")),
+                "acepta_sms": cliente.get("acepta_sms"),
+            }
             if cliente is not None
             else None
         ),
@@ -160,6 +170,8 @@ async def detalle_alerta(
             for destino, rotulo, _clase, ayuda, cierra in acciones_permitidas(alerta["estado"])
         ],
         caso_id=await caso_de(alerta, repo_detalle),
+        sugerencia_cliente=sugerencia_del_cliente(alerta),
+        propuesta_mula=propuesta_de_mula(alerta),
         nombres_agentes={a["_id"]: a["nombre"] for a in agentes},
     )
 
@@ -189,6 +201,7 @@ def _caso(caso: CasoDestino) -> CasoDestinoRespuesta:
         alertas_ocultas=caso.alertas_ocultas,
         en_lista_riesgo=caso.en_lista_riesgo,
         sugerencia=caso.sugerencia,
+        no_fui_yo=caso.no_fui_yo,
         acciones=[
             AccionLote(destino=destino, rotulo=rotulo)  # type: ignore[arg-type]
             for destino, rotulo, _clase in acciones_del_caso(caso)

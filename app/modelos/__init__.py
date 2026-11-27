@@ -28,6 +28,7 @@ from app.modelos.alertas import (
     EstadoCaso,
     PoliticaAplicada,
     ReglaAplicada,
+    RespuestaCliente,
     RolAgente,
 )
 from app.modelos.base import (
@@ -136,6 +137,7 @@ __all__ = [
     "PoliticaAplicada",
     "Regla",
     "ReglaAplicada",
+    "RespuestaCliente",
     "RolAgente",
     "Severidad",
     "Transaccion",

@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { Link } from "react-router";
 
-import type { EstadoAlerta, Severidad } from "../api/tipos";
-import type { AccionDisponible } from "../api/tiposDetalle";
+import type { EstadoAlerta, RespuestaCliente, Severidad } from "../api/tipos";
+import type { AccionDisponible, SugerenciaCliente } from "../api/tiposDetalle";
 import { etiqueta } from "../formatos";
 import { AvisoRegion, type ResultadoAviso } from "./AvisoRegion";
 import { DialogoConfirmacion } from "./DialogoConfirmacion";
 import { Insignia } from "./Insignia";
+import { InsigniaCliente } from "./InsigniaCliente";
 
 const CLASE_BOTON: Record<string, string> = {
   en_revision: "boton-primario",
@@ -32,6 +33,9 @@ interface Propiedades {
   siguiente?: string | null | undefined;
   /** Caso que se abrio al escalar. */
   casoId?: string | null;
+  /** T-82: lo que el cliente contesto a su SMS, y lo que eso sugiere. Sugiere; decide el agente. */
+  respuestaCliente?: RespuestaCliente | null | undefined;
+  sugerenciaCliente?: SugerenciaCliente | null | undefined;
 }
 
 /**
@@ -39,7 +43,7 @@ interface Propiedades {
  * estados y la siguiente alerta de la cola. Queda fija arriba, de modo que decidir no
  * obliga a desplazarse. Las acciones que cierran piden confirmacion en un dialogo.
  */
-export function BarraDecision({ alertaId, estado, severidad, acciones, ocupado = false, alResolver, resultado = null, actuaComo, siguiente, casoId }: Propiedades) {
+export function BarraDecision({ alertaId, estado, severidad, acciones, ocupado = false, alResolver, resultado = null, actuaComo, siguiente, casoId, respuestaCliente, sugerenciaCliente }: Propiedades) {
   // La nota se escribio para un estado: al cambiar (la accion se aplico) deja de valer.
   const [escrita, setEscrita] = useState({ estado, texto: "" });
   const nota = escrita.estado === estado ? escrita.texto : "";
@@ -62,12 +66,23 @@ export function BarraDecision({ alertaId, estado, severidad, acciones, ocupado =
       <div className="barra-estado">
         <Insignia tipo="estado" valor={estado} id="insignia-estado" />
         <Insignia tipo="severidad" valor={severidad} texto={`Severidad ${etiqueta(severidad).toLowerCase()}`} />
+        <InsigniaCliente respuesta={respuestaCliente} id="insignia-cliente" />
         {actuaComo ? (
           <span className="nota-tecnica" id="actuas-como">
             Actúas como <strong>{actuaComo}</strong>
           </span>
         ) : null}
       </div>
+
+      {sugerenciaCliente ? (
+        <p
+          className={`mensaje ${sugerenciaCliente.valor === "no_fui_yo" ? "mensaje-error" : "mensaje-ok"}`}
+          id="sugerencia-cliente"
+          data-destino-sugerido={sugerenciaCliente.destino_sugerido}
+        >
+          {sugerenciaCliente.texto}
+        </p>
+      ) : null}
 
       {acciones.length > 0 ? (
         <div className="barra-acciones" id="form-resolver">

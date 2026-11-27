@@ -45,6 +45,7 @@ PAGINAS_SPA: tuple[str, ...] = (
     "/administracion/usuarios",
     "/administracion/bitacora",
     "/notificaciones",
+    "/simulador-sms",
 )
 
 # El menu de la SPA: (ruta, rotulo, area). El orden es el de trabajo. Cada rol ve solo

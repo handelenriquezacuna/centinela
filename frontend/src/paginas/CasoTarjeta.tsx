@@ -5,6 +5,7 @@ import { ErrorApi, pedir } from "../api/cliente";
 import type { AccionLote, AlertaDeCaso, CasoDestino, EstadoAlerta, ResultadoLote } from "../api/tipos";
 import { FechaCR } from "../componentes/FechaCR";
 import { Insignia } from "../componentes/Insignia";
+import { InsigniaCliente } from "../componentes/InsigniaCliente";
 import { MontoColones } from "../componentes/MontoColones";
 import { TablaDatos, type Columna } from "../componentes/TablaDatos";
 import { etiqueta } from "../formatos";
@@ -136,7 +137,15 @@ export function CasoTarjeta({ caso, alTerminarLote }: Propiedades) {
     { clave: "origen", titulo: "Origen", celda: (a) => a.cuenta_origen, clase: "alerta-cuentas" },
     { clave: "monto", titulo: "Monto", celda: (a) => <MontoColones valor={a.monto_crc} /> },
     { clave: "creada", titulo: "Creada (hora CR)", celda: (a) => <FechaCR valor={a.fecha_creacion} /> },
-    { clave: "estado", titulo: "Estado", celda: (a) => <Insignia tipo="estado" valor={a.estado} /> },
+    {
+      clave: "estado",
+      titulo: "Estado",
+      celda: (a) => (
+        <>
+          <Insignia tipo="estado" valor={a.estado} /> <InsigniaCliente respuesta={a.respuesta_cliente} />
+        </>
+      ),
+    },
   ];
 
   const tituloId = `caso-${cuenta}-titulo`;
@@ -189,6 +198,11 @@ export function CasoTarjeta({ caso, alTerminarLote }: Propiedades) {
       <header className="caso-cabecera">
         <h2 id={tituloId} className="caso-titulo">
           Cuenta <span className="id-corto">{cuenta}</span>{" "}
+          {(caso.no_fui_yo ?? 0) > 0 ? (
+            <span className="insignia insignia-cliente es-cliente-no" data-caso-no-fui-yo>
+              {caso.no_fui_yo === 1 ? "1 cliente dice: no fui yo" : `${caso.no_fui_yo} clientes dicen: no fui yo`}
+            </span>
+          ) : null}{" "}
           {caso.en_lista_riesgo ? (
             <span className="insignia es-critica" title="Vigente en listas de riesgo">
               En lista de riesgo

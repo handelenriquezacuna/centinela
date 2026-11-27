@@ -44,6 +44,7 @@ class Permiso(StrEnum):
     ADMINISTRACION = "administracion"  # area de Administracion: solo el administrador
     RESPALDOS = "respaldos"  # crear y verificar respaldos de la base (D-74): solo administrador
     VER_NOTIFICACIONES = "ver_notificaciones"  # los correos de alertas criticas (D2, H-11)
+    SIMULADOR_SMS = "simulador_sms"  # la bandeja de telefono de la demo (T-82)
 
 
 _PERMISOS_AGENTE = frozenset(
@@ -66,6 +67,7 @@ PERMISOS_POR_ROL: dict[RolAgente, frozenset[Permiso]] = {
         Permiso.EDITAR_REGLAS,
         Permiso.GESTIONAR_LISTAS,
         Permiso.VER_NOTIFICACIONES,
+        Permiso.SIMULADOR_SMS,
     },
     RolAgente.ADMINISTRADOR: frozenset(Permiso),
 }
@@ -103,6 +105,10 @@ ACCESOS: tuple[Acceso, ...] = (
     _a("GET", "/salud", None),
     _a("POST", "/api/v1/sesion", None),
     _a("DELETE", "/api/v1/sesion", None),
+    # Portal del cliente (T-82): el token del enlace del SMS ES la autorizacion
+    _a("GET", "/c/{token}", None),
+    _a("GET", "/api/v1/cliente/{token}", None),
+    _a("POST", "/api/v1/cliente/{token}/respuesta", None),
     # Cualquier sesion
     _a("GET", "/api/v1/sesion", Permiso.SESION),
     _a("POST", "/api/v1/sesion/renovar", Permiso.SESION),
@@ -154,6 +160,9 @@ ACCESOS: tuple[Acceso, ...] = (
     # Notificaciones de D2: solo supervisor y administrador
     _a("GET", "/notificaciones", Permiso.VER_NOTIFICACIONES),
     _a("GET", "/api/v1/notificaciones", Permiso.VER_NOTIFICACIONES),
+    # Simulador de telefono de la demo (T-82): supervisor y administrador
+    _a("GET", "/simulador-sms", Permiso.SIMULADOR_SMS),
+    _a("GET", "/api/v1/simulador-sms", Permiso.SIMULADOR_SMS),
     # Reglas y politica
     _a("GET", "/reglas", Permiso.VER_REGLAS),
     _a("GET", "/api/v1/reglas", Permiso.VER_REGLAS),

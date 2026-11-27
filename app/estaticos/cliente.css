@@ -1,0 +1,190 @@
+/* Portal del cliente y simulador de telefono (T-82). Movil primero, sin depender del portal. */
+
+.cliente {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 16px;
+  font-size: 1.05rem;
+  line-height: 1.45;
+  color: #0f172a;
+}
+
+.cliente-marca {
+  margin: 0 0 12px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #475569;
+}
+
+.cliente-tarjeta {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.cliente h1 {
+  margin: 0 0 8px;
+  font-size: 1.6rem;
+}
+
+.cliente h2 {
+  margin: 0 0 6px;
+  font-size: 1.2rem;
+}
+
+.cliente-monto {
+  margin: 4px 0 12px;
+  font-size: 2.2rem;
+  font-weight: 800;
+}
+
+.cliente-datos {
+  margin: 0;
+}
+
+.cliente-datos div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid #f1f5f9;
+}
+
+.cliente-datos dt {
+  color: #475569;
+}
+
+.cliente-datos dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+.cliente-tipo,
+.cliente-nota {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.cliente-pregunta {
+  margin: 0 0 12px;
+  font-weight: 700;
+}
+
+.cliente-botones {
+  display: grid;
+  gap: 12px;
+}
+
+.cliente-boton {
+  min-height: 64px;
+  font-size: 1.25rem;
+  font-weight: 800;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+  color: #ffffff;
+}
+
+.cliente-boton:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.cliente-si {
+  background: #15803d;
+}
+
+.cliente-no {
+  background: #b91c1c;
+}
+
+.cliente-error {
+  margin: 8px 0 0;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.cliente-respuesta {
+  margin: 0 0 12px;
+}
+
+.cliente-caso {
+  border-left: 6px solid #1d4ed8;
+}
+
+.cliente-caso.es-fraude_confirmado {
+  border-left-color: #b91c1c;
+}
+
+.cliente-caso.es-sin_fraude {
+  border-left-color: #15803d;
+}
+
+.cliente-ayuda {
+  margin: 16px 0 0;
+  font-size: 0.95rem;
+}
+
+.cliente-ejemplo {
+  font-weight: 400;
+  color: #475569;
+}
+
+/* ---- simulador de telefono (supervisor / administrador) ---- */
+
+.telefono {
+  width: 100%;
+  max-width: 360px;
+  min-height: 420px;
+  margin: 0 auto;
+  padding: 0 12px 16px;
+  background: #f8fafc;
+  border: 8px solid #0f172a;
+  border-radius: 32px;
+}
+
+.telefono-barra {
+  margin: 0 -12px 12px;
+  padding: 12px;
+  font-weight: 800;
+  text-align: center;
+  background: #e2e8f0;
+}
+
+.telefono-vacio {
+  text-align: center;
+  color: #475569;
+}
+
+.sms {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 16px 16px 16px 4px;
+}
+
+.sms-cabecera,
+.sms-pie {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  font-size: 0.75rem;
+  color: #475569;
+}
+
+.sms-texto {
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+}
+
+.sms-enlace {
+  color: #1d4ed8;
+  text-decoration: underline;
+}

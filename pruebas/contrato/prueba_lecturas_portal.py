@@ -163,6 +163,9 @@ async def prueba_el_detalle_trae_el_contexto_sin_la_etiqueta_oculta(armar: Armar
         "cliente_id": "CLI-001",
         "nombre": "Maria Rodriguez Vargas",
         "cedula": "1-1111-1111",
+        # T-82: el telefono sale enmascarado y solo si la ficha lo trae.
+        "telefono": None,
+        "acepta_sms": None,
     }
     assert detalle["perfil"]["promedio_crc"] == 45_200
     assert detalle["perfil"]["horario_habitual"] == {"inicio": "07:00", "fin": "19:00"}

@@ -30,7 +30,13 @@ import pytest_asyncio
 from app.modelos import EstadoAlerta, Severidad
 from app.nucleo.config import Ajustes
 from app.nucleo.db import ciclo_cliente
-from app.repos.alertas import ORDEN_PANEL, construir_filtro
+from app.repos.alertas import (
+    INDICE_PRIORITARIAS,
+    ORDEN_PANEL,
+    PRIORITARIA,
+    _con,
+    construir_filtro,
+)
 from pruebas.conftest import MENSAJE_SIN_MONGO, RUTA_RAIZ, saltar_o_fallar
 
 pytestmark = pytest.mark.mongo
@@ -107,7 +113,7 @@ def indice_del_plan(plan: dict[str, Any]) -> str | None:
     return None
 
 
-async def explicar(base: Any, filtro: dict[str, Any]) -> PlanResumido:
+async def explicar(base: Any, filtro: dict[str, Any], hint: str | None = None) -> PlanResumido:
     """`explain("executionStats")` de la consulta de la cola, con el orden y el limite del panel."""
     respuesta = await base.command(
         {
@@ -116,6 +122,7 @@ async def explicar(base: Any, filtro: dict[str, Any]) -> PlanResumido:
                 "filter": filtro,
                 "sort": dict(ORDEN_PANEL),
                 "limit": LIMITE_PAGINA,
+                **({"hint": hint} if hint else {}),
             },
             "verbosity": "executionStats",
         }
@@ -167,8 +174,7 @@ def _alertas_sinteticas() -> list[dict[str, Any]]:
     documentos = []
     for numero in range(1, ALERTAS_SINTETICAS + 1):
         severidad, puntaje = SEVERIDADES[numero % len(SEVERIDADES)]
-        documentos.append(
-            {
+        documento = {
                 "_id": f"ALR-{numero:05d}",
                 "transaccion_id": f"TXN-{numero:05d}",
                 "estado": ESTADOS[(numero // 7) % len(ESTADOS)],
@@ -177,7 +183,10 @@ def _alertas_sinteticas() -> list[dict[str, Any]]:
                 "fecha_creacion": inicio + timedelta(minutes=37 * numero),
                 "agente_id": f"AGT-{1 + numero % 4:03d}",
             }
-        )
+        # T-82: unas pocas alertas con la respuesta "No fui yo" del cliente (4 de cada mil).
+        if numero % 250 == 0:
+            documento["respuesta_cliente"] = {"valor": "no_fui_yo", "fecha": inicio}
+        documentos.append(documento)
     return documentos
 
 
@@ -244,3 +253,41 @@ async def prueba_plan_usa_su_indice_sin_sort_en_memoria(
     assert plan.n_returned > 0, (
         "la consulta no devolvio nada: el volumen sintetico no la cubre"
     )
+
+
+# ---------------------------------------------------------------------------
+# T-82 · la cola con las alertas "No fui yo" arriba: dos tramos, cada uno con su indice
+# ---------------------------------------------------------------------------
+
+PRIORITARIAS_ESPERADAS = [n for n in range(1, ALERTAS_SINTETICAS + 1) if n % 250 == 0]
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def prueba_el_tramo_de_prioritarias_lee_su_indice_parcial_sin_sort(base_generada: Any) -> None:
+    plan = await explicar(base_generada, _con({}, PRIORITARIA), hint=INDICE_PRIORITARIAS)
+
+    assert plan.indice == "idx_alertas_no_fui_yo"
+    assert not plan.hay_sort
+    # Solo las del indice parcial, de las abiertas: nada de recorrer la coleccion.
+    assert plan.docs_examined <= len(PRIORITARIAS_ESPERADAS)
+
+
+@pytest.mark.asyncio(loop_scope="module")
+@pytest.mark.parametrize(
+    ("filtro", "indice"),
+    [
+        ({}, "idx_alertas_puntaje_fecha"),
+        ({"estado": EstadoAlerta.NUEVA.value}, "idx_alertas_estado_puntaje_fecha"),
+        ({"severidad": Severidad.CRITICA.value}, "idx_alertas_severidad_puntaje_fecha"),
+    ],
+    ids=["resto_sin_filtros", "resto_nueva", "resto_critica"],
+)
+async def prueba_el_tramo_del_resto_sigue_sin_sort_y_cuesta_solo_las_prioritarias(
+    base_generada: Any, filtro: dict[str, Any], indice: str
+) -> None:
+    plan = await explicar(base_generada, _con(filtro, {"$nor": [PRIORITARIA]}))
+
+    assert plan.indice == indice
+    assert not plan.hay_sort, "el $nor de las prioritarias no debe forzar un SORT en memoria"
+    # El unico costo: leer (y descartar) las prioritarias que caen dentro de lo recorrido.
+    assert plan.docs_examined <= plan.n_returned + len(PRIORITARIAS_ESPERADAS)

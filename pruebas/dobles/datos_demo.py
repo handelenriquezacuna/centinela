@@ -67,12 +67,17 @@ CLIENTES = [
         nombre="Maria Rodriguez Vargas",
         cedula="1-1111-1111",
         fecha_registro=_local(9, 0, dia=1),
+        # T-82: Maria acepta el SMS de aviso; Luis tiene telefono pero no acepta; Ana no tiene.
+        telefono="8712-4455",
+        acepta_sms=True,
     ),
     Cliente(
         _id="CLI-002",
         nombre="Luis Fernandez Solano",
         cedula="2-2222-2222",
         fecha_registro=_local(9, 0, dia=2),
+        telefono="6210-3387",
+        acepta_sms=False,
     ),
     Cliente(
         _id="CLI-003",
@@ -85,6 +90,8 @@ CLIENTES = [
         nombre="Carlos Mora Rojas",
         cedula="4-4444-4444",
         fecha_registro=_local(9, 0, dia=4),
+        telefono="3390-6612",
+        acepta_sms=True,
     ),
     # Titulares de las cuentas de la cadena de mulas del caso (UC-04). Son clientes del
     # banco: la red de mulas solo sigue el dinero entre cuentas con documento en `cuentas`.

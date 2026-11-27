@@ -16,6 +16,7 @@ from app.api.rutas import (
     acceso,
     alertas,
     bitacora,
+    cliente,
     inteligencia,
     lecturas,
     listas_riesgo,
@@ -45,5 +46,6 @@ enrutador_v1.include_router(respaldos.enrutador)
 enrutador_v1.include_router(notificaciones.enrutador)
 enrutador_v1.include_router(usuarios.enrutador)
 enrutador_v1.include_router(bitacora.enrutador)
+enrutador_v1.include_router(cliente.enrutador)
 
 __all__ = ["enrutador_v1"]

@@ -84,6 +84,14 @@ Nota (D-55): la semilla del portal deja solo `RSK-001` vigente; `RSK-002` a `RSK
 |---|---|---|
 | `NOT-001` | `ALR-001` | correo |
 
+T-82: el SMS de aviso al cliente deriva su `_id` de la alerta con el sufijo `-SMS` (`ALR-000123` ->
+`NOT-000123-SMS`), porque una alerta tiene a lo sumo una notificacion por canal (indice unico
+`(alerta_id, canal)`) y el correo ya usa `NOT-000123`. Patron: `^NOT-[0-9]{3,}(-SMS)?$`.
+
+| _id | alerta_id | canal |
+|---|---|---|
+| `NOT-000123-SMS` | `ALR-000123` | sms |
+
 ## Perfiles e indicadores (materializados — para Práctica 1 se insertan a mano)
 
 - `perfiles_comportamiento` se indexa por `cliente_id`. Para `CLI-001` usar los

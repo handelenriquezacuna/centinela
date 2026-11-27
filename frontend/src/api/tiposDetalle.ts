@@ -2,7 +2,7 @@
  * Tipos de GET /api/v1/alertas/{id}/detalle y POST /api/v1/alertas/{id}/transiciones.
  * Espejo de `DetalleAlerta` (app/api/esquemas_portal.py). Dinero entero, fechas UTC.
  */
-import type { EstadoAlerta, Severidad } from "./tipos";
+import type { EstadoAlerta, RespuestaCliente, Severidad } from "./tipos";
 
 export interface EntradaHistorial {
   fecha: string;
@@ -28,6 +28,7 @@ export interface AlertaDetallada {
   /** v2: objetos con la regla; v1: solo identificadores de regla. */
   reglas_disparadas: unknown[];
   historial: EntradaHistorial[];
+  respuesta_cliente?: RespuestaCliente | null;
 }
 
 export interface ReglaExplicada {
@@ -82,6 +83,20 @@ export interface ClienteDetalle {
   cliente_id: string;
   nombre: string;
   cedula: string | null;
+  /** Enmascarado por el servidor: 8***-**55. */
+  telefono?: string | null;
+  acepta_sms?: boolean | null;
+}
+
+export interface SugerenciaCliente {
+  valor: "si_fui_yo" | "no_fui_yo";
+  texto: string;
+  destino_sugerido: "descartada" | "confirmada";
+}
+
+export interface PropuestaMula {
+  cuenta: string;
+  motivo: string;
 }
 
 export interface PerfilDetalle {
@@ -109,6 +124,8 @@ export interface DetalleAlerta {
   puntaje: ExplicacionPuntaje;
   acciones: AccionDisponible[];
   caso_id: string | null;
+  sugerencia_cliente?: SugerenciaCliente | null;
+  propuesta_mula?: PropuestaMula | null;
   nombres_agentes: Record<string, string>;
 }
 

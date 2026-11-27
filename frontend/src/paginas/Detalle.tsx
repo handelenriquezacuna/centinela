@@ -110,7 +110,22 @@ function DetalleCargado({ detalle }: { detalle: DetalleAlerta }) {
         actuaComo={decision.actuaComo}
         siguiente={siguiente}
         casoId={detalle.caso_id}
+        respuestaCliente={alerta.respuesta_cliente}
+        sugerenciaCliente={detalle.sugerencia_cliente}
       />
+
+      {detalle.propuesta_mula ? (
+        <section className="tarjeta" aria-label="Propuesta de mula" id="propuesta-mula">
+          <h2 className="seccion-titulo">Cuenta destino propuesta como mula</h2>
+          <p>
+            La cuenta <span className="id-corto">{detalle.propuesta_mula.cuenta}</span>: {detalle.propuesta_mula.motivo}. Es una propuesta; un
+            supervisor la aprueba desde la red de mulas.
+          </p>
+          <Link className="boton boton-secundario" to={`/red-mulas/${detalle.propuesta_mula.cuenta}`}>
+            Ver la red de esa cuenta
+          </Link>
+        </section>
+      ) : null}
 
       <section className="tarjeta" aria-label="Resumen de la alerta">
         <div className="resumen-alerta">
@@ -192,6 +207,14 @@ function DetalleCargado({ detalle }: { detalle: DetalleAlerta }) {
               {cliente ? ` (${cliente.cliente_id})` : ""}
             </dd>
           </div>
+          {cliente?.telefono ? (
+            <div>
+              <dt>Teléfono</dt>
+              <dd id="cliente-telefono">
+                {cliente.telefono} {cliente.acepta_sms ? "(acepta SMS)" : "(no acepta SMS)"}
+              </dd>
+            </div>
+          ) : null}
           {cliente?.cedula ? (
             <div>
               <dt>Cédula</dt>
@@ -371,7 +394,8 @@ function DetalleCargado({ detalle }: { detalle: DetalleAlerta }) {
                 {accion.agente_id ? `${nombres[accion.agente_id] ?? ""} ${accion.agente_id}`.trim() : "Sistema"}
               </div>
               <div>
-                Acción: <strong>{etiqueta(accion.accion)}</strong>
+                {accion.accion === "respuesta_cliente" ? "Respuesta del cliente" : "Acción"}:{" "}
+                <strong>{accion.accion === "respuesta_cliente" ? "desde su enlace" : etiqueta(accion.accion)}</strong>
               </div>
               {accion.nota ? <div className="nota">&quot;{accion.nota}&quot;</div> : null}
             </li>

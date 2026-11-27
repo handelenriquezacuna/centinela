@@ -8,6 +8,7 @@ import { Marco } from "./componentes/Marco";
 import { RequiereSesion } from "./componentes/RequiereSesion";
 import { Bitacora } from "./paginas/Bitacora";
 import { Busqueda } from "./paginas/Busqueda";
+import { Cliente } from "./paginas/Cliente";
 import { Login } from "./paginas/Login";
 import { NoEncontrada } from "./paginas/NoEncontrada";
 import { Notificaciones } from "./paginas/Notificaciones";
@@ -18,6 +19,7 @@ import { RedMulas } from "./paginas/RedMulas";
 import { Respaldos } from "./paginas/Respaldos";
 import { Reglas } from "./paginas/Reglas";
 import { Salud } from "./paginas/Salud";
+import { SimuladorSms } from "./paginas/SimuladorSms";
 import { Tablero } from "./paginas/Tablero";
 import { Usuarios } from "./paginas/Usuarios";
 
@@ -31,6 +33,9 @@ function protegida(plantilla: string, elemento: ReactNode): ReactNode {
 }
 
 export const RUTAS: RouteObject[] = [
+  // T-82: la pagina publica del cliente va FUERA del marco del portal: sin menu, sin sesion
+  // y sin enlaces a otras pantallas del banco. El token del enlace es la autorizacion.
+  { path: "/c/:token", element: <Cliente /> },
   {
     element: <Marco />,
     children: [
@@ -83,6 +88,7 @@ export const RUTAS: RouteObject[] = [
         path: "/notificaciones",
         element: protegida("/notificaciones", <Notificaciones />),
       },
+      { path: "/simulador-sms", element: protegida("/simulador-sms", <SimuladorSms />) },
       { path: "*", element: <NoEncontrada /> },
     ],
   },

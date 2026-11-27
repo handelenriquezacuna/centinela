@@ -228,6 +228,46 @@ class AjustesNotificaciones(BaseModel):
         return self
 
 
+class AjustesAvisoCliente(BaseModel):
+    """Aviso al cliente (T-82): SMS simulado con enlace a su portal. Tecnico, sin secretos.
+
+    D2, ademas del correo al supervisor, avisa al CLIENTE de cada alerta CRITICA cuando su
+    ficha trae telefono y `acepta_sms`. El SMS lleva un enlace de un solo uso.
+
+    - `activo`: apagarlo deja el correo del supervisor como esta y no genera SMS.
+    - `proveedor`: quien entrega el SMS. Hoy solo `simulado` (guarda el mensaje en la
+      notificacion, sin salir a ninguna red). Un proveedor real se agrega implementando
+      `EnviadorSms` (app/deteccion/aviso_cliente.py) y una opcion mas aqui.
+    - `vigencia_minutos`: cuanto vale el enlace para RESPONDER. Pasado ese tiempo, o ya
+      respondido, el enlace no deja responder.
+    - `seguimiento_horas`: cuanto despues de responder el mismo enlace sigue mostrando el
+      estado del caso (solo lectura).
+    - `telefono_ayuda`: numero que muestra el portal del cliente. Ficticio en el demo.
+    - `telefono_ayuda_es_ejemplo`: la pagina lo rotula "(número de ejemplo)". Apagar con un
+      numero real.
+    - `intentos_invalidos_por_ip` / `respuestas_por_enlace` / `ventana_segundos`: limite de
+      abuso del endpoint publico, en memoria (un solo proceso). Tecnico: protege el
+      endpoint de quien prueba enlaces al azar o insiste con respuestas.
+    - `sondeo_segundos`: cada cuanto la pagina del cliente pregunta el estado de su caso.
+    - `simulador_sms`: la pagina `/simulador-sms` (bandeja de telefono para la demo). Por
+      omision (`null`) solo se activa en `app.entorno: dev`; `true` o `false` lo fija.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    activo: bool = True
+    proveedor: Literal["simulado"] = "simulado"
+    vigencia_minutos: int = Field(default=15, ge=1, le=24 * 60)
+    seguimiento_horas: int = Field(default=24, ge=1, le=24 * 30)
+    telefono_ayuda: str = Field(default="800-000-0000", min_length=3)
+    intentos_invalidos_por_ip: int = Field(default=10, ge=1)
+    respuestas_por_enlace: int = Field(default=5, ge=1)
+    ventana_segundos: int = Field(default=60, ge=1)
+    sondeo_segundos: int = Field(default=3, ge=1, le=60)
+    telefono_ayuda_es_ejemplo: bool = True
+    simulador_sms: bool | None = None
+
+
 class AjustesIndicadores(BaseModel):
     """Disparador D3 (H-22): cada cuanto se recalcula el indicador del dia actual.
 
@@ -457,6 +497,7 @@ class Ajustes(BaseSettings):
     canal: AjustesCanal = AjustesCanal()
     deteccion: AjustesDeteccion = AjustesDeteccion()
     notificaciones: AjustesNotificaciones = AjustesNotificaciones()
+    aviso_cliente: AjustesAvisoCliente = AjustesAvisoCliente()
     indicadores: AjustesIndicadores = AjustesIndicadores()
     rasgos_grafo: AjustesRasgosGrafo = AjustesRasgosGrafo()
     perfiles: AjustesPerfiles = AjustesPerfiles()
@@ -465,6 +506,12 @@ class Ajustes(BaseSettings):
     respaldos: AjustesRespaldos = AjustesRespaldos()
     registro: AjustesRegistro = AjustesRegistro()
     generador: AjustesGenerador = Field(default_factory=AjustesGenerador)
+
+    @property
+    def simulador_sms_activo(self) -> bool:
+        """La bandeja de telefono de la demo: explicita si se fijo, y si no solo en dev."""
+        fijada = self.aviso_cliente.simulador_sms
+        return self.app.entorno == "dev" if fijada is None else fijada
 
     @model_validator(mode="after")
     def los_rasgos_duran_mas_que_el_intervalo_de_d3(self) -> Ajustes:

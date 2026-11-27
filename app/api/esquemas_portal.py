@@ -19,7 +19,7 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 from app.api.esquemas import Pagina
-from app.modelos.alertas import Alerta, RolAgente
+from app.modelos.alertas import Alerta, RespuestaCliente, RolAgente
 from app.modelos.base import FechaDia, MarcaTiempoUTC, ModeloCentinela, asumir_utc
 from app.modelos.estados import EstadoAlerta, Severidad
 from app.modelos.transaccional import EntradaListaRiesgo
@@ -127,6 +127,27 @@ class ClienteDetalle(BaseModel):
     cliente_id: str = Field(examples=["CLI-001"])
     nombre: str
     cedula: str | None = None
+    # T-82: ENMASCARADO (8***-**55); el numero completo no sale de la base.
+    telefono: str | None = Field(default=None, examples=["8***-**55"])
+    acepta_sms: bool | None = None
+
+
+class PropuestaMula(BaseModel):
+    """T-82: el cliente dijo "No fui yo", asi que la cuenta destino queda como propuesta de mula.
+
+    Es una propuesta, no una marca: un supervisor la revisa en la red de mulas y la aprueba.
+    """
+
+    cuenta: str = Field(examples=["6033-9001"])
+    motivo: str
+
+
+class SugerenciaCliente(BaseModel):
+    """Que sugiere la respuesta del cliente. Sugiere; el agente decide y la alerta no se cierra."""
+
+    valor: Literal["si_fui_yo", "no_fui_yo"]
+    texto: str
+    destino_sugerido: Literal["descartada", "confirmada"]
 
 
 class HorarioDetalle(BaseModel):
@@ -167,6 +188,12 @@ class DetalleAlerta(BaseModel):
     puntaje: ExplicacionPuntaje
     acciones: list[AccionDisponible]
     caso_id: str | None = Field(default=None, description="CAS-xxx si la alerta se escalo")
+    sugerencia_cliente: SugerenciaCliente | None = Field(
+        default=None, description="T-82: lo que sugiere la respuesta del cliente a su SMS"
+    )
+    propuesta_mula: PropuestaMula | None = Field(
+        default=None, description="T-82: cuenta destino propuesta tras un 'No fui yo'"
+    )
     nombres_agentes: dict[str, str] = Field(
         default_factory=dict, description="agente_id -> nombre, para leer el historial"
     )
@@ -190,6 +217,7 @@ class AlertaDeCaso(ModeloCentinela):
     monto_crc: int
     fecha_creacion: MarcaTiempoUTC
     agente_id: str | None = None
+    respuesta_cliente: RespuestaCliente | None = None
 
 
 class ReglaRepetida(BaseModel):
@@ -222,6 +250,9 @@ class CasoDestinoRespuesta(BaseModel):
     alertas_ocultas: int = Field(ge=0, description="Alertas de la cuenta que no vienen en la lista")
     en_lista_riesgo: bool
     sugerencia: str | None = Field(default=None, description="Ayuda; decide el agente")
+    no_fui_yo: int = Field(
+        default=0, ge=0, description="T-82: alertas del caso con la respuesta 'No fui yo'"
+    )
     acciones: list[AccionLote]
 
 

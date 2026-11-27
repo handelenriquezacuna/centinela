@@ -24,11 +24,12 @@ from typing import Any, Protocol, runtime_checkable
 from pymongo import ASCENDING, DESCENDING, ReturnDocument
 from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.asynchronous.database import AsyncDatabase
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, OperationFailure
 
 from app.modelos import (
     COLECCION_ALERTAS,
     COLECCION_CASOS,
+    ESTADOS_ABIERTOS,
     Caso,
     EstadoAlerta,
     EstadoCaso,
@@ -48,6 +49,38 @@ ORDEN_PANEL: list[tuple[str, int]] = [
     ("fecha_creacion", DESCENDING),
     ("_id", ASCENDING),
 ]
+
+
+# T-82 (D-81): una alerta ABIERTA a la que el cliente respondio "No fui yo" sube al tope de la
+# cola, por encima del puntaje. Es evidencia fuerte de que el dinero se esta moviendo ahora.
+#
+# Como se logra sin romper el indice del panel (ESR): la cola se arma en DOS tramos, cada uno
+# ordenado por ORDEN_PANEL con su propio indice y SIN `SORT` en memoria.
+#   1. Las prioritarias: igualdad sobre `respuesta_cliente.valor`, que lee el indice parcial
+#      `idx_alertas_no_fui_yo` (solo esas alertas, ya en el orden del panel).
+#   2. El resto: el filtro de siempre mas `$nor` de las prioritarias, que recorre el indice
+#      de la cola en orden y descarta las pocas prioritarias al leerlas.
+# La pagina `n` se compone con aritmetica de desplazamientos (ver `RepoAlertas.listar`): como
+# el resto EXCLUYE a las prioritarias, no hay duplicados ni huecos entre paginas.
+#
+# El primer tramo lleva `hint` del indice parcial: sin el, el planificador prefiere el indice
+# por estado y ordena en memoria (medido: SORT y 1.203 documentos examinados con 3.000 alertas,
+# contra cero SORT y los pocos documentos del indice con el hint). El hint es seguro porque la
+# consulta incluye la igualdad que implica el filtro parcial del indice.
+INDICE_PRIORITARIAS = "idx_alertas_no_fui_yo"
+PRIORITARIA: dict[str, Any] = {
+    "respuesta_cliente.valor": "no_fui_yo",
+    "estado": {"$in": sorted(e.value for e in ESTADOS_ABIERTOS)},
+}
+
+
+def aplica_prioridad(estado: EstadoAlerta | None) -> bool:
+    """Con un filtro por estado cerrado no hay prioritarias que subir."""
+    return estado is None or EstadoAlerta(estado) in ESTADOS_ABIERTOS
+
+
+def _con(filtro: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
+    return {"$and": [filtro, extra]} if filtro else dict(extra)
 
 
 def construir_filtro(
@@ -269,14 +302,47 @@ class RepoAlertas:
 
         total = await self._coleccion.count_documents(filtro)
 
-        cursor = (
-            self._coleccion.find(filtro)
-            .sort(ORDEN_PANEL)
-            .skip(desplazamiento)
-            .limit(limite)
-        )
-        documentos = await cursor.to_list(length=limite)
+        if not aplica_prioridad(estado):
+            cursor = (
+                self._coleccion.find(filtro)
+                .sort(ORDEN_PANEL)
+                .skip(desplazamiento)
+                .limit(limite)
+            )
+            return await cursor.to_list(length=limite), total
 
+        # T-82: primero las prioritarias ("No fui yo" del cliente), despues el resto.
+        prioritarias = _con(filtro, PRIORITARIA)
+        resto = _con(filtro, {"$nor": [PRIORITARIA]})
+        # Una base sin el indice parcial (02-indices.js sin re-correr) rechaza el hint: se sigue
+        # sin el, con el plan que escoja el planificador. Mas lento, pero la cola sale.
+        try:
+            n_prioritarias = await self._coleccion.count_documents(
+                prioritarias, hint=INDICE_PRIORITARIAS
+            )
+            con_hint = True
+        except OperationFailure:
+            n_prioritarias = await self._coleccion.count_documents(prioritarias)
+            con_hint = False
+        documentos: list[dict[str, Any]] = []
+        if desplazamiento < n_prioritarias:
+            cursor = self._coleccion.find(prioritarias)
+            if con_hint:
+                cursor = cursor.hint(INDICE_PRIORITARIAS)
+            cursor = cursor.sort(ORDEN_PANEL).skip(desplazamiento).limit(limite)
+            documentos = await cursor.to_list(length=limite)
+            desplazamiento_resto = 0
+        else:
+            desplazamiento_resto = desplazamiento - n_prioritarias
+        faltan = limite - len(documentos)
+        if faltan > 0:
+            cursor = (
+                self._coleccion.find(resto)
+                .sort(ORDEN_PANEL)
+                .skip(desplazamiento_resto)
+                .limit(faltan)
+            )
+            documentos += await cursor.to_list(length=faltan)
         return documentos, total
 
     async def obtener(self, alerta_id: str) -> dict[str, Any] | None:

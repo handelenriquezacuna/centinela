@@ -177,6 +177,7 @@ def prueba_cada_rol_amplia_al_anterior_y_el_administrador_lo_tiene_todo() -> Non
         Permiso.EDITAR_REGLAS,
         Permiso.GESTIONAR_LISTAS,
         Permiso.VER_NOTIFICACIONES,
+        Permiso.SIMULADOR_SMS,
     }
     assert all(rol_tiene(RolAgente.ADMINISTRADOR, permiso) for permiso in Permiso)
     assert not rol_tiene(RolAgente.AGENTE, Permiso.TABLERO)

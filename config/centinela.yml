@@ -109,6 +109,29 @@ notificaciones:
   # Cada cuanto se guarda el punto de reanudacion de una vuelta vacia (solo se ven CRITICAS).
   refresco_reanudacion_segundos: 30
 
+# Aviso al cliente (T-82): D2 manda al cliente un SMS SIMULADO con un enlace de un solo uso a su
+# portal (/c/{token}), cuando su ficha trae telefono y acepta_sms. Sin internet y sin secretos.
+# En la base se guarda solo el hash del token. La base del enlace es notificaciones.portal_url.
+aviso_cliente:
+  activo: true
+  # Unico proveedor hoy. Uno real se agrega implementando EnviadorSms (app/deteccion/aviso_cliente.py).
+  proveedor: simulado
+  # Cuanto vale el enlace para responder, y cuanto despues sigue mostrando el estado del caso.
+  vigencia_minutos: 15
+  seguimiento_horas: 24
+  # Numero que ve el cliente. Ficticio: es un ejemplo del demo, no una linea real.
+  telefono_ayuda: "800-000-0000"
+  telefono_ayuda_es_ejemplo: true
+  # Limite de abuso del endpoint publico (en memoria, un solo proceso).
+  intentos_invalidos_por_ip: 10
+  respuestas_por_enlace: 5
+  ventana_segundos: 60
+  # Cada cuanto la pagina del cliente pregunta el estado de su caso.
+  sondeo_segundos: 3
+  # Bandeja de telefono de la demo (/simulador-sms, solo supervisor y administrador).
+  # null = activa solo con app.entorno: dev; en produccion queda apagada. true/false lo fija.
+  simulador_sms: null
+
 # Disparador D3 (H-22): recalcula los indicadores del dia actual en indicadores_diarios.
 indicadores:
   # Cada cuantos segundos. Menor que supervision.tolerancia_retraso_segundos, porque

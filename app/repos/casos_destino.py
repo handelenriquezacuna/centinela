@@ -14,6 +14,10 @@ distintas. Agruparlas deja al agente decidir una vez con todo el contexto.
   `cuenta_destino` usa `idx_alertas_destino_estado`.
 - `agrupar_por_destino` es el mismo calculo en Python puro: lo usa el doble de prueba y
   la prueba `mongo` compara los dos caminos sobre los mismos datos.
+- T-82: un caso con alertas a las que el cliente respondio "No fui yo" va PRIMERO, y dentro
+  del caso esas alertas van primero. El `$group` ya recorre todas las alertas abiertas, asi que
+  la marca se calcula ahi mismo (un `$set` por documento) sin leer nada de mas, y el orden de
+  los casos ya era un `$sort` sobre el resultado del grupo, en memoria y sobre pocos casos.
 - El motor sugiere, el humano decide: nada de aqui cierra una alerta.
 """
 
@@ -44,7 +48,12 @@ _SEVERIDAD_POR_RANGO = {rango: nombre for nombre, rango in RANGO_SEVERIDAD.items
 _ABIERTAS = sorted(e.value for e in ESTADOS_ABIERTOS)
 
 # Mismo orden que ORDEN_PANEL, dentro del caso.
-_ORDEN_ALERTAS = {"puntaje": DESCENDING, "fecha_creacion": DESCENDING, "_id": ASCENDING}
+_ORDEN_ALERTAS = {
+    "_no_fui_yo": DESCENDING,
+    "puntaje": DESCENDING,
+    "fecha_creacion": DESCENDING,
+    "_id": ASCENDING,
+}
 
 _CAMPOS_ALERTA = (
     "estado",
@@ -56,6 +65,7 @@ _CAMPOS_ALERTA = (
     "monto_crc",
     "fecha_creacion",
     "agente_id",
+    "respuesta_cliente",
 )
 
 
@@ -73,6 +83,8 @@ class CasoDestino:
     alertas: list[dict[str, Any]]
     en_lista_riesgo: bool = False
     sugerencia: str | None = field(default=None)
+    # T-82: cuantas alertas del caso tienen la respuesta "No fui yo" del cliente.
+    no_fui_yo: int = 0
 
     @property
     def alertas_ocultas(self) -> int:
@@ -83,9 +95,15 @@ def rango_severidad(severidad: str) -> int:
     return RANGO_SEVERIDAD.get(severidad, 0)
 
 
-def clave_de_orden(caso: CasoDestino) -> tuple[int, int, datetime, str]:
-    """Severidad maxima, luego puntaje maximo, luego la mas antigua; la cuenta desempata."""
+def es_no_fui_yo(alerta: Mapping[str, Any]) -> bool:
+    """La alerta (abierta) a la que el cliente respondio "No fui yo"."""
+    return (alerta.get("respuesta_cliente") or {}).get("valor") == "no_fui_yo"
+
+
+def clave_de_orden(caso: CasoDestino) -> tuple[int, int, int, datetime, str]:
+    """Mas respuestas "No fui yo" primero; luego severidad maxima, puntaje maximo y la mas antigua; la cuenta desempata."""
     return (
+        -caso.no_fui_yo,
         -rango_severidad(caso.severidad_max),
         -caso.puntaje_max,
         asumir_utc(caso.mas_antigua),
@@ -132,6 +150,7 @@ def agrupar_por_destino(
         ordenadas = sorted(miembros, key=lambda a: a["_id"])
         ordenadas.sort(key=lambda a: asumir_utc(a["fecha_creacion"]), reverse=True)
         ordenadas.sort(key=lambda a: a["puntaje"], reverse=True)
+        ordenadas.sort(key=lambda a: not es_no_fui_yo(a))
         fechas = [asumir_utc(a["fecha_creacion"]) for a in miembros]
         casos.append(
             CasoDestino(
@@ -151,6 +170,7 @@ def agrupar_por_destino(
                     for a in ordenadas[:maximo_alertas]
                 ],
                 en_lista_riesgo=cuenta in en_riesgo,
+                no_fui_yo=sum(1 for a in miembros if es_no_fui_yo(a)),
             )
         )
     casos.sort(key=clave_de_orden)
@@ -186,9 +206,18 @@ def pipeline_casos(
     salida: dict[str, Any] = {"_id": "$_id", **{c: f"${c}" for c in _CAMPOS_ALERTA}}
     etapas: list[dict[str, Any]] = [
         {"$match": filtro},
+        # T-82: 1 si el cliente respondio "No fui yo". Una sola lectura del campo por documento.
+        {
+            "$set": {
+                "_no_fui_yo": {
+                    "$cond": [{"$eq": ["$respuesta_cliente.valor", "no_fui_yo"]}, 1, 0]
+                }
+            }
+        },
         {
             "$group": {
                 "_id": "$cuenta_destino",
+                "no_fui_yo": {"$sum": "$_no_fui_yo"},
                 "total_alertas": {"$sum": 1},
                 "clientes": {"$addToSet": "$cliente_nombre"},
                 "monto_total_crc": {"$sum": "$monto_crc"},
@@ -221,6 +250,7 @@ def pipeline_casos(
                 "mas_reciente": 1,
                 "reglas": 1,
                 "alertas": 1,
+                "no_fui_yo": 1,
             }
         },
     ]
@@ -230,7 +260,15 @@ def pipeline_casos(
         {
             "$facet": {
                 "pagina": [
-                    {"$sort": {"rango_max": -1, "puntaje_max": -1, "mas_antigua": 1, "_id": 1}},
+                    {
+                        "$sort": {
+                            "no_fui_yo": -1,
+                            "rango_max": -1,
+                            "puntaje_max": -1,
+                            "mas_antigua": 1,
+                            "_id": 1,
+                        }
+                    },
                     {"$skip": desplazamiento},
                     {"$limit": limite},
                 ],
@@ -255,6 +293,7 @@ def _desde_documento(documento: Mapping[str, Any], en_riesgo: set[str]) -> CasoD
         reglas=reglas_mas_repetidas(documento["reglas"]),
         alertas=list(documento["alertas"]),
         en_lista_riesgo=cuenta in en_riesgo,
+        no_fui_yo=int(documento.get("no_fui_yo", 0)),
     )
 
 

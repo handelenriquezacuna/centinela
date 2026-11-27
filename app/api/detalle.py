@@ -51,6 +51,40 @@ ACCIONES = [
 
 AVISO_V1 = "alerta v1: migrar con python tareas.py migrar"
 
+TEXTO_NO_FUI_YO = (
+    "El cliente respondió desde su SMS que NO fue él. Es evidencia de que el dinero se está "
+    "moviendo ahora: revísala primero. Sugerencia: confirmar el fraude o escalar."
+)
+TEXTO_SI_FUI_YO = (
+    "El cliente respondió desde su SMS que SÍ fue él. Es evidencia a favor de un falso positivo. "
+    "Sugerencia: descartar la alerta, después de revisarla."
+)
+
+
+def sugerencia_del_cliente(alerta: dict[str, Any]) -> dict[str, str] | None:
+    """Lo que sugiere la respuesta del cliente (T-82). Sugiere; no cierra ni mueve nada.
+
+    Solo mientras la alerta esta abierta: una vez resuelta, la respuesta queda como evidencia
+    en el historial y ya no hay decision que orientar.
+    """
+    respuesta = alerta.get("respuesta_cliente")
+    if not respuesta or alerta["estado"] not in ("nueva", "en_revision"):
+        return None
+    if respuesta["valor"] == "no_fui_yo":
+        return {"valor": "no_fui_yo", "texto": TEXTO_NO_FUI_YO, "destino_sugerido": "confirmada"}
+    return {"valor": "si_fui_yo", "texto": TEXTO_SI_FUI_YO, "destino_sugerido": "descartada"}
+
+
+def propuesta_de_mula(alerta: dict[str, Any]) -> dict[str, str] | None:
+    """La cuenta destino como propuesta de mula tras un "No fui yo" (T-82). Un supervisor decide."""
+    respuesta = alerta.get("respuesta_cliente")
+    if not respuesta or respuesta["valor"] != "no_fui_yo":
+        return None
+    return {
+        "cuenta": alerta["cuenta_destino"],
+        "motivo": f"el cliente de {alerta['_id']} respondió que no hizo la transferencia",
+    }
+
 
 def porcentaje(valor: int, total: int) -> int:
     return max(0, min(100, round(valor * 100 / total))) if total > 0 else 0

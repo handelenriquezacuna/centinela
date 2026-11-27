@@ -1,5 +1,5 @@
 import type { Alerta, Pagina } from "./api/tipos";
-import { aplicarAlerta, compararCola, ordenarCola } from "./cola";
+import { aplicarAlerta, compararCola, esPrioritaria, ordenarCola } from "./cola";
 
 function alerta(id: string, campos: Partial<Alerta> = {}): Alerta {
   return {
@@ -55,5 +55,31 @@ describe("aplicar una alerta del canal", () => {
       ["ALR-001", "nueva"],
     ]);
     expect(nueva.total).toBe(2);
+  });
+});
+
+describe("T-82: las alertas con 'No fui yo' del cliente van primero", () => {
+  const noFui = { valor: "no_fui_yo" as const, fecha: "2026-11-23T10:05:00Z" };
+
+  it("una abierta con 'No fui yo' pasa por encima de un puntaje mayor", () => {
+    const lista = ordenarCola([
+      alerta("ALR-001", { puntaje: 100 }),
+      alerta("ALR-002", { puntaje: 35, respuesta_cliente: noFui }),
+      alerta("ALR-003", { puntaje: 60, estado: "en_revision", respuesta_cliente: noFui }),
+    ]);
+    expect(lista.map((a) => a._id)).toEqual(["ALR-003", "ALR-002", "ALR-001"]);
+  });
+
+  it("'Si fui yo' no sube, y una alerta ya cerrada con 'No fui yo' tampoco", () => {
+    expect(esPrioritaria(alerta("A", { respuesta_cliente: { ...noFui, valor: "si_fui_yo" } }))).toBe(false);
+    expect(esPrioritaria(alerta("B", { estado: "confirmada", respuesta_cliente: noFui }))).toBe(false);
+    expect(esPrioritaria(alerta("C", { respuesta_cliente: noFui }))).toBe(true);
+  });
+
+  it("la respuesta que llega por el canal reordena la cola sin pedir nada", () => {
+    const antes = pagina(alerta("ALR-001", { puntaje: 90 }), alerta("ALR-002", { puntaje: 40 }));
+    const despues = aplicarAlerta(antes, alerta("ALR-002", { puntaje: 40, respuesta_cliente: noFui }));
+    expect(despues.elementos.map((a) => a._id)).toEqual(["ALR-002", "ALR-001"]);
+    expect(despues.total).toBe(2);
   });
 });
