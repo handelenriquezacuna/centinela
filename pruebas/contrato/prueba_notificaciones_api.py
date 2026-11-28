@@ -80,7 +80,7 @@ async def prueba_lista_la_pagina_con_la_forma_documentada(cliente: AsyncClient, 
 
     assert respuesta.status_code == 200
     cuerpo = respuesta.json()
-    assert set(cuerpo) == {"total", "limite", "desplazamiento", "elementos"}
+    assert set(cuerpo) == {"total", "limite", "desplazamiento", "elementos", "simulador_sms"}
     assert cuerpo["total"] == 4
     assert cuerpo["desplazamiento"] == 0
     # Las mas recientes primero.

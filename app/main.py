@@ -30,6 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from app import VERSION
 from app.api.errores import registrar_manejadores
 from app.api.rutas import acceso as rutas_acceso
+from app.api.rutas import cliente as rutas_cliente
 from app.api.rutas import enrutador_v1
 from app.api.rutas import estado as rutas_estado
 from app.api.rutas import paginas as rutas_paginas
@@ -40,11 +41,13 @@ from app.api.rutas import paginas_tablero as rutas_paginas_tablero
 from app.api.rutas import salud as rutas_salud
 from app.api.rutas import spa as rutas_spa
 from app.api.sesion import guardia, registrar_manejadores_sesion
+from app.deteccion.aviso_cliente import AvisoCliente
 from app.deteccion.d1 import NOMBRE_D1, d1
 from app.deteccion.d2 import NOMBRE_D2, d2
 from app.deteccion.d3 import NOMBRE_D3, d3
 from app.nucleo.config import Ajustes, obtener_ajustes
 from app.nucleo.db import crear_cliente, obtener_base
+from app.repos.aviso_cliente import RepoAviso
 from app.repos.deteccion import RepoDeteccion
 from app.repos.indicadores import RepoIndicadores
 from app.repos.notificaciones import RepoNotificaciones
@@ -138,9 +141,19 @@ async def ciclo_vida(aplicacion: FastAPI) -> AsyncIterator[None]:
     # H-11: alerta CRITICA -> notificacion -> correo SMTP. Con `notificaciones.activa: false`
     # no se lanza y `/estado` lo reporta como no construido.
     if ajustes.notificaciones.activa:
+        # T-82: el mismo D2 avisa tambien al cliente por SMS simulado (si hay consentimiento).
+        aviso = (
+            AvisoCliente(
+                RepoAviso(base),
+                ajustes=ajustes.aviso_cliente,
+                notificaciones=ajustes.notificaciones,
+            )
+            if ajustes.aviso_cliente.activo
+            else None
+        )
         supervisor.lanzar(
             NOMBRE_D2,
-            d2(RepoNotificaciones(base), supervisor, ajustes=ajustes.notificaciones),
+            d2(RepoNotificaciones(base), supervisor, ajustes=ajustes.notificaciones, aviso=aviso),
         )
     else:
         registro.warning("notificaciones.activa es false: D2 no se lanza")
@@ -210,6 +223,8 @@ def crear_aplicacion(interfaz: str | None = None) -> FastAPI:
     registrar_manejadores_sesion(aplicacion)
     if elegida == "spa":
         aplicacion.include_router(rutas_spa.enrutador)
+        # T-82: la pagina publica del cliente (/c/{token}), solo con la SPA que la dibuja.
+        aplicacion.include_router(rutas_cliente.enrutador_pagina)
     aplicacion.include_router(rutas_acceso.enrutador)
     aplicacion.include_router(rutas_salud.enrutador)
     aplicacion.include_router(rutas_estado.enrutador)

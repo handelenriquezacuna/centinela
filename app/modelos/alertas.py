@@ -80,7 +80,9 @@ class AccionHistorial(ModeloCentinela):
     H-14 AGREGA a esta lista, nunca la sobrescribe: es el rastro de auditoria.
     """
 
-    accion: EstadoAlerta
+    # Un estado (lo que hizo un agente o el motor) o `respuesta_cliente` (T-82: el cliente
+    # contesto desde su enlace; sin agente, y no mueve el estado de la alerta).
+    accion: EstadoAlerta | Literal["respuesta_cliente"]
     # Nulo cuando la accion fue automatica: la creacion la hace el motor, no una
     # persona. El validador de `alertas` lo declara ["string","null"].
     agente_id: AgenteId | None = None
@@ -132,6 +134,16 @@ class PoliticaAplicada(ModeloCentinela):
 
     politica_id: PoliticaId
     version: int = Field(ge=1)
+
+
+class RespuestaCliente(ModeloCentinela):
+    """Lo que el cliente contesto desde el enlace del SMS (T-82, D-81).
+
+    Es evidencia para el agente, nunca una decision: la alerta NO se cierra sola.
+    """
+
+    valor: Literal["si_fui_yo", "no_fui_yo"]
+    fecha: MarcaTiempoUTC
 
 
 class Alerta(DocumentoBase):
@@ -187,6 +199,8 @@ class Alerta(DocumentoBase):
     monto_crc: MontoCRC
     moneda: Moneda = "CRC"
     cliente_nombre: str = Field(min_length=1)
+    # T-82: la respuesta del cliente a su SMS, si ya contesto. Opcional.
+    respuesta_cliente: RespuestaCliente | None = None
 
     @model_validator(mode="after")
     def _forma_segun_version(self) -> Self:

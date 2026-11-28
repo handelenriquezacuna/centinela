@@ -166,6 +166,16 @@ db.alertas.createIndex(
   { agente_id: 1 },
   { name: "idx_alertas_agente" }
 );
+// T-82: las alertas a las que el cliente respondio "No fui yo" suben al tope de la cola. Indice
+// PARCIAL (solo esas, un puñado) con el mismo orden del panel: la consulta de la cola las lee
+// ya ordenadas, sin SORT en memoria, y el resto de la cola sigue con sus indices de siempre.
+db.alertas.createIndex(
+  { puntaje: -1, fecha_creacion: -1, _id: 1 },
+  {
+    name: "idx_alertas_no_fui_yo",
+    partialFilterExpression: { "respuesta_cliente.valor": "no_fui_yo" }
+  }
+);
 // Casos del panel (T-56): las alertas abiertas de UNA cuenta destino. El fragmento de un
 // caso que pide el SSE por cada alerta nueva entra por aqui: igualdad de cuenta y de
 // estado, sin recorrer las demas alertas abiertas.
@@ -207,6 +217,16 @@ db.casos.createIndex(
 db.notificaciones.createIndex(
   { alerta_id: 1, canal: 1 },
   { name: "idx_notificaciones_alerta_canal", unique: true }
+);
+// T-82: el enlace del SMS se resuelve por el hash de su token. Unico y parcial (solo las
+// notificaciones que lo traen): el correo no tiene enlace_hash.
+db.notificaciones.createIndex(
+  { enlace_hash: 1 },
+  {
+    name: "idx_notificaciones_enlace_hash",
+    unique: true,
+    partialFilterExpression: { enlace_hash: { $exists: true } }
+  }
 );
 // Consulta de la lista del supervisor: las mas recientes primero.
 db.notificaciones.createIndex(

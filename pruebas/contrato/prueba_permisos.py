@@ -124,6 +124,10 @@ def prueba_sin_sesion_solo_es_publico_login_salud_y_lo_necesario_para_entrar() -
         ("GET", "/salud"),
         ("POST", "/api/v1/sesion"),
         ("DELETE", "/api/v1/sesion"),
+        # T-82: el portal del cliente; el token del enlace del SMS es la autorizacion.
+        ("GET", "/c/{token}"),
+        ("GET", "/api/v1/cliente/{token}"),
+        ("POST", "/api/v1/cliente/{token}/respuesta"),
     }
 
 
@@ -133,7 +137,8 @@ def prueba_sin_sesion_solo_es_publico_login_salud_y_lo_necesario_para_entrar() -
 
 # El area de Administracion existe solo con la interfaz SPA (no hubo version HTMX de ella):
 # `aplicacion` es la app HTMX, asi que su 401/403 se prueba en `prueba_portal_spa.py`.
-SOLO_SPA = "/administracion"
+# T-82: la bandeja del simulador de SMS (`/simulador-sms`) tampoco tuvo version HTMX.
+SOLO_SPA = ("/administracion", "/simulador-sms")
 PROTEGIDAS = [
     a for a in ACCESOS if a.permiso is not None and not a.ruta.startswith(SOLO_SPA)
 ]

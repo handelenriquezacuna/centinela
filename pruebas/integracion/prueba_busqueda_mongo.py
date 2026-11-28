@@ -62,6 +62,12 @@ async def preparar_base(cliente: Any, nombre: str, ajustes: AjustesGenerador) ->
                 list(indice["key"].items()),
                 name=indice["name"],
                 unique=indice.get("unique", False),
+                # T-82: los indices parciales (idx_alertas_no_fui_yo) comparten clave con otro.
+                **(
+                    {"partialFilterExpression": indice["partialFilterExpression"]}
+                    if "partialFilterExpression" in indice
+                    else {}
+                ),
             )
 
     await ejecutar(RepoGenerador(base), ajustes, limpiar=False)

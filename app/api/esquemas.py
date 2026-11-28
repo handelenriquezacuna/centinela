@@ -74,6 +74,9 @@ class ElementoNotificacion(BaseModel):
 
 class PaginaNotificaciones(Pagina):
     elementos: list[ElementoNotificacion]
+    simulador_sms: bool = Field(
+        default=False, description="T-82: la bandeja /simulador-sms esta activa en este entorno"
+    )
 
 
 class ElementoBitacora(BaseModel):

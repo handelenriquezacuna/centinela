@@ -79,4 +79,5 @@ async def listar_notificaciones(
         limite=aplicado,
         desplazamiento=desplazamiento,
         elementos=[elemento_de(documento) for documento in documentos],
+        simulador_sms=ajustes.simulador_sms_activo,
     )

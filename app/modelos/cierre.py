@@ -9,6 +9,7 @@ from enum import StrEnum
 
 from pydantic import Field, model_validator
 
+from app.modelos.alertas import RespuestaCliente
 from app.modelos.base import (
     AlertaId,
     DocumentoBase,
@@ -48,6 +49,13 @@ class Notificacion(DocumentoBase):
     intentos: int | None = Field(default=None, ge=0)
     asunto: str | None = None
     destinatarios: list[str] | None = None
+    # T-82: SMS simulado al cliente. `texto` es lo que "salio" (solo el proveedor simulado lo
+    # guarda; uno real no deja el enlace en la base). El enlace se guarda SOLO como hash.
+    texto: str | None = None
+    enlace_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    enlace_vence: MarcaTiempoUTC | None = None
+    enlace_usado_en: MarcaTiempoUTC | None = None
+    respuesta_cliente: RespuestaCliente | None = None
 
 
 class IndicadorDiario(DocumentoBase):

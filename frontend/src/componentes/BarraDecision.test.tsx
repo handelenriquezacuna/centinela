@@ -85,4 +85,26 @@ describe("BarraDecision", () => {
     montar({ resultado: { tipo: "error", error: { texto: "La alerta cambió antes de que aplicaras la acción", detalles: [] } } });
     expect(screen.getByRole("alert")).toHaveTextContent("La alerta cambió antes de que aplicaras la acción");
   });
+
+  it("T-82: muestra la insignia de la respuesta del cliente y su sugerencia, sin cerrar nada", () => {
+    const { alResolver } = montar({
+      respuestaCliente: { valor: "no_fui_yo", fecha: "2026-11-23T10:05:00Z" },
+      sugerenciaCliente: { valor: "no_fui_yo", texto: "El cliente dice que NO fue él.", destino_sugerido: "confirmada" },
+    });
+    const barra = screen.getByRole("region", { name: "Decisión sobre la alerta" });
+
+    expect(within(barra).getByText("Cliente: no fui yo")).toBeInTheDocument();
+    expect(within(barra).getByText("El cliente dice que NO fue él.")).toBeInTheDocument();
+    expect(alResolver).not.toHaveBeenCalled();
+  });
+
+  it("T-82: 'Si fui yo' sugiere descartar y la insignia es tenue", () => {
+    montar({
+      respuestaCliente: { valor: "si_fui_yo", fecha: "2026-11-23T10:05:00Z" },
+      sugerenciaCliente: { valor: "si_fui_yo", texto: "Sugerencia: descartar la alerta.", destino_sugerido: "descartada" },
+    });
+
+    expect(screen.getByText("Cliente: sí fui yo")).toHaveClass("es-cliente-si");
+    expect(screen.getByText("Sugerencia: descartar la alerta.")).toBeInTheDocument();
+  });
 });

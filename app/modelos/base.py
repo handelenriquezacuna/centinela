@@ -134,7 +134,13 @@ RiesgoId = _identificador("RSK", "Entrada de lista de riesgo, RSK-001")
 AgenteId = _identificador("AGT", "Agente de fraude, AGT-001")
 AlertaId = _identificador("ALR", "Alerta, ALR-001")
 CasoId = _identificador("CAS", "Caso de investigacion, CAS-001")
-NotificacionId = _identificador("NOT", "Notificacion, NOT-001")
+# La del correo es NOT-000123 (derivada de la alerta); la del SMS al cliente (T-82) agrega el
+# sufijo -SMS (NOT-000123-SMS) porque una alerta tiene a lo sumo una notificacion por canal.
+NotificacionId = Annotated[
+    str,
+    StringConstraints(pattern=r"^NOT-\d{3,}(-SMS)?$"),
+    Field(description="Notificacion, NOT-001 (correo) o NOT-001-SMS (SMS al cliente)"),
+]
 
 # Numero de cuenta SINPE, propio o externo (una cuenta mula no tiene documento en
 # `cuentas`: viaja como este texto dentro de transacciones.cuenta_destino).
@@ -142,6 +148,12 @@ CuentaSinpe = Annotated[
     str,
     StringConstraints(pattern=r"^\d{4}-\d{4}$"),
     Field(description="Numero de cuenta SINPE, formato 8712-4455"),
+]
+
+Telefono = Annotated[
+    str,
+    StringConstraints(pattern=r"^\d{4}-\d{4}$"),
+    Field(description="Telefono de Costa Rica, formato 8712-4455"),
 ]
 
 Cedula = Annotated[

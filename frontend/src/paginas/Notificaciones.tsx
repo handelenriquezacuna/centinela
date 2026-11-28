@@ -50,7 +50,7 @@ export function Notificaciones() {
   const consulta = useQuery({
     queryKey: ["notificaciones", estado, desplazamiento],
     queryFn: () =>
-      pedir<Pagina<ElementoNotificacion>>("/api/v1/notificaciones", {
+      pedir<Pagina<ElementoNotificacion> & { simulador_sms?: boolean }>("/api/v1/notificaciones", {
         consulta: { limite: LIMITE, desplazamiento, estado_envio: estado },
       }),
     // Un correo nuevo aparece sin recargar: la lista es corta y la consulta es barata.
@@ -63,8 +63,15 @@ export function Notificaciones() {
       <EncabezadoPagina
         id="notificaciones"
         titulo="Notificaciones"
-        descripcion="Correos de alertas críticas que envió el sistema, los más recientes primero. El envío es al menos una vez: un correo puede llegar repetido si el servicio se reinició."
+        descripcion="Correos al supervisor y SMS al cliente por alertas críticas que envió el sistema, los más recientes primero. El envío es al menos una vez: un correo puede llegar repetido si el servicio se reinició."
       />
+      {pagina?.simulador_sms ? (
+        <p>
+          <Link id="abrir-simulador" className="boton boton-secundario" to="/simulador-sms">
+            Abrir el simulador de teléfono (SMS al cliente)
+          </Link>
+        </p>
+      ) : null}
       <nav className="periodos" aria-label="Estado del envío">
         <Link to="/notificaciones" aria-current={estado === undefined ? "true" : undefined}>
           Todas

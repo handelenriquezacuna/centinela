@@ -44,6 +44,7 @@ class CodigoError(StrEnum):
     PROHIBIDO = "prohibido"
     NO_ENCONTRADO = "no_encontrado"
     CONFLICTO = "conflicto"
+    DEMASIADOS_INTENTOS = "demasiados_intentos"
     TRANSICION_INVALIDA = "transicion_invalida"
     BASE_NO_DISPONIBLE = "base_no_disponible"
     ERROR_INTERNO = "error_interno"
@@ -98,6 +99,7 @@ CODIGO_POR_ESTADO: dict[int, CodigoError] = {
     status.HTTP_404_NOT_FOUND: CodigoError.NO_ENCONTRADO,
     status.HTTP_409_CONFLICT: CodigoError.CONFLICTO,
     status.HTTP_422_UNPROCESSABLE_CONTENT: CodigoError.PARAMETROS_INVALIDOS,
+    status.HTTP_429_TOO_MANY_REQUESTS: CodigoError.DEMASIADOS_INTENTOS,
     status.HTTP_503_SERVICE_UNAVAILABLE: CodigoError.BASE_NO_DISPONIBLE,
 }
 
@@ -242,6 +244,7 @@ def respuestas_documentadas(*estados: int) -> dict[int | str, dict[str, Any]]:
         status.HTTP_404_NOT_FOUND: "Recurso no encontrado",
         status.HTTP_409_CONFLICT: "Conflicto con el estado actual del recurso",
         status.HTTP_422_UNPROCESSABLE_CONTENT: "Parametros invalidos",
+        status.HTTP_429_TOO_MANY_REQUESTS: "Demasiados intentos; esperar antes de reintentar",
         status.HTTP_500_INTERNAL_SERVER_ERROR: "Error interno del servidor",
         status.HTTP_503_SERVICE_UNAVAILABLE: "La base de datos no responde",
     }

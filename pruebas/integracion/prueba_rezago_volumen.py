@@ -76,6 +76,12 @@ async def base_volumen(base_mongo: Any) -> AsyncIterator[Any]:
                 list(indice["key"].items()),
                 name=indice["name"],
                 unique=indice.get("unique", False),
+                # T-82: los indices parciales (idx_alertas_no_fui_yo) comparten clave con otro.
+                **(
+                    {"partialFilterExpression": indice["partialFilterExpression"]}
+                    if "partialFilterExpression" in indice
+                    else {}
+                ),
             )
     for coleccion in CATALOGO:
         documentos = await trabajo[coleccion].find({}).to_list(length=None)

@@ -22,6 +22,7 @@ from app.modelos.base import (
     MarcaTiempoUTC,
     ModeloCentinela,
     MontoCRC,
+    Telefono,
 )
 
 HoraDelDia = Annotated[
@@ -38,6 +39,10 @@ class Cliente(DocumentoBase):
     nombre: str = Field(min_length=1)
     cedula: Cedula
     fecha_registro: MarcaTiempoUTC
+    # T-82 (D-83): contacto para avisar al cliente. Opcionales: sin telefono o sin
+    # consentimiento (`acepta_sms` distinto de true) D2 no le manda SMS.
+    telefono: Telefono | None = None
+    acepta_sms: bool | None = None
 
 
 class Cuenta(DocumentoBase):

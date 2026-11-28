@@ -103,3 +103,30 @@ las 400 alertas cerradas no se tocan. El indice `idx_alertas_destino_estado`
 (`{cuenta_destino: 1, estado: 1}`) es nuevo: sin el, pedir el caso de una cuenta recorreria
 todas las alertas abiertas. El orden de los casos (severidad maxima, puntaje maximo, mas
 antigua) se hace sobre los grupos, no sobre las alertas.
+
+## Cola con las alertas "No fui yo" arriba (T-82)
+
+La respuesta "No fui yo" del cliente sube la alerta al tope de la cola. Se hace en dos tramos, cada uno con su
+indice (`app/repos/alertas.py`): las prioritarias leen el indice parcial `idx_alertas_no_fui_yo`
+(`{puntaje: -1, fecha_creacion: -1, _id: 1}` con `partialFilterExpression: {respuesta_cliente.valor: "no_fui_yo"}`)
+y el resto usa el filtro de siempre mas `$nor` de las prioritarias. Medido con
+`pruebas/integracion/prueba_explain_mongo.py`, 3.000 alertas sinteticas, 12 con "No fui yo" (5 abiertas):
+
+| consulta | indice | SORT | nReturned | totalDocsExamined |
+|---|---|---|---|---|
+| prioritarias, con `hint` | idx_alertas_no_fui_yo | no | 5 | 12 |
+| prioritarias, SIN `hint` | idx_alertas_estado_severidad_fecha | SI | 5 | 1.203 |
+| resto, sin filtros | idx_alertas_puntaje_fecha | no | 50 | 50 |
+| resto, estado `nueva` | idx_alertas_estado_puntaje_fecha | no | 50 | 50 |
+| resto, severidad `CRITICA` | idx_alertas_severidad_puntaje_fecha | no | 50 | 50 |
+
+Lo que dice la tabla:
+
+- Sin el `hint` el planificador prefiere el indice por estado y ordena en memoria (1.203 documentos): por eso el
+  repositorio lo declara. Si el indice no existe en una base vieja, descarta el hint y la cola sale igual.
+- El costo del tramo "resto" es leer, y descartar, las pocas prioritarias que caen dentro del rango recorrido:
+  como maximo `nReturned + #prioritarias` documentos. Con muchas respuestas "No fui yo" abiertas creceria, pero
+  son las alertas que el agente va a atender primero y se cierran al resolverse.
+- El indice parcial solo guarda las alertas con "No fui yo": su costo de escritura es cero para las demas.
+- Casos por cuenta destino: la marca (`$set` + `$sum` dentro del `$group` que ya leia todas las abiertas) no agrega
+  lecturas; el orden de los casos ya se hacia sobre los grupos, en memoria.

@@ -125,6 +125,15 @@ recrearColeccion("clientes", {
       bsonType: "date",
       description: "ISODate UTC de alta del cliente"
     },
+    telefono: {
+      bsonType: "string",
+      pattern: "^[0-9]{4}-[0-9]{4}$",
+      description: "T-82 (D-83): telefono de Costa Rica, formato 8712-4455. Opcional. Donde D2 manda el SMS de aviso; en toda pantalla del banco se muestra enmascarado"
+    },
+    acepta_sms: {
+      bsonType: "bool",
+      description: "T-82 (D-83): consentimiento para recibir el SMS de aviso. Opcional; sin true no se envia nada"
+    },
     esquema_version: {
       bsonType: "int",
       minimum: 1,
@@ -137,10 +146,13 @@ recrearColeccion("clientes", {
 // 3 clientes son el relleno del contrato (Luis, Ana, Carlos); sus fechas de
 // registro no estan dadas en ninguna fuente, son dato de relleno.
 db.clientes.insertMany([
-  { _id: "CLI-001", nombre: "María Rodríguez Vargas", cedula: "1-1111-1111", fecha_registro: new Date("2025-01-15T00:00:00-06:00"), esquema_version: 1 },
-  { _id: "CLI-002", nombre: "Luis Fernández Solano", cedula: "2-2222-2222", fecha_registro: new Date("2024-11-02T00:00:00-06:00"), esquema_version: 1 },
+  // T-82 (D-83): telefono y consentimiento del aviso por SMS. Maria SI acepta (es el caso del demo);
+  // Luis tiene telefono pero NO acepta (no se le envia nada); Ana no tiene telefono registrado;
+  // Carlos acepta. Telefonos de relleno (dato de relleno, igual que las fechas).
+  { _id: "CLI-001", nombre: "María Rodríguez Vargas", cedula: "1-1111-1111", fecha_registro: new Date("2025-01-15T00:00:00-06:00"), telefono: "8712-4455", acepta_sms: true, esquema_version: 1 },
+  { _id: "CLI-002", nombre: "Luis Fernández Solano", cedula: "2-2222-2222", fecha_registro: new Date("2024-11-02T00:00:00-06:00"), telefono: "6210-3387", acepta_sms: false, esquema_version: 1 },
   { _id: "CLI-003", nombre: "Ana Castro Jiménez", cedula: "3-3333-3333", fecha_registro: new Date("2025-03-10T00:00:00-06:00"), esquema_version: 1 },
-  { _id: "CLI-004", nombre: "Carlos Mora Rojas", cedula: "4-4444-4444", fecha_registro: new Date("2025-06-20T00:00:00-06:00"), esquema_version: 1 }
+  { _id: "CLI-004", nombre: "Carlos Mora Rojas", cedula: "4-4444-4444", fecha_registro: new Date("2025-06-20T00:00:00-06:00"), telefono: "3390-6612", acepta_sms: true, esquema_version: 1 }
 ]);
 
 // ------------------------------------------------------------
@@ -682,6 +694,16 @@ recrearColeccion("alertas", {
       minLength: 1,
       description: "Copia desnormalizada del nombre del cliente, para la fila del panel sin $lookup"
     },
+    respuesta_cliente: {
+      bsonType: "object",
+      required: ["valor", "fecha"],
+      additionalProperties: false,
+      description: "T-82 (D-81): lo que el cliente contesto desde el enlace de su SMS. Es evidencia para el agente; la alerta no se cierra sola. Opcional",
+      properties: {
+        valor: { enum: ["si_fui_yo", "no_fui_yo"] },
+        fecha: { bsonType: "date", description: "ISODate UTC de la respuesta" }
+      }
+    },
     reglas_disparadas: {
       bsonType: "array",
       minItems: 1,
@@ -731,8 +753,8 @@ recrearColeccion("alertas", {
         additionalProperties: false,
         properties: {
           accion: {
-            enum: ["nueva", "en_revision", "confirmada", "descartada", "escalada"],
-            description: "Estado al que quedo la alerta tras esta accion"
+            enum: ["nueva", "en_revision", "confirmada", "descartada", "escalada", "respuesta_cliente"],
+            description: "Estado al que quedo la alerta tras esta accion, o respuesta_cliente (T-82: el cliente contesto desde su enlace; no mueve el estado)"
           },
           agente_id: {
             bsonType: ["string", "null"],
@@ -887,8 +909,8 @@ recrearColeccion("notificaciones", {
   properties: {
     _id: {
       bsonType: "string",
-      pattern: "^NOT-[0-9]{3,}$",
-      description: "Identificador legible del contrato de IDs, ej. NOT-001"
+      pattern: "^NOT-[0-9]{3,}(-SMS)?$",
+      description: "Identificador legible del contrato de IDs, ej. NOT-001 (correo) o NOT-001-SMS (SMS al cliente, T-82)"
     },
     alerta_id: {
       bsonType: "string",
@@ -924,6 +946,33 @@ recrearColeccion("notificaciones", {
       bsonType: "array",
       items: { bsonType: "string" },
       description: "Direcciones a las que se envio (D2, T-77). Opcional"
+    },
+    texto: {
+      bsonType: "string",
+      description: "T-82: texto del SMS tal como salio. Solo lo guarda el proveedor simulado (la bandeja del demo); un proveedor real no deja el enlace en la base. Opcional"
+    },
+    enlace_hash: {
+      bsonType: "string",
+      pattern: "^[0-9a-f]{64}$",
+      description: "T-82: sha256 del token del enlace. El token en claro NUNCA se guarda en este campo. Opcional (solo SMS)"
+    },
+    enlace_vence: {
+      bsonType: "date",
+      description: "T-82: hasta cuando el enlace deja responder. Opcional (solo SMS)"
+    },
+    enlace_usado_en: {
+      bsonType: "date",
+      description: "T-82: cuando se respondio; el enlace ya no deja responder. Opcional (solo SMS)"
+    },
+    respuesta_cliente: {
+      bsonType: "object",
+      required: ["valor", "fecha"],
+      additionalProperties: false,
+      description: "T-82: la respuesta del cliente, copia del registro de la alerta. Opcional (solo SMS)",
+      properties: {
+        valor: { enum: ["si_fui_yo", "no_fui_yo"] },
+        fecha: { bsonType: "date" }
+      }
     },
     esquema_version: {
       bsonType: "int",

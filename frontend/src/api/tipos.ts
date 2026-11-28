@@ -38,6 +38,12 @@ export interface SesionActual {
   paginas: string[];
 }
 
+/** Lo que el cliente contesto desde el enlace de su SMS (T-82). Evidencia: no cierra la alerta. */
+export interface RespuestaCliente {
+  valor: "si_fui_yo" | "no_fui_yo";
+  fecha: string;
+}
+
 export interface Alerta {
   _id: string;
   esquema_version: 1 | 2;
@@ -54,6 +60,7 @@ export interface Alerta {
   cliente_nombre: string;
   reglas_disparadas: unknown[];
   historial: unknown[];
+  respuesta_cliente?: RespuestaCliente | null;
 }
 
 export interface AlertaDeCaso {
@@ -67,6 +74,7 @@ export interface AlertaDeCaso {
   monto_crc: number;
   fecha_creacion: string;
   agente_id: string | null;
+  respuesta_cliente?: RespuestaCliente | null;
 }
 
 export interface AccionLote {
@@ -88,6 +96,8 @@ export interface CasoDestino {
   alertas_ocultas: number;
   en_lista_riesgo: boolean;
   sugerencia: string | null;
+  /** Alertas del caso con la respuesta "No fui yo" del cliente (T-82). */
+  no_fui_yo?: number;
   acciones: AccionLote[];
 }
 

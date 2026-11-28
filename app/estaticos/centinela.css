@@ -1755,3 +1755,19 @@ code {
   box-shadow: 0 6px 24px rgba(15, 23, 42, 0.25);
 }
 .aviso-sesion h2 { margin-top: 0; font-size: 1.1rem; }
+
+/* ---------- respuesta del cliente a su SMS (T-82) ---------- */
+
+.insignia-cliente {
+  font-size: 0.74rem;
+}
+
+.insignia-cliente.es-cliente-no {
+  background: var(--color-critica);
+  color: #fff;
+}
+
+.insignia-cliente.es-cliente-si {
+  background: #e2e8f0;
+  color: #334155;
+}

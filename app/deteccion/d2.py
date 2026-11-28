@@ -31,6 +31,11 @@ El contrato es el de D1, y por que cada pieza:
   ahora. Lo que entro entre el token y ahora NO se notifica, y queda en el registro y en
   `/estado` como ultimo error.
 
+Aviso al cliente (T-82): tras el correo, la misma vuelta avisa al CLIENTE por SMS simulado
+(`app/deteccion/aviso_cliente.py`) si su ficha trae telefono y consentimiento. Va dentro del
+mismo evento: el token solo avanza cuando el correo y el SMS terminaron, y reprocesar no
+duplica ninguno de los dos (cada uno tiene su propia clave de idempotencia).
+
 D2 procesa evento por evento, sin lotes: las alertas CRITICAS son pocas y cada una
 espera un envio por red, asi que un lote no ahorraria nada.
 
@@ -52,6 +57,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from app.deteccion.aviso_cliente import AvisoCliente
 from app.deteccion.correo import armar_correo, enviar_por_smtp, notificacion_id_para
 from app.modelos import ESQUEMA_VERSION, Alerta
 from app.nucleo.config import AjustesNotificaciones
@@ -247,6 +253,7 @@ async def _procesar_con_reintentos(
     nombre: str,
     reloj: Reloj,
     esperar: Espera,
+    aviso: AvisoCliente | None = None,
 ) -> Resultado | None:
     """Procesa con espera progresiva ante fallos de la base; agotados, descarta (`None`).
 
@@ -257,7 +264,7 @@ async def _procesar_con_reintentos(
     while True:
         intentos += 1
         try:
-            return await procesar_alerta(
+            resultado = await procesar_alerta(
                 repo,
                 documento,
                 ajustes=ajustes,
@@ -266,6 +273,10 @@ async def _procesar_con_reintentos(
                 esperar=esperar,
                 al_fallar_envio=lambda fallo: supervisor.anotar_error(nombre, fallo),
             )
+            if aviso is not None and resultado is not Resultado.IGNORADA:
+                # Idempotente: un reintento por una falla de la base no manda otro SMS.
+                await aviso.procesar(documento)
+            return resultado
         except asyncio.CancelledError:
             raise
         except ValidationError as fallo:
@@ -318,6 +329,7 @@ async def _consumir(
     reloj: Reloj,
     esperar: Espera,
     vigilancia: _Vigilancia,
+    aviso: AvisoCliente | None = None,
 ) -> None:
     """Una apertura del change stream, consumida hasta que se cierre o falle."""
     if desde_token is not None:
@@ -337,6 +349,7 @@ async def _consumir(
                     nombre=nombre,
                     reloj=reloj,
                     esperar=esperar,
+                    aviso=aviso,
                 )
                 # El orden del contrato: la notificacion (o el descarte) ya esta escrita.
                 # Recien ahora avanza el token.
@@ -377,11 +390,13 @@ async def d2(
     nombre: str = NOMBRE_D2,
     reloj: Reloj = _ahora,
     esperar: Espera = asyncio.sleep,
+    aviso: AvisoCliente | None = None,
 ) -> None:
     """Bucle infinito de D2. Lo lanza el lifespan: `supervisor.lanzar(NOMBRE_D2, d2(...))`.
 
     Recibe el repositorio y no la base: D2 no conoce el driver, y las pruebas le pasan un
-    doble. `enviar` por omision es SMTP en un hilo; las pruebas pasan uno propio.
+    doble. `enviar` por omision es SMTP en un hilo; las pruebas pasan uno propio. `aviso` es el
+    paso que avisa al cliente por SMS (T-82); sin el, D2 solo manda el correo.
     `asyncio.CancelledError` se deja pasar siempre.
     """
     enviar = enviar or enviador_smtp(ajustes)
@@ -402,6 +417,7 @@ async def d2(
                     reloj=reloj,
                     esperar=esperar,
                     vigilancia=vigilancia,
+                    aviso=aviso,
                 )
             except TokenDeReanudacionInvalido as fallo:
                 registro_log.warning(
@@ -422,6 +438,7 @@ async def d2(
                     reloj=reloj,
                     esperar=esperar,
                     vigilancia=vigilancia,
+                    aviso=aviso,
                 )
             # El cursor murio sin error. Se reabre desde el ultimo token, con la espera
             # minima para que un cursor que muere en cada apertura no gire en vacio.

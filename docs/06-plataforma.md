@@ -2413,3 +2413,84 @@ entra por su indice).
   ese agente y ve exactamente esas dos transiciones (y el CSV); el supervisor no ve la entrada y la
   API le responde 403.
 
+## Aviso al cliente (T-82)
+
+Cuando una alerta es CRITICA, el banco avisa al CLIENTE por SMS que su dinero se esta moviendo, le
+pregunta si fue el y le deja ver su caso en vivo. D2 hace el aviso en la misma vuelta del correo al
+supervisor (`app/deteccion/aviso_cliente.py`); el correo no cambia.
+
+### El flujo, con los textos reales
+
+1. D2 ve la alerta CRITICA y resuelve el contacto: transaccion -> cuenta de origen -> cliente. Si la
+   ficha trae `telefono` (`^[0-9]{4}-[0-9]{4}$`) y `acepta_sms: true`, escribe una notificacion de canal
+   `sms`. Sin telefono o sin consentimiento no se escribe nada: queda una linea en `centinela.auditoria`
+   (`aviso_cliente_omitido`).
+2. El SMS dice, sin nombre ni cuenta completa:
+   `Banco: detectamos una transferencia SINPE de ₡280.000 desde tu cuenta terminada en 4455. ¿Fuiste tú? Responde aquí: <enlace>`
+3. El enlace es `{notificaciones.portal_url}/c/{token}`. Abierto en el telefono, sin sesion, muestra el monto
+   con ₡, la hora de Costa Rica, "desde tu cuenta terminada en 4455", el destino enmascarado (`6033-****`) y
+   dos botones: "Sí, fui yo" y "No fui yo", cada uno con una confirmacion.
+4. La respuesta queda en el historial de la alerta (accion `respuesta_cliente`, sin agente), en el campo
+   `alertas.respuesta_cliente {valor, fecha}` y en la notificacion. La alerta NO se cierra sola ni cambia de
+   estado: decide el agente. Con "No fui yo" sube al tope de la cola y la cuenta destino queda como propuesta
+   de mula (campo `propuesta_mula` del detalle; un supervisor la aprueba en la red de mulas). Con "Sí fui yo"
+   el detalle sugiere descartar. La BarraDecision y el detalle muestran la respuesta con una insignia.
+5. La misma pagina pasa a mostrar el estado del caso: "Recibimos tu respuesta", "Un agente revisa tu caso",
+   "Confirmamos el fraude: llama al 800-000-0000" (numero ficticio, rotulado "(número de ejemplo)"),
+   "Cerramos el caso: no hubo fraude"; una escalada dice "Tu caso pasó a investigación".
+
+### El enlace y sus limites
+
+- **Token**: `secrets.token_urlsafe(32)` (256 bits). En la base vive SOLO su sha256 (`notificaciones.enlace_hash`,
+  indice unico parcial `idx_notificaciones_enlace_hash`). Un texto que no tiene forma de token ni se busca.
+- **Vigencia**: 15 minutos para responder (`aviso_cliente.vigencia_minutos`). Se gasta al responder, en una
+  transaccion que escribe la notificacion y la alerta a la vez: un segundo intento es 409.
+- **Despues de responder** el mismo enlace sigue sirviendo, de solo lectura, `aviso_cliente.seguimiento_horas`
+  (24 h) para ver el estado del caso. Pasado eso, o vencido sin responder, o inexistente, o mal formado, la
+  respuesta es LA MISMA (404 `no_encontrado` con el numero de ayuda): no se puede saber cual fue.
+- **Abuso**, en memoria (un solo proceso): 10 enlaces invalidos por minuto por IP bloquean a esa IP (429
+  `demasiados_intentos`, tambien con un enlace bueno) y 5 respuestas por enlace e IP. Tras un proxy hace falta
+  `uvicorn --proxy-headers` para que la IP sea la real.
+- Cabeceras `Cache-Control: no-store` y `Referrer-Policy: no-referrer` en la pagina y en la API del cliente;
+  la pagina no enlaza a ninguna otra parte del portal.
+- Cada envio, omision, fallo, respuesta y enlace invalido va a `centinela.auditoria`, sin el token.
+
+### Tiempo real: sondeo de 3 s, no SSE publico
+
+La pagina del cliente pregunta su estado cada `aviso_cliente.sondeo_segundos` (3) y deja de hacerlo cuando el
+caso llega a un estado final. No usa el canal SSE del panel: ese canal abre un change stream POR CONEXION, y
+ofrecerlo sin sesion dejaria a cualquiera abrir cursores en la base. El sondeo es una lectura por indice (el
+hash del enlace), acotada por el limite de abuso, y un caso que cambia cada varios minutos no necesita mas.
+
+### Proveedor y la tension del texto en el simulador
+
+`EnviadorSms` es la interfaz del proveedor. Hoy solo existe `EnviadorSmsSimulado` (`aviso_cliente.proveedor:
+simulado`): no sale a ninguna red y devuelve el texto para que la notificacion lo guarde. Un proveedor real
+implementaria la misma interfaz, devolveria `None` y no dejaria el enlace en ningun lado de la base.
+
+La tension, dicha de frente: la base guarda solo el hash del token, PERO el proveedor simulado guarda el texto del
+SMS (que lleva el enlace) en `notificaciones.texto`, porque ese texto es la bandeja del demo. Se acepta porque el
+enlace dura 15 minutos y se gasta al responder, la bandeja `/simulador-sms` pide permiso de supervisor o
+administrador, y esa bandeja esta apagada fuera de `dev` (`aviso_cliente.simulador_sms: null` = solo en dev;
+`true` o `false` lo fijan). `GET /api/v1/notificaciones` nunca devuelve el texto. Si el D2 muere con la
+notificacion `pendiente`, el token en claro se perdio con el proceso: el reproceso emite uno nuevo y reemplaza el
+hash (entrega al menos una vez, como el correo).
+
+### Orden de la cola con "No fui yo" y su costo
+
+Una alerta ABIERTA con `respuesta_cliente.valor = no_fui_yo` va primero, por encima del puntaje. Para no romper
+el indice ESR (`ORDEN_PANEL`) la pagina se arma en dos tramos, cada uno ordenado por indice y sin SORT en memoria:
+las prioritarias (indice parcial `idx_alertas_no_fui_yo`, con `hint`) y el resto (filtro de siempre mas `$nor` de
+las prioritarias). Como el resto las EXCLUYE, la paginacion por desplazamiento no deja huecos ni repite. Si la base
+no tiene el indice (02-indices.js sin re-correr), el hint se descarta y la cola sale igual. Las cifras del explain
+estan en `docs/09-explain-indices.md`. En el panel por cuenta destino la marca se calcula dentro del `$group` que ya
+leia todas las alertas abiertas, asi que no cuesta lecturas de mas.
+
+### Pruebas
+
+- Unitarias: `prueba_aviso_cliente.py` (texto sin datos sensibles, enmascarado, token y hash, vencimiento, un solo uso,
+  consentimiento, reproceso, proveedor que falla, limitador).
+- Contrato: `prueba_cliente_api.py` (token valido, vencido, usado, inexistente y mal formado con la misma respuesta,
+  respuesta valida, caso cerrado, limite de intentos, simulador por rol y bandera).
+- Integracion con Mongo: `prueba_aviso_cliente_mongo.py` y los casos de `prueba_explain_mongo.py`.
+- e2e: `prueba_spa_cliente.py`. Capturas a 390x844 con `CENTINELA_CAPTURAS=1`: `docs/ux-capturas/cliente-*.png`.

@@ -11,6 +11,7 @@ import { EncabezadoPanel } from "../componentes/EncabezadoPanel";
 import { MarcoPagina } from "../componentes/MarcoPagina";
 import { FechaCR } from "../componentes/FechaCR";
 import { Insignia } from "../componentes/Insignia";
+import { InsigniaCliente } from "../componentes/InsigniaCliente";
 import { MontoColones } from "../componentes/MontoColones";
 import { TablaDatos, type Columna } from "../componentes/TablaDatos";
 import { VistaVacia } from "../componentes/VistaVacia";
@@ -27,7 +28,15 @@ const COLUMNAS: Columna<Alerta>[] = [
   { clave: "cuentas", titulo: "Cuentas", celda: (a) => `${a.cuenta_origen} a ${a.cuenta_destino}`, clase: "id-corto" },
   { clave: "monto", titulo: "Monto", celda: (a) => <MontoColones valor={a.monto_crc} /> },
   { clave: "creada", titulo: "Creada (hora CR)", celda: (a) => <FechaCR valor={a.fecha_creacion} /> },
-  { clave: "estado", titulo: "Estado", celda: (a) => <Insignia tipo="estado" valor={a.estado} /> },
+  {
+    clave: "estado",
+    titulo: "Estado",
+    celda: (a) => (
+      <>
+        <Insignia tipo="estado" valor={a.estado} /> <InsigniaCliente respuesta={a.respuesta_cliente} />
+      </>
+    ),
+  },
 ];
 
 interface Propiedades {
@@ -67,7 +76,7 @@ export function PanelAlertas({ alAbrirAyuda }: Propiedades) {
     <MarcoPagina id="panel" ancho="ancho">
       <EncabezadoPanel
         vista="alertas"
-        descripcion="Cola ordenada por puntaje (mayor primero) y luego por fecha."
+        descripcion="Cola ordenada por puntaje (mayor primero) y luego por fecha. Las alertas a las que el cliente respondió «No fui yo» van primero."
         estadoCanal={estadoCanal}
         aviso={aviso}
         rotuloActualizar="Actualizar cola"
@@ -95,6 +104,7 @@ export function PanelAlertas({ alAbrirAyuda }: Propiedades) {
             "data-estado": alerta.estado,
             "data-destino": alerta.cuenta_destino,
             "data-puntaje": alerta.puntaje,
+            "data-cliente": alerta.respuesta_cliente?.valor ?? "",
             "data-monto-crc": alerta.monto_crc,
           })}
           vacia={<VistaVacia titulo="No hay alertas en la cola." texto="Cuando el detector genere una alerta aparecerá aquí sin recargar." />}

@@ -63,6 +63,22 @@ async def base_d2_desechable(base_mongo: Any) -> AsyncIterator[Any]:
     await base["notificaciones"].create_index(
         [("alerta_id", 1), ("canal", 1)], unique=True, name="idx_notificaciones_alerta_canal"
     )
+    # T-82: el enlace del SMS se busca por su hash (unico y parcial) y la cola sube las
+    # alertas "No fui yo" por su indice parcial; los mismos de 02-indices.js.
+    await base["notificaciones"].create_index(
+        "enlace_hash",
+        unique=True,
+        name="idx_notificaciones_enlace_hash",
+        partialFilterExpression={"enlace_hash": {"$exists": True}},
+    )
+    await base["alertas"].create_index(
+        [("puntaje", -1), ("fecha_creacion", -1), ("_id", 1)],
+        name="idx_alertas_no_fui_yo",
+        partialFilterExpression={"respuesta_cliente.valor": "no_fui_yo"},
+    )
+    await base["alertas"].create_index(
+        [("puntaje", -1), ("fecha_creacion", -1), ("_id", 1)], name="idx_alertas_puntaje_fecha"
+    )
     try:
         yield base
     finally:
@@ -78,11 +94,15 @@ async def esperar(condicion: Callable[[], Awaitable[bool]], que: str) -> None:
 
 
 @asynccontextmanager
-async def d2_corriendo(base: Any, ajustes: AjustesNotificaciones) -> AsyncIterator[Supervisor]:
+async def d2_corriendo(
+    base: Any, ajustes: AjustesNotificaciones, *, aviso: Any = None
+) -> AsyncIterator[Supervisor]:
     """D2 lanzado como en el lifespan. Cede el control cuando el flujo ya esta abierto
     (primer latido), para que ninguna insercion de la prueba ocurra antes del watch."""
     supervisor = Supervisor(tolerancia_segundos=30)
-    supervisor.lanzar(NOMBRE_D2, d2(RepoNotificaciones(base), supervisor, ajustes=ajustes))
+    supervisor.lanzar(
+        NOMBRE_D2, d2(RepoNotificaciones(base), supervisor, ajustes=ajustes, aviso=aviso)
+    )
 
     async def abierto() -> bool:
         return supervisor.informe().tarea(NOMBRE_D2).eventos_procesados >= 1

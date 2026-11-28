@@ -16,9 +16,11 @@ from fastapi import Depends, Request
 from pymongo import AsyncMongoClient
 from pymongo.asynchronous.database import AsyncDatabase
 
+from app.api.limitador import LimitadorIntentos
 from app.nucleo.config import Ajustes, obtener_ajustes
 from app.nucleo.db import obtener_base as _base_del_cliente
 from app.repos.alertas import ProtocoloRepoAlertas, RepoAlertas
+from app.repos.aviso_cliente import ProtocoloRepoRespuestaCliente, RepoRespuestaCliente
 from app.repos.bitacora import ProtocoloRepoBitacora, RepoBitacora
 from app.repos.busqueda import ProtocoloRepoBusqueda, RepoBusqueda
 from app.repos.casos_destino import ProtocoloRepoCasosDestino, RepoCasosDestino
@@ -114,6 +116,27 @@ def dep_repo_notificaciones(
     return RepoLecturaNotificaciones(base)
 
 
+def dep_repo_respuesta_cliente(
+    base: Annotated[AsyncDatabase, Depends(dep_base)],
+) -> ProtocoloRepoRespuestaCliente:
+    """El repositorio del portal del cliente (T-82): el enlace del SMS y su respuesta."""
+    return RepoRespuestaCliente(base)
+
+
+def dep_limitador(peticion: Request) -> LimitadorIntentos:
+    """El limite de abuso del endpoint publico del cliente: uno solo por proceso, en memoria."""
+    limitador: LimitadorIntentos | None = getattr(peticion.app.state, "limitador_cliente", None)
+    if limitador is None:
+        ajustes = dep_ajustes(peticion).aviso_cliente
+        limitador = LimitadorIntentos(
+            invalidos_por_ip=ajustes.intentos_invalidos_por_ip,
+            respuestas_por_enlace=ajustes.respuestas_por_enlace,
+            ventana_segundos=ajustes.ventana_segundos,
+        )
+        peticion.app.state.limitador_cliente = limitador
+    return limitador
+
+
 def dep_flujo_alertas(
     base: Annotated[AsyncDatabase, Depends(dep_base)],
 ) -> ProtocoloFlujoAlertas:
@@ -167,5 +190,9 @@ RepoNotificacionesDep = Annotated[
     ProtocoloRepoLecturaNotificaciones, Depends(dep_repo_notificaciones)
 ]
 RepoBitacoraDep = Annotated[ProtocoloRepoBitacora, Depends(dep_repo_bitacora)]
+RepoRespuestaClienteDep = Annotated[
+    ProtocoloRepoRespuestaCliente, Depends(dep_repo_respuesta_cliente)
+]
+LimitadorDep = Annotated[LimitadorIntentos, Depends(dep_limitador)]
 RepoRedMulasPortalDep = Annotated[RepoRedMulas, Depends(dep_repo_red_mulas_portal)]
 ServicioRespaldosDep = Annotated[ServicioRespaldos, Depends(dep_servicio_respaldos)]

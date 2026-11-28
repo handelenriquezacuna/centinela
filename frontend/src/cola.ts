@@ -9,8 +9,17 @@
  */
 import type { Alerta, Pagina } from "./api/tipos";
 
+/**
+ * T-82: una alerta ABIERTA a la que el cliente respondio "No fui yo" sube al tope. Es la misma
+ * regla que arma la pagina en el servidor (`PRIORITARIA` en app/repos/alertas.py).
+ */
+export function esPrioritaria(a: Alerta): boolean {
+  return a.respuesta_cliente?.valor === "no_fui_yo" && (a.estado === "nueva" || a.estado === "en_revision");
+}
+
 export function compararCola(a: Alerta, b: Alerta): number {
   return (
+    Number(esPrioritaria(b)) - Number(esPrioritaria(a)) ||
     b.puntaje - a.puntaje ||
     Date.parse(b.fecha_creacion) - Date.parse(a.fecha_creacion) ||
     (a._id < b._id ? -1 : a._id > b._id ? 1 : 0)
